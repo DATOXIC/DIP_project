@@ -1,9 +1,6 @@
 """
 HỆ THỐNG PIPELINE DIP NÂNG CẤP CHO PHÂN TÍCH THỦ NGỮ (VSL)
 ============================================================
-Sinh viên: Tô Phương Đạt
-Môn học: Xử lý ảnh số (Digital Image Processing - DIP)
-
 Kiến trúc chuẩn theo hướng dẫn:
 1. Phân đoạn thích nghi: Histogram Backprojection (Hue - Saturation 2D) + Otsu
 2. Chuẩn hóa hình học: Central Image Moments (Tính góc xoay trục chính, dựng thẳng bàn tay)
