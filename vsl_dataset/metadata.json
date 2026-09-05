@@ -1,0 +1,38 @@
+{
+    "total_samples": 124,
+    "classes": {
+        "A": {
+            "id": 0,
+            "description": "Chu A - Nam tay, ngon cai ap sat",
+            "created_at": 1788551552.742466
+        },
+        "B": {
+            "id": 1,
+            "description": "Chu B - 4 ngon thang, ngon cai gap",
+            "created_at": 1788551552.7433941
+        },
+        "C": {
+            "id": 2,
+            "description": "Chu C - Ban tay khum hinh chu C",
+            "created_at": 1788551552.7445204
+        },
+        "L": {
+            "id": 3,
+            "description": "Chu L - Ngon cai va ngon tro vuong goc 90 do",
+            "created_at": 1788551552.7460058
+        },
+        "V": {
+            "id": 4,
+            "description": "Chu V - Xoe 2 ngon tay hinh chu V",
+            "created_at": 1788551552.747124
+        }
+    },
+    "sample_counts": {
+        "A": 124,
+        "B": 0,
+        "C": 0,
+        "L": 0,
+        "V": 0
+    },
+    "created_at": 1788551602.0295436
+}
