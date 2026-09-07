@@ -1,0 +1,82 @@
+Nhóm 1: Ranh giới Cử chỉ (Temporal Segmentation & Idle Noise)
+
+Đây là "bẫy" lớn nhất khiến 90% các hệ thống nhận diện từ video bị sup đổ nếu làm thô:
+
+1. Nhiễu chuyển tiếp (Transition / Co-articulation Noise):
+
+· Hiện tượng: Để làm từ "Cảm ơn" rồi chuyển sang từ "Tạm biet", tay bạn bắt buộc phải di chuyển
+trong không gian để hạ xuống hoặc chuyển vị thế.
+· Hậu quả: Trong 0.5 giây di chuyển vô nghĩa đó, mô hình nếu đoán liên tục từng khung hình sẽ
+"bắn" ra hàng loạt từ rác.
+
+2. Xác định thời điểm Bắt đầu và Kết thúc (Start - Stroke - End):
+
+· Người dùng quy ước làm "ngắt quãng", nhưng làm sao máy tính biết lúc nào tay bắt đầu "nói"
+và lúc nào tay đã "dứt lời" mà không cần người dùng phải bấm phím chuột?
+
+3. Hiện tượng rung lắc ở điểm dừng (Resting Tremor):
+
+· Khi người dùng dừng tay lại để ngắt từ, cơ bàn tay vẫn có độ rung vi mô (micro-jitter) do
+webcam 30fps bắt lại.
+
+Nhom 2: Bien thiên Khong gian & Thời gian (Spatial & Speed Variations)
+
+1. Bất biến tốc độ (Time-scale / Velocity Invariance):
+
+· Cùng từ "Xin chào" (vẫy tay): Lúc bạn vẫy nhanh mất 10 khung hình (0.33s), luc ban vẫy chậm
+mất 30 khung hình (1.0s). Nếu dùng mạng nơ-ron nhận số frame cố định (fixed window), dữ
+liệu sẽ bị co giãn méo mó.
+
+2. Bất biến vị trí xuất phát (Translation Invariance):
+
+· Lúc bạn ngồi chính giữa webcam, lúc bạn ngồi lệch sang trái. Tọa độ (x, y) của tay trong ảnh bị
+lệch hàng trăm pixel dù cử chỉ thực hiện là giống hệt nhau.
+
+3. Bất biến tỷ lệ khoảng cách (Scale Invariance):
+
+· Ngồi gần webcam: Quỹ đạo tay quét một đoạn dài 300 px.
+· Ngoi xa webcam: Quỹ đạo tay chỉ quét được 80 px.
+
+4. Hiện tượng nhòe chuyển động (Motion Blur):
+
+. Webcam re tien khi tay vung nhanh se bị tụt shutter speed -> Anh ban tay bị nhòe vệt,
+AutoCanny/Sobel mất sạch vien ngón tay trong các frame chuyển động cực đại.
+
+Nhóm 3: Sự dung hòa giữa "Hình thai ban tay" và "Quỹ đao chuyen động"
+
+Một cử chỉ động trong thủ ngữ luôn gom 2 thành phần độc lập: Dynamic Gesture =
+Dáng tay (Hand Posture) + Đường đi (Trajectory)
+
+1. Cùng đường đi nhưng khác dáng tay:
+
+· Cùng là động tác đưa tay từ trong ngực ra phía trước, nhưng:
+
+· Nắm tay -> Có thể là một từ (ví dụ: "Đẩy").
+· Bàn tay xòe phẳng -> Có thể là từ khác (ví dụ: "Cho").
+
+2. Cùng dáng tay nhưng khác đường đi:
+
+· Bàn tay giữ nguyên dáng chữ V, nhưng:
+
+· Đưa lên mắt > "Nhìn".
+· Đưa qua lại ngang mặt -> "Cắt".
+
+3. Xung đột tín hiệu: Nếu hệ thống quá thiên về đường đi, nó sẽ bỏ quên hình dáng ngón tay; nếu quá
+thiên về hình dáng ngon tay, nó sẽ bị trôi mất hướng chuyển động.
+
+Nhom 4: Ghep cau hoan chinh (Sentence Construction & Control Flow)
+
+1. Tránh bắn từ trùng lặp (Debouncing / Duplicate Triggering):
+
+· Khi bạn dừng tay dứt khoát ở cuối từ, máy nhận diện đúng từ đó. Nhưng nếu bạn giữ nguyên
+tư thế dung trong 0.5 giay, lam sao đe may khong ghi tu đo thanh 15 lan lien tiep trong cau?
+
+2. Cơ chế xóa từ sai (Backspace / Undo Gesture):
+
+. Đang ra hiệu mot cau 5 từ, đến từ thu 3 bị nham -> Can mot cu chỉ tu nhien đe xoa từ gan nhất
+mà khong cần tho tay chạm vào bàn phím máy tính.
+
+3. Cơ chế ket thúc câu (Enter / Sentence Commit):
+
+. Làm sao may biết cau đa hoan tat đe hien thị toan bo cau len man hình (hoac phat am thanh
+Text-to-Speech)?
