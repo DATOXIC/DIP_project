@@ -16,11 +16,19 @@ Kiến trúc mô hình: Two-Stream CNN
     giữa 2 loại đặc trưng quá khác biệt → khó tối ưu.
   - Two-Stream: mỗi nhánh chuyên biệt → kết hợp (Fusion) ở tầng cuối.
 
-Online Augmentation (VSL-Safe — KHÔNG flip ngang để tránh đổi tay trái/phải):
-  - Random Rotation ±8°       → Mô phỏng tay nghiêng nhẹ
-  - Random Translate ±4%      → Mô phỏng tay lệch tâm ROI
-  - Random Scale 0.95–1.05    → Mô phỏng khoảng cách camera thay đổi
-  - Gaussian Noise (50% xác suất) → Mô phỏng webcam chất lượng thấp
+Online Augmentation — Source-Aware 2 lớp (Kaggle vs Webcam):
+  Mọi mẫu (Kaggle + Webcam) — Biến đổi Hình học (VSL-Safe, KHÔNG flip ngang):
+    - Random Rotation ±8°       → Mô phỏng tay nghiêng nhẹ
+    - Random Translate ±4%      → Mô phỏng tay lệch tâm ROI
+    - Random Scale 0.90–1.10    → Mô phỏng khoảng cách camera thay đổi
+
+  Chỉ mẫu Kaggle/Studio — Physics-Based Degradation (RealisticWebcamAugmenter):
+    (Ảnh webcam thật được bỏ qua lớp này để tránh suy thoái kép - Double Degradation)
+    CẤP ĐỘ 1 (100%): Nhiễu Gaussian nhẹ | Dịch gain từng kênh | Banding Noise
+    CẤP ĐỘ 2 ( 50%): Specular Highlight | Thiếu sáng+Nhiễu | Motion Blur |
+                      Defocus Blur | JPEG Artifact | Bóng cứng một hướng
+    CẤP ĐỘ 3 ( 20%): Ngược sáng Backlight | Nhấp nháy Fluorescent |
+                      Méo thấu kính Barrel | Hắt sáng nền màu | Dịch màu da
 
 Cách chạy:
   py train.py                              # Cài đặt mặc định
@@ -86,8 +94,12 @@ def parse_args() -> argparse.Namespace:
                         help="Early Stopping: so epoch cho neu Val Acc khong tang")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed de tai lap ket qua")
-    parser.add_argument("--num_workers", type=int,   default=0,
-                        help="So DataLoader workers (0=main process, an toan tren Windows)")
+    parser.add_argument("--flip_kaggle", dest="flip_kaggle", action="store_true", default=True,
+                        help="Tu dong lat ngang (Horizontal Flip) cac mau Kaggle/anh ngoai de dong bo huong tay voi Webcam")
+    parser.add_argument("--no_flip_kaggle", dest="flip_kaggle", action="store_false",
+                        help="Khong lat ngang mau Kaggle (giu nguyen huong goc)")
+    parser.add_argument("--num_workers", type=int,   default=2 if sys.platform != "win32" else 0,
+                        help="So DataLoader workers (tu dong chon 2 tren Colab/Linux, 0 tren Windows)")
     return parser.parse_args()
 
 
@@ -113,11 +125,12 @@ class VSLDataset(Dataset):
     _NOISE_STD    = 0.02    # Do lech chuan nhieu Gaussian
     _NOISE_PROB   = 0.5     # 50% xac suat them nhieu
 
-    def __init__(self, samples: List[Tuple[str, int]], is_train: bool = True) -> None:
+    def __init__(self, samples: List[Tuple[str, int]], is_train: bool = True, flip_kaggle: bool = True) -> None:
         if not samples:
             raise ValueError("Danh sach samples khong duoc rong!")
-        self.samples  = samples
-        self.is_train = is_train
+        self.samples     = samples
+        self.is_train    = is_train
+        self.flip_kaggle = flip_kaggle
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -133,31 +146,407 @@ class VSLDataset(Dataset):
         # Normalize [0, 255] → [0.0, 1.0], chuyen sang (3, 128, 128)
         tensor = torch.from_numpy(arr.astype(np.float32) / 255.0).permute(2, 0, 1)
 
+        # Dong bo toa do: Lat ngang cac mau tu Kaggle/anh ngoai de trung khop 100% huong tay voi Webcam
+        if self.flip_kaggle and not self._is_webcam_sample(filepath) and not self._is_already_flipped(filepath):
+            tensor = torch.flip(tensor, dims=[-1])
+
         if self.is_train:
-            tensor = self._augment(tensor)
+            tensor = self._augment(tensor, filepath=filepath)
 
         return tensor, label
 
-    def _augment(self, t: torch.Tensor) -> torch.Tensor:
-        """Chuoi bien doi ngau nhien an toan cho Thu Ngu."""
-        angle = random.uniform(-self._ROT_DEG, self._ROT_DEG)
+    def _augment(self, t: torch.Tensor, filepath: str = "") -> torch.Tensor:
+        """
+        Chuỗi biến đổi Source-Aware Augmentation an toàn cho Thủ Ngữ:
+          - Mọi mẫu (Kaggle & Webcam): Đều áp dụng biến đổi hình học (Affine: Xoay ±8°, Dịch ±4%, Scale 0.90-1.10)
+            để mô phỏng góc tay và cự ly khác nhau.
+          - Mẫu Kaggle / Ảnh ngoài: Áp dụng Physics-Based Degradation (_WEBCAM_AUG) để giả lập môi trường webcam.
+          - Mẫu Webcam thật: BỎ QUA _WEBCAM_AUG vì ảnh đã có sẵn nhiễu và tật xấu phần cứng thật,
+            tránh hiện tượng suy thoái kép (Double Degradation) làm hỏng đặc trưng.
+        """
+        # --- 1. Affine Geometric Transforms (Áp dụng cho CẢ HAI nguồn, VSL-Safe, no flip) ---
+        angle = random.uniform(-8.0, 8.0)
         t = _affine_transform(t,
             cos_a=math.cos(math.radians(angle)),
             sin_a=math.sin(math.radians(angle)),
             tx=0.0, ty=0.0, scale=1.0)
 
-        tx = random.uniform(-self._TRANS_FRAC, self._TRANS_FRAC)
-        ty = random.uniform(-self._TRANS_FRAC, self._TRANS_FRAC)
+        tx = random.uniform(-0.04, 0.04)
+        ty = random.uniform(-0.04, 0.04)
         t  = _affine_transform(t, cos_a=1.0, sin_a=0.0, tx=tx, ty=ty, scale=1.0)
 
-        scale = random.uniform(self._SCALE_LOW, self._SCALE_HIGH)
+        scale = random.uniform(0.90, 1.10)
         t = _affine_transform(t, cos_a=1.0, sin_a=0.0, tx=0.0, ty=0.0, scale=scale)
 
-        if random.random() < self._NOISE_PROB:
-            noise = torch.randn_like(t) * self._NOISE_STD
-            t = torch.clamp(t + noise, 0.0, 1.0)
+        # --- 2. Source-Aware Physics Augmentation ---
+        is_webcam = self._is_webcam_sample(filepath)
+        if not is_webcam:
+            # Ảnh Kaggle/Studio: Giả lập môi trường webcam bằng Physics Degradation
+            t = _WEBCAM_AUG(t)
+        # Nếu là webcam thật: Không áp dụng _WEBCAM_AUG (bảo vệ chất lượng quang học thực tế)
 
         return t
+
+    @staticmethod
+    def _is_webcam_sample(filepath: str) -> bool:
+        """
+        Xác định mẫu có phải từ webcam thực tế hay không.
+        Quy ước: tên file bắt đầu bằng 'webcam' hoặc đường dẫn chứa 'webcam'.
+        """
+        if not filepath:
+            return False
+        p_str = filepath.lower().replace("\\", "/")
+        fname = Path(filepath).name.lower()
+        return "webcam" in fname or "/webcam" in p_str or fname.startswith("cam_")
+
+    @staticmethod
+    def _is_already_flipped(filepath: str) -> bool:
+        """
+        Kiem tra xem mau da duoc lat ngang truoc do chua (tranh hien tuong lat 2 lan).
+        Quy uoc: ten file hoac duong dan chua 'flipped' hoac '_flip'.
+        """
+        if not filepath:
+            return False
+        fname = Path(filepath).name.lower()
+        return "flipped" in fname or "_flip" in fname
+
+
+# =============================================================================
+# PHYSICS-BASED WEBCAM AUGMENTER (Mô phỏng toàn bộ suy giảm quang học thực tế)
+# =============================================================================
+
+class RealisticWebcamAugmenter:
+    """
+    Mô phỏng 18 hiện tượng suy giảm quang học/cảm biến có thật của webcam laptop giá rẻ
+    thành 3 cấp độ tăng cường theo xác suất, đưa vào Online Augmentation.
+
+    CẤP ĐỘ 1 — Luôn áp dụng (100%): Nhiễu nhẹ, thay đổi màu nhẹ, scale nhẹ.
+    CẤP ĐỘ 2 — Ngẫu nhiên 50%: Cháy sáng, nhòe chuyển động, nén JPEG, thiếu sáng.
+    CẤP ĐỘ 3 — Ngẫu nhiên 20%: Ngược sáng, bóng cứng, phối cảnh, dịch màu da.
+
+    Lưu ý quan trọng:
+        - Input tensor: (3, H, W) float32 trong [0, 1].
+          Kênh 0 = CLAHE (Texture), Kênh 1 = AutoCanny (Shape), Kênh 2 = Sobel (Shape).
+        - Cấp 1 và 2 tác động cả 3 kênh để mô phỏng tác động toàn bộ DIP pipeline.
+        - Augmentation KHÔNG flip ngang (bảo toàn tính đúng đắn tay trái/phải VSL).
+    """
+
+    def __call__(self, t: torch.Tensor) -> torch.Tensor:
+        """Áp dụng tuần tự 3 cấp độ augmentation."""
+        t = self._level1_always(t)
+        t = self._level2_half(t)
+        t = self._level3_rare(t)
+        return torch.clamp(t, 0.0, 1.0)
+
+    # ------------------------------------------------------------------
+    # CẤP ĐỘ 1: Luôn áp dụng — biến động nền tảng (100% xác suất)
+    # ------------------------------------------------------------------
+    def _level1_always(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 1:  Nhiễu Gaussian nhẹ (Thermal Read Noise) — luôn có trên webcam.
+        Case 3:  Dịch nhiệt độ màu ấm/lạnh nhẹ (Color Temp Jitter ±400K).
+        Case 14: Biến động khoảng cách nhỏ (Scale Jitter) đã xử lý ở _augment().
+        Case 17: Nhiễu sọc ngang cực nhỏ (Banding Noise) — luôn tồn tại ở mức thấp.
+        """
+        # Case 1: Thermal Gaussian Noise nhẹ (luôn có)
+        std = random.uniform(0.005, 0.018)
+        noise = torch.randn_like(t) * std
+        t = t + noise
+
+        # Case 3 & 10: Color Temperature Shift ±400K
+        # BGR channel scaling: warm shift (R↑ G≈ B↓) hoặc cool shift (R↓ G≈ B↑)
+        # Vì kênh đầu ra là CLAHE/Canny/Sobel (xám), ta dịch độ sáng không đều:
+        ch_scales = torch.ones(3)
+        # Mô phỏng camera auto-gain phản ứng không đều giữa các kênh
+        ch_scales[0] *= random.uniform(0.95, 1.05)   # CLAHE channel
+        ch_scales[1] *= random.uniform(0.95, 1.05)   # Canny channel
+        ch_scales[2] *= random.uniform(0.95, 1.05)   # Sobel channel
+        t = t * ch_scales.view(3, 1, 1)
+
+        # Case 17: Banding Noise — sọc ngang ở mức cực nhỏ (luôn có ở webcam USB)
+        if random.random() < 0.3:
+            H = t.shape[1]
+            band_rows = random.randint(1, 3)
+            for _ in range(band_rows):
+                row = random.randint(0, H - 1)
+                t[:, row, :] *= random.uniform(0.88, 1.0)
+
+        return t
+
+    # ------------------------------------------------------------------
+    # CẤP ĐỘ 2: Ngẫu nhiên 50% — suy giảm vừa phải thường gặp
+    # ------------------------------------------------------------------
+    def _level2_half(self, t: torch.Tensor) -> torch.Tensor:
+        if random.random() >= 0.5:
+            return t
+
+        # Chọn ngẫu nhiên 1 trong 6 hiện tượng cấp 2 (KHÔNG kết hợp nhiều cùng lúc
+        # để tránh tạo ra ảnh quá phi thực tế):
+        choice = random.randint(0, 5)
+
+        if choice == 0:
+            # Case 1: Specular Highlight — đốm sáng đèn trần dội vào đầu ngón tay
+            t = self._specular_highlight(t)
+        elif choice == 1:
+            # Case 2 & 2b: Global Underexposure + Gaussian Noise (thiếu sáng + muỗi hạt)
+            t = self._low_light_noise(t)
+        elif choice == 2:
+            # Case 5: Motion Blur — nhòe chuyển động theo 1 hướng ngẫu nhiên
+            t = self._motion_blur(t)
+        elif choice == 3:
+            # Case 7: Defocus Blur — mờ ngoài tiêu cự
+            t = self._defocus_blur(t)
+        elif choice == 4:
+            # Case 8: JPEG Compression Artifact — nhiễu ô vuông nén
+            t = self._jpeg_artifact(t)
+        elif choice == 5:
+            # Case 6: Directional Gradient Lighting — đèn đơn một hướng, tạo bóng
+            t = self._directional_shadow(t)
+
+        return t
+
+    # ------------------------------------------------------------------
+    # CẤP ĐỘ 3: Ngẫu nhiên 20% — tình huống khắc nghiệt bất thường
+    # ------------------------------------------------------------------
+    def _level3_rare(self, t: torch.Tensor) -> torch.Tensor:
+        if random.random() >= 0.20:
+            return t
+
+        choice = random.randint(0, 4)
+
+        if choice == 0:
+            # Case 4: Backlight Silhouette — ngược sáng cửa sổ
+            t = self._backlight(t)
+        elif choice == 1:
+            # Case 9: Fluorescent Flicker — nhấp nháy đèn huỳnh quang
+            t = self._flicker(t)
+        elif choice == 2:
+            # Case 11: Lens Barrel Distortion — méo thấu kính
+            t = self._lens_distortion(t)
+        elif choice == 3:
+            # Case 12: Inter-reflection — hắt sáng từ nền màu
+            t = self._inter_reflection(t)
+        elif choice == 4:
+            # Case 18: Skin Tone Shift — thay đổi màu da (sau tập thể thao, trời lạnh)
+            t = self._skin_tone_shift(t)
+
+        return t
+
+    # ============================================================
+    # Các hàm mô phỏng hiện tượng cụ thể
+    # ============================================================
+
+    def _specular_highlight(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 1: Cháy sáng đèn trần (Specular Highlight).
+        Tạo đốm sáng Gaussian 2D tâm nằm ở 1/3 trên của ảnh (vùng đầu ngón tay).
+        Công thức: G(x,y) = A * exp(-(dx²+dy²) / (2σ²))
+        """
+        _, H, W = t.shape
+        # Tâm đốm sáng nằm ngẫu nhiên ở phần trên 40% của ảnh
+        cx = random.randint(int(W * 0.2), int(W * 0.8))
+        cy = random.randint(0, int(H * 0.4))
+        sigma = random.uniform(H * 0.05, H * 0.18)
+        amplitude = random.uniform(0.25, 0.55)
+
+        y_grid, x_grid = np.mgrid[0:H, 0:W]
+        gaussian = amplitude * np.exp(
+            -((x_grid - cx) ** 2 + (y_grid - cy) ** 2) / (2 * sigma ** 2)
+        )
+        g_tensor = torch.from_numpy(gaussian.astype(np.float32)).unsqueeze(0)  # (1,H,W)
+        t = t + g_tensor.expand_as(t)
+        return t
+
+    def _low_light_noise(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 2: Thiếu sáng toàn cục + Nhiễu Poisson/Gaussian (Low-Light + Sensor Noise).
+        Công thức: I_noisy = I * alpha + N(0, sigma²) với alpha ∈ [0.4, 0.7].
+        Muỗi hạt mạnh hơn ở vùng tối (sigma tăng khi alpha giảm).
+        """
+        alpha = random.uniform(0.40, 0.70)
+        # Sigma tỷ lệ nghịch với độ sáng (thiếu sáng → gain cao → nhiễu nhiều)
+        sigma = (1.0 - alpha) * random.uniform(0.08, 0.18)
+        t = t * alpha
+        noise = torch.randn_like(t) * sigma
+        # Case 2b: Muối tiêu (Salt-and-Pepper) xác suất thấp
+        if random.random() < 0.3:
+            salt_mask = torch.rand_like(t) < 0.005
+            pepper_mask = torch.rand_like(t) < 0.005
+            t[salt_mask] = 1.0
+            t[pepper_mask] = 0.0
+        return t + noise
+
+    def _motion_blur(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 5: Nhòe chuyển động (Motion Blur).
+        Xây dựng kernel đường thẳng k×k theo góc theta ngẫu nhiên.
+        Convolution 2D trên từng kênh: I_blur = I * h(theta, k).
+        """
+        k = random.choice([5, 7, 9])
+        angle_rad = random.uniform(0, math.pi)
+        kernel = np.zeros((k, k), dtype=np.float32)
+        cx_k, cy_k = k // 2, k // 2
+        for i in range(k):
+            offset = i - cx_k
+            x = cx_k + round(offset * math.cos(angle_rad))
+            y = cy_k + round(offset * math.sin(angle_rad))
+            if 0 <= x < k and 0 <= y < k:
+                kernel[y, x] = 1.0
+        s = kernel.sum()
+        if s > 0:
+            kernel /= s
+        kernel_t = torch.from_numpy(kernel).unsqueeze(0).unsqueeze(0)  # (1,1,k,k)
+
+        blurred = torch.zeros_like(t)
+        pad = k // 2
+        for c in range(t.shape[0]):
+            ch = t[c].unsqueeze(0).unsqueeze(0)
+            import torch.nn.functional as F_func
+            blurred[c] = F_func.conv2d(ch, kernel_t, padding=pad).squeeze()
+        return blurred
+
+    def _defocus_blur(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 7: Mờ ngoài tiêu cự (Defocus Blur).
+        Kernel đĩa tròn (Circle of Confusion) bán kính r pixel.
+        h_defocus(x,y) = 1/(π*r²) nếu x²+y² ≤ r², ngược lại = 0.
+        """
+        r = random.randint(1, 3)
+        k = 2 * r + 1
+        y_g, x_g = np.ogrid[-r:r+1, -r:r+1]
+        disk = (x_g**2 + y_g**2 <= r**2).astype(np.float32)
+        disk /= disk.sum()
+        kernel_t = torch.from_numpy(disk).unsqueeze(0).unsqueeze(0)
+        blurred = torch.zeros_like(t)
+        pad = r
+        for c in range(t.shape[0]):
+            ch = t[c].unsqueeze(0).unsqueeze(0)
+            import torch.nn.functional as F_func
+            blurred[c] = F_func.conv2d(ch, kernel_t, padding=pad).squeeze()
+        return blurred
+
+    def _jpeg_artifact(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 8: JPEG Compression Artifact (Block boundary + Ringing).
+        Mô phỏng bằng cách thêm nhiễu dạng ô vuông 8×8 (block artifact pattern).
+        """
+        _, H, W = t.shape
+        block_noise = np.zeros((H, W), dtype=np.float32)
+        block_size = 8
+        for by in range(0, H, block_size):
+            for bx in range(0, W, block_size):
+                val = random.uniform(-0.04, 0.04)
+                block_noise[by:by+block_size, bx:bx+block_size] = val
+        # Gaussian smoothing nhẹ (Ringing artifact)
+        noise_t = torch.from_numpy(block_noise).unsqueeze(0)
+        return t + noise_t.expand_as(t)
+
+    def _directional_shadow(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 6: Bóng đổ một hướng (Directional/Hard Shadow).
+        Tạo gradient sáng tối (Linear Ramp) theo hướng ngẫu nhiên.
+        """
+        _, H, W = t.shape
+        direction = random.choice(['left', 'right', 'top', 'bottom', 'diagonal'])
+        ramp = np.ones((H, W), dtype=np.float32)
+
+        dark_fac = random.uniform(0.45, 0.75)
+        if direction == 'left':
+            ramp = np.linspace(dark_fac, 1.0, W).reshape(1, W) * np.ones((H, 1))
+        elif direction == 'right':
+            ramp = np.linspace(1.0, dark_fac, W).reshape(1, W) * np.ones((H, 1))
+        elif direction == 'top':
+            ramp = np.linspace(dark_fac, 1.0, H).reshape(H, 1) * np.ones((1, W))
+        elif direction == 'bottom':
+            ramp = np.linspace(1.0, dark_fac, H).reshape(H, 1) * np.ones((1, W))
+        else:  # diagonal
+            ramp_h = np.linspace(dark_fac, 1.0, H).reshape(H, 1)
+            ramp_w = np.linspace(dark_fac, 1.0, W).reshape(1, W)
+            ramp = (ramp_h + ramp_w) / 2.0
+
+        ramp_t = torch.from_numpy(ramp.astype(np.float32)).unsqueeze(0)
+        return t * ramp_t.expand_as(t)
+
+    def _backlight(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 4: Ngược sáng (Backlight/Counter-Illumination).
+        Camera overexpose nền → hạ thấp toàn bộ ảnh như bị silhouette.
+        Vẫn giữ lại một chút đặc trưng biên để CNN không bị blind hoàn toàn.
+        """
+        alpha = random.uniform(0.20, 0.45)
+        return t * alpha
+
+    def _flicker(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 9: Nhấp nháy đèn huỳnh quang (50/60Hz Fluorescent Flicker).
+        Mô phỏng frame bị tối đột ngột do không đồng bộ tốc độ màn trập & tần số AC.
+        """
+        dark_factor = random.uniform(0.50, 0.80)
+        return t * dark_factor
+
+    def _lens_distortion(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 11: Méo thấu kính Barrel (Barrel Distortion).
+        Công thức méo hướng tâm: r_d = r_u * (1 + k1*r_u² + k2*r_u⁴)
+        Mô phỏng bằng lưới lấy mẫu biến dạng (Distortion Grid + grid_sample).
+        """
+        _, H, W = t.shape
+        k1 = random.uniform(-0.10, 0.10)
+
+        y_norm, x_norm = np.mgrid[-1:1:complex(H), -1:1:complex(W)]
+        r_sq = x_norm**2 + y_norm**2
+        distort_factor = 1.0 + k1 * r_sq
+        x_dist = (x_norm * distort_factor).astype(np.float32)
+        y_dist = (y_norm * distort_factor).astype(np.float32)
+
+        grid = np.stack([x_dist, y_dist], axis=-1)
+        grid_t = torch.from_numpy(grid).unsqueeze(0)  # (1, H, W, 2)
+
+        import torch.nn.functional as F_func
+        out = F_func.grid_sample(
+            t.unsqueeze(0), grid_t,
+            mode='bilinear', padding_mode='zeros', align_corners=True
+        )
+        return out.squeeze(0)
+
+    def _inter_reflection(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 12: Hắt sáng từ nền màu (Inter-Reflection / Color Bleed).
+        Thêm một vùng gradient màu mờ nhẹ từ một góc của ảnh.
+        """
+        _, H, W = t.shape
+        corner = random.choice(['tl', 'tr', 'bl', 'br'])
+        intensity = random.uniform(0.06, 0.15)
+        # Chọn kênh bị ảnh hưởng (mô phỏng màu của nền: chỉ CLAHE bị ảnh hưởng)
+        channel = 0  # CLAHE texture channel
+        ramp_h = np.linspace(1.0, 0.0, H).astype(np.float32).reshape(H, 1)
+        ramp_w = np.linspace(1.0, 0.0, W).astype(np.float32).reshape(1, W)
+        if corner == 'tl':
+            overlay = ramp_h * ramp_w
+        elif corner == 'tr':
+            overlay = ramp_h * ramp_w[:, ::-1]
+        elif corner == 'bl':
+            overlay = ramp_h[::-1] * ramp_w
+        else:
+            overlay = ramp_h[::-1] * ramp_w[:, ::-1]
+        overlay = np.ascontiguousarray(overlay)
+        overlay_t = torch.from_numpy(overlay) * intensity
+        t[channel] = t[channel] + overlay_t
+        return t
+
+    def _skin_tone_shift(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Case 18: Thay đổi màu da (Skin Tone Shift — sau tập thể dục hoặc trời lạnh).
+        Kênh CLAHE sẽ sáng hơn (da đỏ/tươi) hoặc tối hơn (da xanh tái) một chút.
+        Ảnh hưởng chủ yếu đến kênh CLAHE (Texture), ít ảnh hưởng kênh Canny/Sobel.
+        """
+        shift = random.uniform(-0.12, 0.15)  # Âm = da xanh tái, Dương = da đỏ ấm
+        t[0] = t[0] + shift  # Chỉ kênh CLAHE
+        return t
+
+
+# Singleton instance — tạo một lần, dùng cho toàn bộ quá trình train
+_WEBCAM_AUG = RealisticWebcamAugmenter()
 
 
 def _affine_transform(
@@ -367,6 +756,12 @@ def scan_dataset(data_dir: str) -> Tuple[List[Tuple[str, int]], Dict[int, str]]:
             f"Hay thu thap them it nhat 1 chu cai nua!"
         )
 
+    n_webcam = sum(1 for fp, _ in all_samples if VSLDataset._is_webcam_sample(fp))
+    n_kaggle = len(all_samples) - n_webcam
+    print(f"\n  [PHÂN LOẠI NGUỒN DỮ LIỆU - SOURCE-AWARE AUGMENTATION]:")
+    print(f"  - Kaggle / Ảnh ngoài : {n_kaggle:>4} mẫu -> Áp dụng Affine + Physics Augmentation")
+    print(f"  - Webcam thật       : {n_webcam:>4} mẫu -> Chỉ áp dụng Affine (Tránh suy thoái kép)\n")
+
     return all_samples, id_to_label
 
 
@@ -512,7 +907,7 @@ def compute_confusion_matrix(
     for inputs, labels in loader:
         inputs = inputs.to(device)
         preds  = model(inputs).argmax(dim=1).cpu().numpy()
-        truths = labels.numpy()
+        truths = labels.cpu().numpy()
         for true_lbl, pred_lbl in zip(truths, preds):
             cm[int(true_lbl)][int(pred_lbl)] += 1
 
@@ -543,6 +938,7 @@ def main() -> None:
     print(f"  Device   : {device}")
     print(f"  Epochs   : {args.epochs}  |  Batch: {args.batch_size}  |  LR: {args.lr}")
     print(f"  Patience : {args.patience}  |  Seed: {args.seed}")
+    print(f"  Workers  : {args.num_workers}  |  Flip Kaggle: {args.flip_kaggle} (Dong bo huong tay voi Webcam)")
     print(f"{'='*65}\n")
 
     # --- Tao thu muc luu model ---
@@ -582,9 +978,9 @@ def main() -> None:
         sys.exit(1)
 
     # --- DataLoaders ---
-    train_ds = VSLDataset(train_list, is_train=True)    # Bat Augmentation
-    val_ds   = VSLDataset(val_list,   is_train=False)   # Tat Augmentation
-    test_ds  = VSLDataset(test_list,  is_train=False)
+    train_ds = VSLDataset(train_list, is_train=True,  flip_kaggle=args.flip_kaggle)   # Bat Augmentation
+    val_ds   = VSLDataset(val_list,   is_train=False, flip_kaggle=args.flip_kaggle)   # Tat Augmentation
+    test_ds  = VSLDataset(test_list,  is_train=False, flip_kaggle=args.flip_kaggle)
 
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
@@ -776,7 +1172,35 @@ def main() -> None:
         chart_path = model_dir / "training_curves.png"
         plt.savefig(chart_path, dpi=120, bbox_inches="tight")
         plt.close(fig)
-        print(f"    Bieu do        : {chart_path}")
+        print(f"    Bieu do Loss/Acc   : {chart_path}")
+
+        # Ve bieu do ma tran nham lan (Confusion Matrix)
+        fig_cm, ax_cm = plt.subplots(figsize=(6, 5))
+        im = ax_cm.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+        fig_cm.colorbar(im, ax=ax_cm)
+        ax_cm.set(
+            xticks=np.arange(cm.shape[1]),
+            yticks=np.arange(cm.shape[0]),
+            xticklabels=label_names,
+            yticklabels=label_names,
+            title=f"Confusion Matrix (Test Acc: {test_acc:.1f}%)",
+            ylabel="True Label (Thuc te)",
+            xlabel="Predicted Label (Du doan)",
+        )
+        thresh = cm.max() / 2.0 if cm.max() > 0 else 1.0
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax_cm.text(
+                    j, i, format(cm[i, j], "d"),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black",
+                    fontweight="bold" if i == j else "normal",
+                )
+        plt.tight_layout()
+        cm_path = model_dir / "confusion_matrix.png"
+        plt.savefig(cm_path, dpi=120, bbox_inches="tight")
+        plt.close(fig_cm)
+        print(f"    Ma tran nham lan   : {cm_path}")
 
     except ImportError:
         print("    [INFO] Cai matplotlib de xuat bieu do: pip install matplotlib")

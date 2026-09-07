@@ -27,6 +27,7 @@ Hai segmenter có cùng API, có thể thay thế lẫn nhau:
 import cv2
 import numpy as np
 from collections import deque
+from typing import Tuple, Optional, List, Dict
 
 
 # =============================================================================
@@ -175,9 +176,17 @@ class AdaptiveHandSegmenter:
 
         kernel = np.ones((5, 5), np.uint8)
         mask   = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1)
-        mask   = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        mask   = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-        self._online_histogram_update(hsv_roi, mask)
+        # Lấp đầy lỗ thủng bóng đổ bằng cv2.fillPoly
+        cnts, hier = cv2.findContours(mask.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        if hier is not None and len(cnts) > 0:
+            for i in range(len(cnts)):
+                if hier[0][i][3] != -1:
+                    cv2.fillPoly(mask, [cnts[i]], 255)
+
+        # Tắt cập nhật trực tuyến để tránh trôi dạt màu nền
+        # self._online_histogram_update(hsv_roi, mask)
         return mask
 
     def _online_histogram_update(self, hsv_roi, confirmed_mask, alpha=0.005):
@@ -218,8 +227,8 @@ class LabAdaptiveHandSegmenter:
 
     # Ngưỡng màu da trên Lab 8-bit (empirically validated)
     _SKIN_A_LOW,  _SKIN_A_HIGH = 130, 175
-    _SKIN_B_LOW,  _SKIN_B_HIGH = 130, 188
-    _CHROMA_MIN                = 12.0
+    _SKIN_B_LOW,  _SKIN_B_HIGH = 124, 188
+    _CHROMA_MIN                = 10.0
 
     def __init__(self, calibration_roi=(80, 420, 320, 620), max_calibration_frames=30):
         self.top, self.bottom, self.left, self.right = calibration_roi
@@ -229,6 +238,22 @@ class LabAdaptiveHandSegmenter:
         self.hist              = None
         roi_area = (self.bottom - self.top) * (self.right - self.left)
         self.min_hand_area = roi_area * 0.05
+        # [Trừ nền DIP] Mẫu ảnh nền tĩnh của ROI để loại bỏ đồ vật/tủ gỗ trùng màu
+        self.bg_roi_blur    = None
+        self.is_bg_captured = False
+
+    def capture_background(self, frame):
+        """[DIP Pure] Chụp lại ảnh nền tĩnh thô của khung ROI (khi chưa giơ tay vào)."""
+        roi_raw = frame[self.top:self.bottom, self.left:self.right]
+        # Lưu ảnh nền BGR thô làm mịn nhẹ (không qua White Balance để không bị bàn tay làm đổi màu sau này)
+        self.bg_roi_blur = cv2.GaussianBlur(roi_raw, (5, 5), 0)
+        self.is_bg_captured = True
+        print("-> [DIP Tru nen]: Da chup thanh cong mau nen tinh (Raw BGR) cua ROI!")
+
+    def clear_background(self):
+        """Xóa ảnh nền tham chiếu."""
+        self.bg_roi_blur = None
+        self.is_bg_captured = False
 
     def reset_calibration(self):
         """Khởi động lại quá trình hiệu chuẩn."""
@@ -238,9 +263,11 @@ class LabAdaptiveHandSegmenter:
 
     def _make_skin_gate(self, lab_roi):
         """
-        Tạo mặt nạ da người trong Lab 8-bit bằng 2 lớp lọc:
+        Tạo mặt nạ da người trong Lab 8-bit bằng 4 lớp lọc:
           1. Ngưỡng hình chữ nhật (a, b): bắt đại đa số pixel da người.
           2. Chroma Gate (Euclid từ tâm 128,128): lọc màu vô sắc chính xác.
+          3. [Apple ISP] Highlight Recovery: nới lỏng Chroma cho vùng cháy sáng L > 200.
+          4. [Shadow Recovery]: cứu các pixel bị bóng đổ trong lòng bàn tay (chữ C, O).
         """
         lower    = np.array([0, self._SKIN_A_LOW,  self._SKIN_B_LOW],  dtype=np.uint8)
         upper    = np.array([255, self._SKIN_A_HIGH, self._SKIN_B_HIGH], dtype=np.uint8)
@@ -248,9 +275,24 @@ class LabAdaptiveHandSegmenter:
 
         a_f = lab_roi[:, :, 1].astype(np.float32) - 128.0
         b_f = lab_roi[:, :, 2].astype(np.float32) - 128.0
-        chroma_gate = (np.sqrt(a_f**2 + b_f**2) >= self._CHROMA_MIN).astype(np.uint8) * 255
+        chroma_dist = np.sqrt(a_f**2 + b_f**2)
+        chroma_gate = (chroma_dist >= self._CHROMA_MIN).astype(np.uint8) * 255
 
-        return cv2.bitwise_and(rect_gate, chroma_gate)
+        standard_skin = cv2.bitwise_and(rect_gate, chroma_gate)
+
+        L_channel = lab_roi[:, :, 0]
+        # [Apple ISP] Highlight Recovery: Cứu các pixel bị đèn trần dội cháy sáng (L > 200)
+        hl_gate = ((L_channel > 200) & (chroma_dist >= 5.0) &
+                   (lab_roi[:, :, 1] >= 125) & (lab_roi[:, :, 1] <= 180) &
+                   (lab_roi[:, :, 2] >= 124) & (lab_roi[:, :, 2] <= 190)).astype(np.uint8) * 255
+
+        # [Shadow Recovery]: Cứu các pixel bóng đổ trong lòng bàn tay (chữ C, ngón tay khum)
+        sh_gate = ((L_channel >= 25) & (L_channel <= 135) & (chroma_dist >= 5.0) &
+                   (lab_roi[:, :, 1] >= 125) & (lab_roi[:, :, 1] <= 175) &
+                   (lab_roi[:, :, 2] >= 122) & (lab_roi[:, :, 2] <= 180)).astype(np.uint8) * 255
+
+        recovered = cv2.bitwise_or(standard_skin, hl_gate)
+        return cv2.bitwise_or(recovered, sh_gate)
 
     def calibrate(self, frame):
         """
@@ -308,24 +350,63 @@ class LabAdaptiveHandSegmenter:
         roi_wb  = apply_gray_world_white_balance(roi)
         lab_roi = cv2.cvtColor(roi_wb, cv2.COLOR_BGR2Lab)
 
-        # [I] Backprojection trên (a, b)
+        # 1. Backprojection trên kênh màu da (a, b)
         backproj = cv2.calcBackProject([lab_roi], [1, 2], self.hist, [0, 256, 0, 256], scale=1)
 
-        # Chroma Gate: loại màu vô sắc bằng khoảng cách Euclid từ tâm (128, 128)
-        a_f = lab_roi[:, :, 1].astype(np.float32) - 128.0
-        b_f = lab_roi[:, :, 2].astype(np.float32) - 128.0
-        chroma_gate = (np.sqrt(a_f**2 + b_f**2) >= self._CHROMA_MIN).astype(np.uint8) * 255
-        backproj    = cv2.bitwise_and(backproj, chroma_gate)
+        # 2. Lọc sơ bộ bằng Skin Gate (ngưỡng a*, b* và Chroma) để loại bỏ vật thể lệch màu da
+        skin_gate = self._make_skin_gate(lab_roi)
+        backproj  = cv2.bitwise_and(backproj, skin_gate)
 
         disc = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         cv2.filter2D(backproj, -1, disc, backproj)
-        _, mask = cv2.threshold(backproj, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, skin_mask = cv2.threshold(backproj, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        kernel = np.ones((5, 5), np.uint8)
-        mask   = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1)
-        mask   = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        # 3. [DIP Trừ Nền & Ưu tiên màu da chắc chắn - Skin Confidence Priority]
+        if self.is_bg_captured and self.bg_roi_blur is not None:
+            # 3a. Trừ nền trên ảnh BGR thô gốc (tránh bị Gray-World làm đổi màu nền khi có tay vào)
+            roi_raw_blur = cv2.GaussianBlur(roi, (5, 5), 0)
+            diff_bgr = cv2.absdiff(roi_raw_blur, self.bg_roi_blur)
+            diff_metric = np.max(diff_bgr, axis=2)
+            _, bg_diff_mask = cv2.threshold(diff_metric, 15, 255, cv2.THRESH_BINARY)
+            dilate_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            bg_diff_mask = cv2.dilate(bg_diff_mask, dilate_k, iterations=1)
 
-        self._online_histogram_update(lab_roi, mask)
+            # 3b. [Bảo vệ màu da chắc chắn - Skin Confidence Priority]
+            # Các pixel có điểm xác suất màu da cao trong Lab (backproj >= 25) chắc chắn là da thật!
+            # Tuyệt đối không cho phép trừ nền xóa nhầm vùng này (đặc biệt là lòng bàn tay chữ C).
+            high_conf_skin = (backproj >= 25).astype(np.uint8) * 255
+
+            # Logic mềm: Giữ lại nếu (Là vật thể mới) HOẶC (Có xác suất da cực cao)
+            valid_foreground = cv2.bitwise_or(bg_diff_mask, high_conf_skin)
+            mask = cv2.bitwise_and(skin_mask, valid_foreground)
+        else:
+            mask = skin_mask
+
+        # 4. [Khắc phục 2]: Giảm close_k xuống 5x5, 1 iteration (chống hàn dính mép tủ vào tay)
+        open_k  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask    = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  open_k,  iterations=1)
+        mask    = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_k, iterations=1)
+
+        # 5. [Lấp đầy lỗ thủng bóng đổ bằng cv2.fillPoly]
+        # Tự động phát hiện các lỗ thủng khép kín do bóng đổ trong lòng bàn tay (chữ C, O, A...)
+        # và dùng cv2.fillPoly để lấp đầy đặc ruột trắng tinh.
+        cnts, hier = cv2.findContours(mask.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        if hier is not None and len(cnts) > 0:
+            for i in range(len(cnts)):
+                if hier[0][i][3] != -1:  # Là lỗ thủng nội tại bên trong bàn tay
+                    cv2.fillPoly(mask, [cnts[i]], 255)
+
+        # FloodFill DIP từ góc (0,0) để đảm bảo 100% không còn lỗ thủng bóng đổ li ti nào
+        h_m, w_m = mask.shape[:2]
+        flood_filled = mask.copy()
+        flood_mask = np.zeros((h_m + 2, w_m + 2), np.uint8)
+        cv2.floodFill(flood_filled, flood_mask, (0, 0), 255)
+        holes = cv2.bitwise_not(flood_filled)
+        mask = cv2.bitwise_or(mask, holes)
+
+        # 6. [Khắc phục 1]: TẮT hoàn toàn online_histogram_update để chống Model Drift nuốt màu tủ gỗ
+        # self._online_histogram_update(lab_roi, mask)
         return mask
 
     def _online_histogram_update(self, lab_roi, confirmed_mask, alpha=0.005):
@@ -511,6 +592,26 @@ def normalize_hand_orientation(frame, mask, roi_coords=(80, 420, 320, 620),
     cv2.drawContours(filled_hand, [max_contour], -1, 255, thickness=cv2.FILLED)
     clean_mask = filled_hand
 
+    # [Google MediaPipe] Palm Anchor & Wrist Trimming bằng Distance Transform
+    # 1. Tìm tâm lòng bàn tay (điểm nội tiếp xa đường biên nhất)
+    dist_transform = cv2.distanceTransform(clean_mask, cv2.DIST_L2, 5)
+    _, max_dist, _, max_loc = cv2.minMaxLoc(dist_transform)
+    palm_cx, palm_cy = max_loc
+    palm_r = max_dist  # Bán kính vòng tròn nội tiếp lòng bàn tay
+
+    # 2. Gọt sạch phần cẳng tay thừa ở đáy nếu dính cẳng tay dài
+    # Về mặt giải phẫu, cổ tay nằm cách tâm lòng bàn tay khoảng 1.6 * palm_r về phía đáy
+    h_roi, w_roi = roi.shape[:2]
+    if palm_r > 18 and palm_cy > h_roi * 0.25:
+        wrist_cut_y = int(palm_cy + 1.6 * palm_r)
+        if wrist_cut_y < h_roi and wrist_cut_y > int(h_roi * 0.65):
+            clean_mask[wrist_cut_y:, :] = 0  # Cắt sạch cẳng tay phía dưới cổ tay
+
+    # Cập nhật lại contour sau khi gọt cổ tay
+    trimmed_cnts, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if trimmed_cnts:
+        max_contour = max(trimmed_cnts, key=cv2.contourArea)
+
     # Image Moments
     M = cv2.moments(max_contour)
     if M["m00"] == 0:
@@ -522,9 +623,9 @@ def normalize_hand_orientation(frame, mask, roi_coords=(80, 420, 320, 620),
     mu02 = M["mu02"]
     mu11 = M["mu11"]
 
-    # [F] Elongation Guard: nếu hình gần tròn thì moments không xác định → không xoay
+    # [F] Elongation Guard: nâng ngưỡng lên 0.20 để nắm đấm chữ A không bị xoay xiên
     total_var = mu20 + mu02 + 1e-6
-    if abs(mu20 - mu02) / total_var < 0.15:
+    if abs(mu20 - mu02) / total_var < 0.20:
         rot_angle = 0.0
     else:
         angle_deg = np.degrees(0.5 * np.arctan2(2 * mu11, mu20 - mu02))
@@ -762,3 +863,132 @@ if __name__ == "__main__":
     print()   # Xuống dòng sau chuỗi print traj
     cap.release()
     cv2.destroyAllWindows()
+
+
+# =============================================================================
+# SECTION M: KIẾN TRÚC PIPELINE HỢP NHẤT TINH GỌN (LEAN CONSOLIDATED PIPELINE v4)
+# =============================================================================
+
+def extract_smart_hand_crop(frame: np.ndarray, landmarks, handedness_label: str = 'Right', auto_flip_left: bool = False):
+    """
+    [Giai đoạn 1] Cắt crop bàn tay thông minh từ 21 Landmarks:
+    - Cắt Landmark 0 (khớp cổ tay): triệt tiêu 100% cẳng tay (Case 4).
+    - Lề ngang 15%, lề trên 15%, lề đáy khớp cổ tay + 5% (tránh cụt ngón tay / ngón cái).
+    - Kiểm tra chạm mép camera (Case 12).
+    - Chuẩn hóa chiều tay trái về tay phải (Case 14 - tùy chọn, mặc định tắt để người dùng chủ động phím [f]).
+    """
+    h_f, w_f = frame.shape[:2]
+    xs = [lm.x * w_f for lm in landmarks]
+    ys = [lm.y * h_f for lm in landmarks]
+
+    wrist_y = landmarks[0].y * h_f
+    bw = max(xs) - min(xs)
+    bh = max(ys) - min(ys)
+
+    x1 = max(0, int(min(xs) - 0.15 * bw))
+    x2 = min(w_f, int(max(xs) + 0.15 * bw))
+    y1 = max(0, int(min(ys) - 0.15 * bh))
+    y2 = min(h_f, int(max(max(ys), wrist_y) + 0.05 * bh))
+
+    touching_border = (x1 <= 5 or y1 <= 5 or x2 >= w_f - 5 or y2 >= h_f - 5)
+    crop = frame[y1:y2, x1:x2].copy()
+
+    is_flipped = False
+    if auto_flip_left and handedness_label == 'Left':
+        crop = cv2.flip(crop, 1)
+        is_flipped = True
+
+    return crop, (x1, y1, x2, y2), touching_border, is_flipped
+
+
+def segment_hand_crop_dip(crop_bgr: np.ndarray) -> np.ndarray:
+    """
+    [DIP Pure] Phân đoạn bàn tay trên vùng ảnh cắt nhỏ (Tight Crop):
+    - Sử dụng không gian màu chrominance kép: CIELab (a*, b*) kết hợp YCrCb (Cr, Cb).
+      (Loại bỏ 100% tường trắng, trần nhà, ánh sáng lóa vì không gian sắc độ bất biến với độ sáng Y/L).
+    - Biến đổi hình thái học DIP: Morphological Closing & Opening khử nhiễu hạt.
+    - Lấy contour lớn nhất và tự động hàn kín lòng bàn tay bằng cv2.fillPoly.
+    """
+    if crop_bgr is None or crop_bgr.size == 0:
+        return np.zeros((10, 10), dtype=np.uint8)
+
+    # 1. CIELab Chrominance (a*, b*)
+    lab = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2Lab)
+    mask_lab = cv2.inRange(lab, (20, 128, 125), (250, 185, 185))
+
+    # 2. YCrCb Chrominance (Cr, Cb)
+    ycrcb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2YCrCb)
+    mask_ycrcb = cv2.inRange(ycrcb, (0, 133, 77), (255, 175, 127))
+
+    # Giao thoa 2 không gian màu để triệt tiêu nền ngoài da
+    skin_raw = cv2.bitwise_and(mask_lab, mask_ycrcb)
+
+    # 3. Phép biến đổi hình thái học DIP
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    clean = cv2.morphologyEx(skin_raw, cv2.MORPH_CLOSE, kernel, iterations=2)
+    clean = cv2.morphologyEx(clean, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # 4. Lấy contour lớn nhất và hàn kín lỗ hổng lòng bàn tay
+    cnts, hier = cv2.findContours(clean, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    mask_out = np.zeros_like(clean)
+    if cnts and hier is not None:
+        max_idx = int(np.argmax([cv2.contourArea(c) for c in cnts]))
+        cv2.drawContours(mask_out, cnts, max_idx, 255, -1)
+        for i in range(len(cnts)):
+            if hier[0][i][3] == max_idx:
+                cv2.fillPoly(mask_out, [cnts[i]], 255)
+    else:
+        mask_out = np.ones((crop_bgr.shape[0], crop_bgr.shape[1]), dtype=np.uint8) * 255
+
+    return mask_out
+
+
+def process_lean_dip_tensor(crop_bgr: np.ndarray, target_size=(128, 128)) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    [Giai đoạn 2] Bộ lọc DIP tinh gọn, chạy trực tiếp trên vùng Crop bàn tay:
+    1. Bilateral Filter: Lọc phẳng nhiễu hạt cảm biến ISO (Case 1) và Block JPEG (Case 18) nhưng GIỮ SẮC BIÊN.
+    2. DIP Skin Segmentation: CIELab (a*, b*) + YCrCb (Cr, Cb) + FillPoly lấp bóng đổ, xóa 100% phông nền tường trắng.
+    3. Chuẩn hóa hình học Image Moments: Xoay trục chính về 0° thẳng đứng, gọt cổ tay, căn giữa và padding vào canvas (target_size) với phông nền đen tuyệt đối (0).
+    4. Trích xuất Tensor 3 kênh DIP:
+       - Kênh 0: Blur(3x3) + CLAHE (hiện rõ ngón cái đè lòng bàn tay - Case 16).
+       - Kênh 1: AutoCanny (bắt viền ngón tay sắc nét, miễn nhiễm son móng tay - Case 13).
+       - Kênh 2: Sobel Gradient Magnitude (bắt cấu trúc khi ngược sáng - Case 10).
+    """
+    if crop_bgr is None or crop_bgr.size == 0 or crop_bgr.shape[0] < 20 or crop_bgr.shape[1] < 20:
+        empty = np.zeros((target_size[1], target_size[0], 3), dtype=np.uint8)
+        return empty, empty, 0.0
+
+    # 1. Bilateral Filter khử nhiễu ISO giữ biên
+    filtered = cv2.bilateralFilter(crop_bgr, d=5, sigmaColor=45, sigmaSpace=45)
+
+    # 2. Phân đoạn màu da DIP tách phông nền tường trắng
+    crop_mask = segment_hand_crop_dip(filtered)
+
+    # 3. Chuẩn hóa hình học bằng Image Moments (xoay trục chính về 0°, xóa nền thành đen tuyền)
+    ch, cw = filtered.shape[:2]
+    norm_hand, _, _ = normalize_hand_orientation(
+        filtered, crop_mask,
+        roi_coords=(0, ch, 0, cw),
+        target_size=target_size,
+        min_hand_area=max(200, int(ch * cw * 0.05))
+    )
+
+    if norm_hand is None:
+        # Fallback an toàn: cắt mặt nạ trực tiếp và căn giữa vào canvas đen
+        scale = min((target_size[1] - 16) / cw, (target_size[0] - 16) / ch)
+        nw, nh = max(1, int(cw * scale)), max(1, int(ch * scale))
+        masked_crop = cv2.bitwise_and(filtered, filtered, mask=crop_mask)
+        resized = cv2.resize(masked_crop, (nw, nh), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((target_size[1], target_size[0], 3), dtype=np.uint8)
+        sy = (target_size[1] - nh) // 2
+        sx = (target_size[0] - nw) // 2
+        canvas[sy:sy + nh, sx:sx + nw] = resized
+        rot_angle_deg = 0.0
+    else:
+        canvas = norm_hand
+        rot_angle_deg = 0.0
+
+    # 4. Trích xuất Tensor 3 kênh DIP chuẩn hóa
+    tensor_np = extract_multi_channel_features(canvas)
+    return tensor_np, canvas, rot_angle_deg
+

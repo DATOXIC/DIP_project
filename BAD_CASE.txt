@@ -1,0 +1,95 @@
+1. Nhiễu hạt cảm biến (Sensor Noise / High ISO Grain):
+· Hiện tượng: Webcam có kích thước cảm biến rất nhỏ (thường chỉ 1/4 inch). Trong phòng học/phòng ngủ thiếu
+sáng, webcam tự động đẩy độ nhạy sáng (Gain/ISO) lên cao -> ảnh bị sôi hạt lấm chấm (nhiễu muối tiêu / nhiễu
+Gauss), lam cac thuật toán phát hiện cạnh (Sobel, Canny) bắt nham hat nhieu thành vien ngón tay.
+2. Dao động cân bằng trắng & Ám sắc (AWB Drift):
+· Hiện tượng: Cơ chế Auto White Balance của webcam lien tục do tìm mau trắng trong khung hình. Khi bạn cử
+động áo hoặc đổi góc, màu da tay lúc thì bị ám vàng (đèn sợi đốt), lúc bị ám xanh (màn hình hắt vào), khiến các
+ngưỡng màu tĩnh bị trượt hoàn toàn.
+3. Cháy sáng phản chiếu (Specular Highlights) & Đổ bóng gắt (Self-Shadowing):
+· Cháy sáng: Mồ hôi tay, dầu trên da hoặc ánh đèn trần chiếu trực tiếp tạo ra các đốm trắng lóa (pixel đạt giá trị
+cực đại 255). Tại đây thông tin màu sắc bị mất hoàn toàn (a*, b* sụp đổ về tâm).
+· Đổ bóng: Khi co ngón tay (như chữ A, E, M, N, C), các ngón tay tự đổ bóng đen lên lòng bàn tay -> vùng da đó
+bị toi sam, thuật toán phân đoạn tưởng là nền và cắt bỏ.
+4. Sự xâm lấn của cẳng tay (Forearm Intrusion):
+· Hiện tượng: Dù BlazePalm bắt rất sát, cẳng tay vẫn kéo dài từ cạnh dưới của ô crop. Người mặc áo ngắn tay sẽ
+có đoạn cẳng tay dai, người mặc ao dai tay thì cẳng tay ngắn -> Lam lech tam trọng lượng (cx, cy) và lam sai
+lệch tỷ lệ khung hình (Aspect Ratio).
+5. Vệt mờ do chuyển động (Motion Blur):
+· Hiện tượng: Màn trập webcam mở khá lâu (1/30s). Khi chuyển đổi giữa các cử chỉ (ví dụ từ chữ A sang chữ V),
+viền ngón tay bị nhòe mờ, mất độ sắc nét.
+6. Bất biến kích thước và góc nghiêng (Scale & Orientation Drift):
+· Hiện tượng: Tay đưa lại gần webcam thì ô crop to (300 x 300), đưa ra xa thì ô crop nhỏ (100 x 100). Tay
+nghiêng nhẹ 20° sẽ khiến CNN bối rối nếu không được xoay chuẩn hóa về 0°.
+7. Meo thau kính & Toi 4 goc (Lens Barrel Distortion & Vignetting Fall-off)
+· Hiện tượng: Webcam laptop dùng thấu kính nhựa góc rộng rẻ tiền.
+· Khi tay bạn ở giữa màn hình thì ngón tay thẳng, nhưng khi đưa tay ra sát mép hoặc 4 góc màn hình, hình ảnh bị
+uốn cong hình cái thùng (Barrel Distortion), ngón tay thẳng bị bẻ cong như chữ C.
+· Hiện tượng tối góc (Vignetting): 4 góc của webcam thường bị tối hơn trung tâm từ 20% - 30%, làm màu da ở
+mép bị tụt sáng nghiêm trọng.
+8. Sọc nhấp nháy tần số lưới điện (50Hz / 60Hz Rolling Shutter Banding)
+· Hiện tượng: Đèn huỳnh quang (neon) hoặc đèn LED tuýp nhấp nháy theo tần số điện lưới dân dụng (50Hz ở Việt
+Nam). Cảm biến CMOS man trập lăn (Rolling Shutter) của webcam rẻ tiền không tự đồng bộ được tần số, tạo ra các dải
+sọc sáng tối chuyển động trôi chậm theo chiều dọc màn hình.
+. Khi sọc toi nay quét qua bàn tay, thuật toán Canny/Sobel sẽ sinh ra các đường vien ngang gia cat đut ngon tay.
+9. Lệch tiêu cự quang học (Fixed-Focus Defocus Blur)
+· Hiện tượng: Hầu hết webcam laptop đều là tiêu cự cố định (Fixed Focus), được khóa nét ở cự ly khuôn mặt (~
+50 - 70 cm).
+· Nếu người dùng đưa tay quá gần webcam (< 25 cm) để làm rõ cử chỉ, bàn tay bị mất net quang học (nhòe mờ
+hoan toan), vien Canny bị tan biến.
+· Nếu ngồi quá xa (> 1.2 m), bàn tay bị thu nhỏ chỉ còn 40 x 40 pixel, khi phóng to lên 128 x 128 sẽ bị vỡ hạt
+bậc thang (Pixelation).
+10. Hiện tượng ngược sáng gắt (Backlight / Silhouetting)
+· Hiện tượng: Người dùng ngồi quay lưng về phía cửa sổ ban ngày hoặc bóng đèn trần chiếu từ sau gáy.
+· Khuôn mặt va ban tay bị biến thanh mot khoi den bong mo (Silhouette). Kenh mau da sup đo hoan toan ve mau xám
+đen, mất sạch van da và chỉ còn đúng đường bao viền bên ngoài.
+11. Giao thoa phụ kiện & Kim loại (Rings, Watches, Metallic Reflections)
+· Hiện tượng: Người dùng đeo nhẫn vàng/bạc, đồng hồ kim loại hoặc vòng tay phong thủy.
+· Mặt kính đồng hồ hoặc kim loại nhan phan xa anh sang tao ra cac điem trắng choi loa cực đai, hoặc vong tay mau đen
+cắt đứt ngón tay làm đứt mạch liên tục của bàn tay.
+12. Cụt ngon tay do mép camera (Frame Border Truncation)
+· Hiện tượng: Khi ra dấu, người dùng vô tình giơ tay quá cao hoặc quá lệch mép khiến ngón trỏ hoặc ngón cái bị "cắt
+đứt" ngang mép trên của camera (y = 0).
+· Bàn tay bị cụt một phần làm tỷ lệ Aspect Ratio và trọng tâm hình học (x, ỹ) bị biến dạng, khiến CNN đoán sai chữ
+hoàn toàn.
+13. Son mong tay & Trang trí đầu ngón (Nail Polish & Fingertip Artifacts)
+· Hiện tượng: Người dùng nữ (hoặc nam) sơn móng tay màu đen, đỏ sẫm, xanh lục hoặc đính đá lấp lánh.
+· Hậu quả: Các thuật toán lọc màu da (Skin Color Segmentation) sẽ loại bỏ móng tay vì không mang sắc tố da người.
+Kết quả là đầu các ngon tay bị "cụt" một mau hoặc bị đuc lỗ ngay đầu ngón.
+· Anh hưởng: Làm mất điểm đặc trưng đỉnh cao nhất của ngón tay, khiến mô hình nham lẫn nghiem trọng giữa ngón
+tay đang xòe hay đang co (ví dụ chữ U, chữ V bị ngắn lại trông như nắm đấm).
+14. Nghịch lý Ban tay Thuận Trai/Phải & Lật guong (Hand Chirality & Mirror Inversion)
+· Hiện tượng:
+. Bạn train mô hình bằng tay phải, nhưng người dung lại là người thuận tay trái.
+· Hoặc người dùng bật/tắt chế độ lật gương webcam (cv2.flip(frame, 1) ).
+· Hậu quả: Bàn tay bị đối xứng gương qua trục đứng (x -> -x). Với các chữ cái bất đối xứng như chữ C, chữ L:
+· Chữ L tay phải giơ lên là góc vuông hướng sang phải. Tay trái giơ lên sẽ thành chữ L lộn ngược (hướng sang
+trái).
+. Mô hình CNN nếu không được học dữ liệu cả 2 tay sẽ đoán trượt hoàn toàn.
+15. Dính liền vung da Mặt khi gio tay ngang cam (Hand-Face Skin Blob Merging)
+· Hiện tưong: Khi người khiếm thính ra dau, rat nhieu cử chỉ thu ngu yeu cau đat tay ngang cam, canh ma hoặc trước
+ngực.
+· Hậu quả: Vì da tay và da mặt có cùng ma mau sinh học, vung nhị phân cua ban tay se han dinh lien vao khuon mặt
+hoặc vùng cổ, tạo thành mot khoi di dạng khong lo (Giant Connected Component). Bounding Box cua detector co thể
+bị kéo dài ngoằng từ ngực lên tận trán.
+16. Chim mau do Tu che khuat trong khong gian 2D (Thumb-Palm Depth Blending)
+· Hiện tượng: Camera 2D đơn sắc (Monocular) bị mất thông tin chiều sâu (Z). Khi ngón cái gập đè lên lòng bàn tay
+(như chữ B, chữ A, chữ V), màu của ngón cái và màu của lòng bàn tay hoàn toàn giống hệt nhau.
+· Hậu quả: Nếu thuật toán nhị phân chỉ dựa vao mau sắc, ngon cai se "tan biến" vào lòng ban tay (trở thành một khối
+phẳng lỳ). CNN sẽ không biết ngón cái đang gập vào trong hay đã bị giấu ra sau, làm nhầm lẫn giữa chữ A và chữ S.
+17. Hiện tượng "Thở" lấy net tự động (Autofocus Hunting / Lens Breathing)
+· Hiện tưong: Với các dòng webcam cao cấp hơn một chút có Auto-Focus (như Logitech C920, webcam laptop đời mới),
+khi bạn đưa ban tay tien/lui, motor thau kính lien tuc thut tho đe tìm điem nét (AF Hunting).
+. Hậu quả: Trong 0.5 - 1 giây đó, toàn bộ hình ảnh bị nhấp nháy co bóp kích thước và mo nhòe theo chu kỳ, làm
+nhảy Bounding Box va gay nhiễu loạn bộ lọc trích xuất cạnh.
+18. Nhiễu nen khoi tin hieu Video USB (MJPEG / H.264 Macroblocking)
+· Hiện tưong: Webcam truyền dữ liệu qua cổng USB thường nen dưới định dạng MJPEG hoặc YUY2. Khi băng thông
+USB bị nghen hoặc máy chạy nặng, encoder nen mạnh tay làm xuất hiện cac khoi răng cưa hình vuông 8 x 8 pixel
+dọc theo đường biên ngón tay (Block Artifacts).
+· Hậu quả: Bộ lọc Sobel và Canny bắt nhầm các góc vuông 8 x 8 của thuật toán nén JPEG thành chi tiết canh giả.
+19. Độ trễ thích ứng sáng tức thời (Auto-Exposure Adaptation Lag / Pumping)
+· Hiện tưong: Bạn vừa thò tay từ ngoài vào khung hình, hoặc vừa bật một bóng đèn phòng: Cảm biến webcam cần từ
+0.5 đến 1.5 giây để tính toán lại giá trị phơi sáng.
+· Hậu quả: Trong 1 giây đầu tiên, bàn tay bị cháy trắng bệch 100% (Overexposed) rồi sau đó mới từ từ hạ sáng về
+mức bình thường. Nếu hệ thống nhận diện liên tục mà không có bộ lọc trạng thái ổn định, nó sẽ trả ra kết quả rác
+trong 1 giây quá độ này.

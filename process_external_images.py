@@ -73,18 +73,27 @@ class StaticImageDIPProcessor:
     _SKIN_B_LOW,  _SKIN_B_HIGH = 130, 188
     _CHROMA_MIN                = 12.0
 
-    def _make_skin_gate(self, lab_img: np.ndarray) -> np.ndarray:
+    def _make_skin_gate(self, lab_roi: np.ndarray) -> np.ndarray:
         """Lọc vùng da sơ bộ dựa trên phân phối elip CIELab và khoảng cách Chroma."""
         lower = np.array([0, self._SKIN_A_LOW, self._SKIN_B_LOW], dtype=np.uint8)
         upper = np.array([255, self._SKIN_A_HIGH, self._SKIN_B_HIGH], dtype=np.uint8)
-        rect_gate = cv2.inRange(lab_img, lower, upper)
+        rect_gate = cv2.inRange(lab_roi, lower, upper)
 
         # Chroma Gate loại trừ màu xám, trắng, đen
-        a_f = lab_img[:, :, 1].astype(np.float32) - 128.0
-        b_f = lab_img[:, :, 2].astype(np.float32) - 128.0
-        chroma_gate = (np.sqrt(a_f**2 + b_f**2) >= self._CHROMA_MIN).astype(np.uint8) * 255
+        a_f = lab_roi[:, :, 1].astype(np.float32) - 128.0
+        b_f = lab_roi[:, :, 2].astype(np.float32) - 128.0
+        chroma_dist = np.sqrt(a_f**2 + b_f**2)
+        chroma_gate = (chroma_dist >= self._CHROMA_MIN).astype(np.uint8) * 255
 
-        return cv2.bitwise_and(rect_gate, chroma_gate)
+        standard_skin = cv2.bitwise_and(rect_gate, chroma_gate)
+
+        # [Apple ISP] Highlight Recovery: nới lỏng cho pixel cháy sáng L > 200
+        L_channel = lab_roi[:, :, 0]
+        hl_gate = ((L_channel > 200) & (chroma_dist >= 5.0) &
+                   (lab_roi[:, :, 1] >= 125) & (lab_roi[:, :, 1] <= 180) &
+                   (lab_roi[:, :, 2] >= 125) & (lab_roi[:, :, 2] <= 190)).astype(np.uint8) * 255
+
+        return cv2.bitwise_or(standard_skin, hl_gate)
 
     def segment_static_image(self, bgr_img: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -92,7 +101,7 @@ class StaticImageDIPProcessor:
           1. Gray-World White Balance
           2. Tìm vùng da ứng viên lớn nhất làm mẫu hiệu chuẩn (Self-Calibration)
           3. Tính 2D Histogram (a, b) 64x64 bins
-          4. Backprojection + Chroma Gate + Otsu + Morphology
+          4. Backprojection + [Apple ISP] Chroma Gate + Otsu + [Tesla] Morphology
         """
         h, w = bgr_img.shape[:2]
         if h < 50 or w < 50:
@@ -125,20 +134,26 @@ class StaticImageDIPProcessor:
         # 4. Chiếu ngược xác suất Backprojection
         backproj = cv2.calcBackProject([lab_img], [1, 2], hist, [0, 256, 0, 256], scale=1)
 
-        # Kết hợp Chroma Gate
+        # [Apple ISP] Kết hợp Adaptive Chroma Gate (có cứu cháy sáng)
         a_f = lab_img[:, :, 1].astype(np.float32) - 128.0
         b_f = lab_img[:, :, 2].astype(np.float32) - 128.0
-        chroma_gate = (np.sqrt(a_f**2 + b_f**2) >= self._CHROMA_MIN).astype(np.uint8) * 255
-        backproj = cv2.bitwise_and(backproj, chroma_gate)
+        chroma_dist = np.sqrt(a_f**2 + b_f**2)
+        chroma_gate = (chroma_dist >= self._CHROMA_MIN).astype(np.uint8) * 255
 
-        # 5. Phân ngưỡng Otsu + Hình thái học Morphology
+        L_channel = lab_img[:, :, 0]
+        hl_mask = ((L_channel > 200) & (chroma_dist >= 5.0)).astype(np.uint8) * 255
+        adaptive_chroma = cv2.bitwise_or(chroma_gate, hl_mask)
+        backproj = cv2.bitwise_and(backproj, adaptive_chroma)
+
+        # 5. Phân ngưỡng Otsu + [Tesla Vision] Hình thái học Morphology Bridge (11x11)
         disc = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         cv2.filter2D(backproj, -1, disc, backproj)
         _, mask = cv2.threshold(backproj, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        open_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_k, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_k, iterations=2)
 
         return mask
 
@@ -170,9 +185,11 @@ class StaticImageDIPProcessor:
         return tensor
 
 
-def run_batch_processing(input_dir: str, output_dir: str, preview: bool = False):
+def run_batch_processing(input_dir: str, output_dir: str, preview: bool = False, flip_horizontal: bool = False):
     print("=" * 72)
     print("XỬ LÝ ẢNH NGOÀI HÀNG LOẠT BẰNG PIPELINE DIP v3 (CIELab + MOMENTS)")
+    if flip_horizontal:
+        print("  [CỜ ĐỒNG BỘ]: BẬT LẬT NGANG (Horizontal Flip) để khớp với Webcam selfie")
     print("=" * 72)
 
     in_path = Path(input_dir)
@@ -215,6 +232,10 @@ def run_batch_processing(input_dir: str, output_dir: str, preview: bool = False)
                 total_failed += 1
                 continue
 
+            # Lật ngang nếu được chỉ định
+            if flip_horizontal:
+                img = cv2.flip(img, 1)
+
             # Đưa qua Pipeline DIP v3
             tensor = processor.process_image(img, target_size=(128, 128))
 
@@ -223,8 +244,9 @@ def run_batch_processing(input_dir: str, output_dir: str, preview: bool = False)
                 total_failed += 1
                 continue
 
-            # Lưu vào dataset dưới dạng file .npy
-            builder.save_sample(tensor, class_name)
+            # Lưu vào dataset dưới dạng file .npy (tiền tố kaggle_ hoặc kaggle_flipped_)
+            prefix = "kaggle_flipped" if flip_horizontal else "kaggle"
+            builder.save_sample(tensor, class_name, prefix=prefix)
             total_success += 1
 
             # Xem trước nếu bật cờ --preview
@@ -272,9 +294,11 @@ def main():
                         help="Thu muc dataset chung voi webcam")
     parser.add_argument("--preview", action="store_true",
                         help="Bat cua so OpenCV xem truoc ket qua DIP tung anh")
+    parser.add_argument("--flip_horizontal", action="store_true", default=False,
+                        help="Lat ngang anh (Horizontal Flip) truoc khi trich xuat DIP de dong bo voi webcam selfie")
 
     args = parser.parse_args()
-    run_batch_processing(args.input_dir, args.output_dir, args.preview)
+    run_batch_processing(args.input_dir, args.output_dir, args.preview, args.flip_horizontal)
 
 
 if __name__ == "__main__":
