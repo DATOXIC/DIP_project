@@ -35,14 +35,38 @@
 
 ---
 
-## PHẦN 2: LỘ TRÌNH 4 CẢI TIẾN TĂNG ĐỘ CHÍNH XÁC (/grill-me ROADMAP)
+## PHẦN 2: THỐNG NHẤT THIẾT KẾ 3 CẢI TIẾN TRỌNG TÂM (/grill-me CONSENSUS)
 
-### Đánh giá tác động hệ thống:
-- **Tính khả thi:** Cả 4 cải tiến nằm ở các khâu độc lập trên luồng dữ liệu, **không triệt tiêu lẫn nhau** mà hỗ trợ tương hỗ.
-- **Tác động hiệu năng:** Hoàn toàn dựa trên toán học ma trận và logic O(1), **tổng thời gian thêm vào ≈ 0.01 ms**, duy trì FPS >= 30 - 45 FPS trên CPU.
+### Nguyên tắc thiết kế cốt lõi:
+- **Tương thích ngược 100%:** Chỉ chỉnh sửa trong `predict_sentence_webcam.py` (và các lớp bổ trợ), TUYỆT ĐỐI KHÔNG sửa phá vỡ các file lõi đã khóa.
+- **Chi phí tính toán gần bằng 0:** Không gọi mô hình nặng, giữ nguyên FPS >= 30 trên CPU.
+- **Tập trung dứt điểm 3 cải tiến Giai đoạn 2 (đã bỏ qua chỉnh sửa Soft Gate GĐ1 để giữ ổn định):**
 
-### 4 Trụ cột Cải tiến:
-1. **Cải tiến 1 - Soft Confusion Matrix cho Dáng tay trong DTW:** Thay vì phạt cứng 0.6 cho mọi cặp chữ cái khác nhau, áp dụng ma trận phạt mềm dựa trên độ tương đồng hình thái học (ví dụ: nhầm 'A' với 'C' phạt nhẹ 0.2, nhầm 'A' với 'B' phạt nặng 0.8).
-2. **Cải tiến 2 - Bổ sung Chiều sâu ảo Z-Depth vào Vector Quỹ đạo:** Tận dụng độ co giãn tức thời của palm_len hoặc tọa độ Z của MediaPipe thành vector 5 chiều [x, y, z, dx, dy], giúp phân biệt hoàn hảo cử chỉ đẩy tới trước ("Bạn") và kéo về ngực ("Tôi").
-3. **Cải tiến 3 - Ngưỡng Động Thích nghi & Margin Gap Top-2:** Thiết lập ngưỡng riêng cho từng từ trong từ điển và yêu cầu khoảng cách giữa Top-1 và Top-2 phải đủ lớn trước khi chấp nhận.
-4. **Cải tiến 4 - Tinh chỉnh Cổng phân xử mềm Bayes (Soft Gate Giai đoạn 1):** Tối ưu bảng trọng số γ theo số ngón tay n_fingers để cung cấp nhãn c_shape sạch hơn vào DTW.
+### 1. CẢI TIẾN 1: SOFT CONFUSION MATRIX CHO DÁNG TAY TRONG DTW (Phương án Hybrid 1AB)
+- **Vấn đề cũ:** Khác dáng tay phạt cứng 0.6 bất kể lệch nhẹ hay lệch nặng.
+- **Giải pháp mới:** 
+  - Tính toán khoảng cách phạt dáng tay d_shape dựa trên bảng ma trận tương đồng hình thái DIP:
+    + Cùng lớp: phạt = 0.0
+    + Tương đồng cao (ví dụ: A vs C lệch khum nhẹ): phạt nhẹ = 0.20
+    + Tương đồng trung bình (A vs L, C vs V): phạt vừa = 0.50
+    + Hoàn toàn đối lập (Nắm đấm A vs Xòe tay B): phạt nặng = 0.85
+  - Nhúng độ tin cậy xác suất CNN: Nếu CNN tự tin thấp (< 0.6), giảm bớt tiền phạt để tránh phạt oan khi camera bị mờ.
+
+### 2. CẢI TIẾN 2: CHIỀU SÂU ẢO Z-DEPTH (Phương án 2A)
+- **Vấn đề cũ:** Chỉ có [x, y, dx, dy] trên mặt phẳng 2D, khó phân biệt rõ từ đẩy tới ("Bạn") và kéo về ("Tôi").
+- **Giải pháp mới:** 
+  - Trích xuất độ co giãn giải phẫu theo chiều sâu:
+    $$z_{norm}(t) = \frac{palm\_len(t) - palm\_len(0)}{palm\_len(0)}$$
+  - Khi tay đẩy về phía camera: bàn tay to lên -> z_norm > 0.
+  - Khi tay kéo lùi về ngực: bàn tay nhỏ đi -> z_norm < 0.
+  - Bổ sung vào khoảng cách hình học: d_pos = sqrt((Δx)^2 + (Δy)^2 + (w_z * Δz)^2) với w_z = 0.8.
+
+### 3. CẢI TIẾN 3: NGƯỠNG ĐỘNG THÍCH NGHI & TOP-2 MARGIN GAP (Chiến lược 3A)
+- **Vấn đề cũ:** Dùng chung default_threshold = 1.25 dễ gây đoán bừa khi múa cử chỉ lạ hoặc mấp mé giữa 2 từ tương đồng.
+- **Giải pháp mới:** 
+  - Áp dụng cấu hình ngưỡng riêng (per-word threshold) cho từng từ:
+    + Từ đơn giản ("Tôi", "Bạn"): threshold = 1.10 (chặt chẽ).
+    + Từ phức tạp ("Xin chào", "Tạm biệt"): threshold = 1.35 (thoáng hơn).
+  - Thêm điều kiện an toàn **Margin Ratio**:
+    $$\text{Margin Ratio} = \frac{D_{\text{Top-2}}}{D_{\text{Top-1}}} \ge 1.20$$
+    Nếu tỷ lệ < 1.20 (nghĩa là Top-1 và Top-2 quá sát nhau, hệ thống đang phân vân không chắc chắn) -> Lập tức phân loại thành `UNCERTAIN` để yêu cầu múa lại, triệt tiêu hoàn toàn lỗi đoán bừa!

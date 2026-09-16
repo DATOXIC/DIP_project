@@ -55,6 +55,7 @@ from improved_dip_pipeline import (
     extract_smart_hand_crop,
     process_lean_dip_tensor
 )
+import json
 from dynamic_dtw_engine import (
     KineticState,
     GestureFrame,
@@ -63,8 +64,36 @@ from dynamic_dtw_engine import (
     resample_gesture_sequence,
     HybridDTWEngine,
     HybridDTWConfig,
-    MatchResult
+    MatchResult,
+    MatchCandidate
 )
+
+# =============================================================================
+# 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
+# Người dùng có thể tùy chỉnh mọi thông số tại đây mà không cần tìm trong code!
+# =============================================================================
+CONFIG = {
+    # --- Chọn nguồn Camera: 0 = Webcam máy tính, 1 hoặc 2 = iPhone / Cam ngoài ---
+    "camera_source": 1,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
+                                 # (đã xác nhận qua snapshot: index 0 → iPhone, index 1 → laptop webcam)
+
+    # --- Trọng số thuật toán DTW (Golden Triad 12D) ---
+    "w_wrist_pos": 0.4,          # Trọng số tọa độ vị trí cổ tay (d_pos)
+    "w_finger_angles": 0.8,      # Trọng số góc gập 5 ngón tay (d_angle)
+    "w_wrist_dir": 0.5,          # Trọng số hướng vận tốc tiếp tuyến (d_dir)
+    "w_palm_normal": 0.5,        # Trọng số vector pháp tuyến lòng bàn tay 3D (d_normal - Cosine)
+    "lambda_shape": 0.5,         # Điểm phạt khi dáng tay CNN không khớp
+    
+    # --- Ngưỡng quyết định nhận diện ---
+    "default_threshold": 1.25,   # Ngưỡng chấp nhận từ chuẩn (<= threshold là khớp)
+    "uncertainty_ratio": 1.40,   # Vùng nghi vấn: từ threshold đến 1.4 * threshold
+    "margin_threshold": 0.12,    # Độ chênh lệch an toàn giữa Top 1 và Top 2 (12%)
+    
+    # --- Phân đoạn động học (Kinetic Pause Segmenter) ---
+    "v_start_ratio": 0.08,       # Vận tốc bắt đầu cử chỉ (8% palm_len/frame)
+    "v_stop_ratio": 0.040,       # Vận tốc khựng tay dừng từ (4% palm_len/frame)
+    "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
+}
 
 # =============================================================================
 # 1. BẢNG TỪ ĐIỂN TỪ KHÓA & ÁNH XẠ TIẾNG ANH (ASL VOCABULARY MAPPING)
@@ -234,17 +263,20 @@ class WristCoordinateSmoother:
         raw_y: float,
         timestamp: Optional[float] = None
     ) -> Tuple[float, float]:
-        now = timestamp if timestamp is not None else (
-            (self._prev_ts + 1.0 / 30.0) if self._prev_ts is not None else 0.0
-        )
-        dt = (now - self._prev_ts) if self._prev_ts is not None else (1.0 / 30.0)
-        dt = max(dt, 1e-6)
-
         if self.prev_x is None or self.prev_y is None:
             self.prev_x = float(raw_x)
             self.prev_y = float(raw_y)
-            self._prev_ts = now
+            self._prev_ts = timestamp
             return self.prev_x, self.prev_y
+
+        # Nếu không truyền timestamp (ví dụ trong các test harness giả lập): dùng EMA chuẩn
+        if timestamp is None or self._prev_ts is None:
+            self.prev_x = self.alpha * float(raw_x) + (1.0 - self.alpha) * self.prev_x
+            self.prev_y = self.alpha * float(raw_y) + (1.0 - self.alpha) * self.prev_y
+            return self.prev_x, self.prev_y
+
+        # Khi có nhãn thời gian thực: áp dụng 1€ Filter thích ứng zero-lag
+        dt = max(timestamp - self._prev_ts, 1e-6)
 
         # 1. Ước lượng đạo hàm vận tốc qua EMA
         alpha_d = self._alpha_from_cutoff(self.d_cutoff, dt)
@@ -264,7 +296,7 @@ class WristCoordinateSmoother:
 
         self.prev_x = smooth_x
         self.prev_y = smooth_y
-        self._prev_ts = now
+        self._prev_ts = timestamp
         return smooth_x, smooth_y
 
     def reset(self):
@@ -380,8 +412,7 @@ def compute_finger_count_from_defects(
     valid_defects = []
     min_depth = 0.15 * palm_len
 
-    for i in range(defects.shape[0]):
-        start_idx, end_idx, far_idx, depth_raw = defects[i, 0]
+    for start_idx, end_idx, far_idx, depth_raw in defects.reshape(-1, 4):
         depth = depth_raw / 256.0
         if depth < min_depth:
             continue
@@ -536,14 +567,572 @@ def draw_prominent_hud_banner(
                     cv2.FONT_HERSHEY_SIMPLEX, sub_scale, (220, 220, 220), 1, lineType=cv2.LINE_AA)
 
 
+def draw_feature_metrics_hud(
+    frame: np.ndarray,
+    angles: Optional[np.ndarray],
+    palm_len: float,
+    v_norm: float,
+    wrist_pt: Optional[Tuple[int, int]] = None,
+    vel_vector: Optional[Tuple[float, float]] = None,
+    palm_normal: Optional[np.ndarray] = None,
+    x_offset: int = 15,
+    y_offset: int = 55
+) -> None:
+    """
+    Biểu diễn trực quan bộ đặc trưng 12D [P + A + JM + Normal] thời gian thực (Feature Visualizer HUD):
+    1. 5 thanh đo góc uốn đốt ngón tay (Joint Flexion Gauges: Thumb, Index, Middle, Ring, Pinky).
+    2. Chỉ số kích thước giải phẫu lòng bàn tay (PalmScale px).
+    3. Vector pháp tuyến lòng bàn tay 3D (Palm Normal Vector: nx, ny, nz).
+    4. Mũi tên vector vận tốc chuyển động (Motion Vector Arrow).
+    """
+    if angles is None or len(angles) < 5:
+        return
+
+    h_panel, w_panel = 180, 205
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x_offset, y_offset), (x_offset + w_panel, y_offset + h_panel), (12, 12, 12), -1)
+    cv2.addWeighted(overlay, 0.70, frame, 0.30, 0, frame)
+    cv2.rectangle(frame, (x_offset, y_offset), (x_offset + w_panel, y_offset + h_panel), (0, 255, 200), 1)
+
+    # Tiêu đề bảng
+    cv2.putText(frame, "12D FEATURES [P+A+JM+N]", (x_offset + 10, y_offset + 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 200), 1, lineType=cv2.LINE_AA)
+
+    # 1. 5 thanh đo góc ngón tay (Flexion Angles: 0.0 = Duỗi, 1.0 = Gập)
+    finger_names = ["Thm", "Idx", "Mid", "Rng", "Pnk"]
+    bar_x = x_offset + 48
+    bar_max_w = 95
+
+    for idx, (name, val) in enumerate(zip(finger_names, angles)):
+        y_pos = y_offset + 36 + idx * 19
+        cv2.putText(frame, name, (x_offset + 10, y_pos + 9),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (220, 220, 220), 1, lineType=cv2.LINE_AA)
+
+        cv2.rectangle(frame, (bar_x, y_pos), (bar_x + bar_max_w, y_pos + 11), (50, 50, 50), -1)
+        val_clamped = max(0.0, min(1.0, float(val)))
+        bar_w = int(val_clamped * bar_max_w)
+        
+        r_c = int(255 * min(1.0, val_clamped * 1.5))
+        g_c = int(255 * max(0.0, 1.0 - val_clamped * 1.2))
+        bar_col = (40, g_c, r_c)
+
+        if bar_w > 0:
+            cv2.rectangle(frame, (bar_x, y_pos), (bar_x + bar_w, y_pos + 11), bar_col, -1)
+        cv2.rectangle(frame, (bar_x, y_pos), (bar_x + bar_max_w, y_pos + 11), (100, 100, 100), 1)
+
+        pct_text = f"{int(val_clamped * 100)}%"
+        cv2.putText(frame, pct_text, (bar_x + bar_max_w + 6, y_pos + 9),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.32, (200, 200, 200), 1, lineType=cv2.LINE_AA)
+
+    # 2. Thông số Palm Normal Vector [nx, ny, nz]
+    norm_y = y_offset + 142
+    if palm_normal is not None and len(palm_normal) >= 3:
+        n_str = f"N:[{palm_normal[0]:+.2f},{palm_normal[1]:+.2f},{palm_normal[2]:+.2f}]"
+        cv2.putText(frame, n_str, (x_offset + 10, norm_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 220, 255), 1, lineType=cv2.LINE_AA)
+
+    # 3. Thông số Palm Scale & Vận tốc
+    info_y = y_offset + h_panel - 10
+    cv2.putText(frame, f"Palm: {palm_len:.1f}px | v: {v_norm*100:.1f}%", (x_offset + 10, info_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 255, 255), 1, lineType=cv2.LINE_AA)
+
+    # 4. Vẽ mũi tên vector vận tốc tại tâm cổ tay
+    if wrist_pt is not None and vel_vector is not None:
+        vx, vy = vel_vector
+        speed = math.hypot(vx, vy)
+        if speed > 1.5:  # Chỉ vẽ khi tay thực sự có chuyển động
+            arrow_scale = 1.8
+            end_x = int(wrist_pt[0] + np.clip(vx * arrow_scale, -60, 60))
+            end_y = int(wrist_pt[1] + np.clip(vy * arrow_scale, -60, 60))
+            cv2.arrowedLine(frame, wrist_pt, (end_x, end_y), (0, 255, 255), 2, tipLength=0.25)
+
+
+HAND_CONNECTIONS = [
+    # Ngón cái (Thumb)
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    # Ngón trỏ (Index)
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    # Ngón giữa (Middle)
+    (0, 9), (9, 10), (10, 11), (11, 12),
+    # Ngón áp út (Ring)
+    (0, 13), (13, 14), (14, 15), (15, 16),
+    # Ngón út (Pinky)
+    (0, 17), (17, 18), (18, 19), (19, 20),
+    # Nối ngang gốc bàn tay (Palmar Arch)
+    (5, 9), (9, 13), (13, 17)
+]
+
+
+def draw_hand_skeleton_features(
+    frame: np.ndarray,
+    landmarks: Any,
+    angles: Optional[np.ndarray],
+    w_f: int,
+    h_f: int,
+    handedness: str = "Right"
+) -> None:
+    """
+    Biểu diễn trực quan các đặc trưng trích xuất từ 21 điểm mốc trực tiếp lên bàn tay:
+    1. Bộ khung xương 21 khớp ngón tay kết nối thành các đoạn xương.
+    2. Mỗi ngón tay đổi màu sinh động theo góc uốn thực tế (Xanh lá = Thẳng, Cam/Đỏ = Gập).
+    3. Vẽ chấm tròn tại các khớp và hiển thị nhãn góc uốn tại đầu mỗi ngón tay.
+    """
+    if landmarks is None or len(landmarks) < 21:
+        return
+
+    # Tọa độ pixel (x, y) của 21 điểm landmarks
+    pts = [(int(lm.x * w_f), int(lm.y * h_f)) for lm in landmarks]
+
+    # Màu sắc ngón tay dựa trên góc uốn (angles: Thm, Idx, Mid, Rng, Pnk)
+    # Mặc định xanh lục
+    finger_colors = [(0, 255, 100)] * 5
+    if angles is not None and len(angles) >= 5:
+        for f_idx in range(5):
+            val = max(0.0, min(1.0, float(angles[f_idx])))
+            # Chuyển màu: Duỗi (Xanh lá) -> Co (Vàng) -> Gập (Đỏ/Cam)
+            r_c = int(255 * min(1.0, val * 1.5))
+            g_c = int(255 * max(0.0, 1.0 - val * 1.2))
+            finger_colors[f_idx] = (40, g_c, r_c)
+
+    # Bản đồ ngón tay ứng với các cạnh nối
+    def get_bone_color(p1_idx: int, p2_idx: int) -> Tuple[int, int, int]:
+        if p2_idx in [1, 2, 3, 4] or (p1_idx, p2_idx) == (0, 1):
+            return finger_colors[0]  # Cái
+        elif p2_idx in [5, 6, 7, 8] or (p1_idx, p2_idx) == (0, 5):
+            return finger_colors[1]  # Trỏ
+        elif p2_idx in [9, 10, 11, 12] or (p1_idx, p2_idx) == (0, 9):
+            return finger_colors[2]  # Giữa
+        elif p2_idx in [13, 14, 15, 16] or (p1_idx, p2_idx) == (0, 13):
+            return finger_colors[3]  # Áp út
+        elif p2_idx in [17, 18, 19, 20] or (p1_idx, p2_idx) == (0, 17):
+            return finger_colors[4]  # Út
+        return (100, 200, 255)       # Vòm lòng bàn tay
+
+    # 1. Vẽ các đường nối khung xương bàn tay
+    for p1_i, p2_i in HAND_CONNECTIONS:
+        col = get_bone_color(p1_i, p2_i)
+        cv2.line(frame, pts[p1_i], pts[p2_i], col, 2, lineType=cv2.LINE_AA)
+
+    # 2. Vẽ các điểm mốc (Joint landmarks)
+    for i, pt in enumerate(pts):
+        if i in [4, 8, 12, 16, 20]:  # Đầu ngón tay (Fingertip)
+            cv2.circle(frame, pt, 5, (0, 255, 255), -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, pt, 7, (0, 180, 255), 1, lineType=cv2.LINE_AA)
+        elif i == 0:  # Cổ tay (Wrist Origin)
+            cv2.circle(frame, pt, 6, (255, 0, 128), -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, pt, 8, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+        else:  # Khớp giữa
+            cv2.circle(frame, pt, 3, (255, 255, 255), -1, lineType=cv2.LINE_AA)
+
+    # 3. Hiển thị nhãn góc uốn ngay cạnh đầu 5 ngón tay
+    if angles is not None and len(angles) >= 5:
+        tip_indices = [4, 8, 12, 16, 20]
+        finger_labels = ["Thm", "Idx", "Mid", "Rng", "Pnk"]
+        for f_i, (tip_i, name) in enumerate(zip(tip_indices, finger_labels)):
+            t_pt = pts[tip_i]
+            val_pct = int(angles[f_i] * 100)
+            tag_text = f"{name}:{val_pct}%"
+            # Nhãn góc uốn nhỏ gọn ngay cạnh đầu ngón
+            cv2.putText(frame, tag_text, (t_pt[0] + 8, t_pt[1] - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, finger_colors[f_i], 1, lineType=cv2.LINE_AA)
+
+    # 4. Trực quan hóa Vector Pháp Tuyến 3D của Lòng Bàn Tay (3D Palm Normal Visualization)
+    try:
+        p0 = np.array([landmarks[0].x * w_f, landmarks[0].y * h_f, landmarks[0].z * w_f], dtype=np.float32)
+        p5 = np.array([landmarks[5].x * w_f, landmarks[5].y * h_f, landmarks[5].z * w_f], dtype=np.float32)
+        p9 = np.array([landmarks[9].x * w_f, landmarks[9].y * h_f, landmarks[9].z * w_f], dtype=np.float32)
+        p17 = np.array([landmarks[17].x * w_f, landmarks[17].y * h_f, landmarks[17].z * w_f], dtype=np.float32)
+
+        # Trọng tâm lòng bàn tay (Palm Center) trong không gian 3D
+        palm_center = (p0 + p5 + p9 + p17) / 4.0
+        pc_x, pc_y = int(palm_center[0]), int(palm_center[1])
+        
+        # Tích có hướng tính vector pháp tuyến chuẩn hóa
+        u = p5 - p0
+        v = p17 - p0
+        w = np.cross(u, v)
+        norm_w = np.linalg.norm(w)
+        if norm_w > 1e-5:
+            n_vec = w / norm_w
+            # Nếu truyền handedness left -> đảo chiều
+            if handedness.lower() == "left":
+                n_vec = -n_vec
+
+            # Chiều dài vector 3D tỷ lệ với kích thước bàn tay (~65px)
+            arrow_len = 65.0
+            
+            # Chiếu 3D lên 2D: đầu mũi tên
+            target_x = int(pc_x + n_vec[0] * arrow_len)
+            target_y = int(pc_y + n_vec[1] * arrow_len)
+            
+            # Mã màu theo độ sâu z: 
+            # n_z > 0 (đâm về phía camera): Xanh Cyan/Neon sáng
+            # n_z < 0 (quay vào trong người): Vàng/Cam
+            nz_val = float(n_vec[2])
+            if nz_val >= 0:
+                arrow_col = (255, 255, 0)   # Cyan rực rỡ
+                depth_tag = "FORWARD"
+            else:
+                arrow_col = (0, 165, 255)   # Cam neon
+                depth_tag = "BACKWARD"
+
+            # 1. Vẽ đĩa tròn gốc tại tâm lòng bàn tay (Palm Origin Disc)
+            cv2.circle(frame, (pc_x, pc_y), 7, (0, 0, 0), -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, (pc_x, pc_y), 5, arrow_col, -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, (pc_x, pc_y), 8, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+
+            # 2. Vẽ thân mũi tên dày với bóng viền tương phản cao
+            cv2.line(frame, (pc_x, pc_y), (target_x, target_y), (0, 0, 0), 5, lineType=cv2.LINE_AA)
+            cv2.arrowedLine(frame, (pc_x, pc_y), (target_x, target_y),
+                            arrow_col, 3, tipLength=0.28, lineType=cv2.LINE_AA)
+
+            # 3. Vẽ vòng tròn kích thước thay đổi theo trục Z ở đầu mũi tên (Depth Visualizer)
+            # Nếu chĩa thẳng vào camera (nz lớn) -> vòng tròn to hơn
+            head_radius = int(np.clip(6 + nz_val * 4, 3, 12))
+            cv2.circle(frame, (target_x, target_y), head_radius, arrow_col, 2, lineType=cv2.LINE_AA)
+
+            # 4. Nhãn văn bản hiển thị vector [nx, ny, nz] nổi bật cạnh mũi tên
+            badge_text = f"NORMAL [{n_vec[0]:+.2f}, {n_vec[1]:+.2f}, {n_vec[2]:+.2f}]"
+            bx, by = target_x + 10, target_y - 6
+            # Nền badge mờ chống lẫn hình
+            (bw, bh), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
+            cv2.rectangle(frame, (bx - 2, by - bh - 2), (bx + bw + 4, by + 4), (10, 10, 10), -1)
+            cv2.rectangle(frame, (bx - 2, by - bh - 2), (bx + bw + 4, by + 4), arrow_col, 1)
+            cv2.putText(frame, badge_text, (bx + 1, by - 1),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    except Exception:
+        pass
+
+
 # =============================================================================
-# 5. CHƯƠNG TRÌNH ĐIỀU PHỐI GHÉP CÂU HOÀN CHỈNH (MAIN PIPELINE RUNNER)
+# 5. CÔNG NGHỆ NHẬN DIỆN THỦ NGỮ V5.1: GOLDEN TRIAD [P + A + JM] ENGINE
+# =============================================================================
+
+def compute_joint_flexion_angles(landmarks_3d: np.ndarray) -> np.ndarray:
+    """
+    Tính 5 góc uốn đốt ngón tay (Flexion Scores) chuẩn hóa ∈ [0, 1].
+    - 0.0 = Duỗi thẳng hoàn toàn (Straight - 0% gập).
+    - 1.0 = Gập sát hoàn toàn (Fully flexed - 100% gập).
+    
+    Landmarks sử dụng:
+      Thumb:  LM1 -> LM2 (đỉnh) -> LM3  (CMC -> MCP -> IP)
+      Index:  LM5 -> LM6 (đỉnh) -> LM7  (MCP -> PIP -> DIP)
+      Middle: LM9 -> LM10 (đỉnh) -> LM11 (MCP -> PIP -> DIP)
+      Ring:   LM13 -> LM14 (đỉnh) -> LM15 (MCP -> PIP -> DIP)
+      Pinky:  LM17 -> LM18 (đỉnh) -> LM19 (MCP -> PIP -> DIP)
+    """
+    A_idx = [1, 5, 9, 13, 17]
+    B_idx = [2, 6, 10, 14, 18]
+    C_idx = [3, 7, 11, 15, 19]
+
+    u = landmarks_3d[A_idx] - landmarks_3d[B_idx]
+    v = landmarks_3d[C_idx] - landmarks_3d[B_idx]
+
+    dot_vals = np.sum(u * v, axis=1)
+    norm_u = np.linalg.norm(u, axis=1)
+    norm_v = np.linalg.norm(v, axis=1)
+    norm_vals = np.maximum(norm_u * norm_v, 1e-6)
+
+    cos_angles = np.clip(dot_vals / norm_vals, -1.0, 1.0)
+    raw_angles = np.arccos(cos_angles)
+    flexion = 1.0 - (raw_angles / np.pi)
+    return flexion.astype(np.float32)
+
+
+def compute_palm_normal_vector(landmarks_3d: np.ndarray, handedness: str = "Right") -> np.ndarray:
+    """
+    Tính vector pháp tuyến 3D của mặt phẳng lòng bàn tay (Palm Normal Vector):
+    - Sử dụng 3 mốc cơ sinh học:
+        LM 0: Cổ tay (Wrist)
+        LM 5: Gốc ngón trỏ (Index MCP)
+        LM 17: Gốc ngón út (Pinky MCP)
+    - Vector u = LM5 - LM0 (hướng lên dọc lòng bàn tay ngón trỏ)
+    - Vector v = LM17 - LM0 (hướng sang ngang vòm lòng bàn tay ngón út)
+    - Tích có hướng w = u x v
+    - Chuẩn hóa: ||n|| = 1.0
+    - Nếu Handedness == "Left": n = -n (để vector luôn đâm vuông góc ra khỏi lòng bàn tay)
+    """
+    p0 = landmarks_3d[0]
+    p5 = landmarks_3d[5]
+    p17 = landmarks_3d[17]
+
+    u = p5 - p0
+    v = p17 - p0
+
+    w = np.cross(u, v)
+    norm_w = np.linalg.norm(w)
+    if norm_w < 1e-6:
+        # Nếu bàn tay suy biến phẳng thành 1 đường thẳng
+        n = np.array([0.0, 0.0, -1.0], dtype=np.float32)
+    else:
+        n = (w / norm_w).astype(np.float32)
+
+    # Đồng nhất chiều đâm ra khỏi mặt lòng bàn tay
+    if handedness.lower() == "left":
+        n = -n
+
+    return n
+
+
+def resample_9d_gesture_sequence(
+    raw_frames_9d: np.ndarray,
+    shapes: List[str],
+    k_target: int = 32,
+    min_frames: int = 8
+) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
+    """
+    Nội suy chuỗi đặc trưng đa chiều (4D, 9D hoặc 12D) về K=32 frames cố định (Temporal Normalization).
+    Tương thích hoàn toàn mảng raw_frames_9d có D kênh (D=4, D=9, D=12).
+    """
+    n_orig = len(raw_frames_9d)
+    if n_orig < min_frames:
+        return None, None
+
+    orig_t = np.linspace(0.0, 1.0, n_orig)
+    target_t = np.linspace(0.0, 1.0, k_target)
+
+    # Nội suy tất cả các kênh liên tục
+    res_channels = []
+    for col in range(raw_frames_9d.shape[1]):
+        interp_col = np.interp(target_t, orig_t, raw_frames_9d[:, col]).astype(np.float32)
+        res_channels.append(interp_col)
+    res_traj = np.column_stack(res_channels).astype(np.float32)
+
+    # Nếu có 3 kênh vector pháp tuyến ở cuối (kênh 9, 10, 11), chuẩn hóa lại độ dài vector = 1 sau nội suy
+    if res_traj.shape[1] >= 12:
+        normals = res_traj[:, 9:12]
+        norms = np.linalg.norm(normals, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-6)
+        res_traj[:, 9:12] = (normals / norms).astype(np.float32)
+
+    # Nội suy Nearest-Neighbor cho nhãn dáng tay rời rạc
+    res_shapes = []
+    for t_val in target_t:
+        orig_idx = int(np.clip(np.round(t_val * (n_orig - 1)), 0, n_orig - 1))
+        res_shapes.append(shapes[orig_idx])
+
+    return res_traj, res_shapes
+
+
+def compute_golden_triad_dtw_distance(
+    q_traj: np.ndarray,
+    q_shapes: List[str],
+    t_traj: np.ndarray,
+    t_shapes: List[str],
+    w_p: float = 0.6,
+    w_a: float = 1.0,
+    w_m: float = 0.4,
+    w_n: float = 0.8,
+    lambda_shape: float = 0.5,
+    sakoe_chiba_radius: int = 4
+) -> float:
+    """
+    Tính khoảng cách DTW 12D với dải băng Sakoe-Chiba và chuẩn hóa theo căn bậc hai số chiều:
+      Cost(i, j) = w_p * ||P_q - P_t|| / sqrt(2)
+                 + w_m * ||JM_q - JM_t|| / sqrt(2)
+                 + w_a * ||A_q - A_t|| / sqrt(5)
+                 + w_n * (1.0 - dot(n_q, n_t)) / 2.0  (Cosine distance)
+                 + lambda_shape * I(shape_q != shape_t)
+    """
+    k = len(q_traj)
+    r = sakoe_chiba_radius
+
+    d_mat = np.full((k + 1, k + 1), np.inf, dtype=np.float32)
+    d_mat[0, 0] = 0.0
+
+    has_template_angles = (t_traj.shape[1] >= 9)
+    has_template_normal = (t_traj.shape[1] >= 12 and q_traj.shape[1] >= 12)
+
+    for i in range(1, k + 1):
+        j_start = max(1, i - r)
+        j_end = min(k, i + r)
+
+        for j in range(j_start, j_end + 1):
+            # 1. Quỹ đạo vị trí (x, y) - Chuẩn hóa căn bậc hai của 2
+            d_pos = math.hypot(
+                float(q_traj[i - 1, 0] - t_traj[j - 1, 0]),
+                float(q_traj[i - 1, 1] - t_traj[j - 1, 1])
+            ) / 1.41421356
+
+            # 2. Độ dời tức thời (dx, dy) - Chuẩn hóa căn bậc hai của 2
+            d_dir = math.hypot(
+                float(q_traj[i - 1, 2] - t_traj[j - 1, 2]),
+                float(q_traj[i - 1, 3] - t_traj[j - 1, 3])
+            ) / 1.41421356
+
+            # 3. Góc uốn 5 ngón tay - Chuẩn hóa căn bậc hai của 5
+            if has_template_angles and q_traj.shape[1] >= 9:
+                diff_angles = q_traj[i - 1, 4:9] - t_traj[j - 1, 4:9]
+                d_angle = float(np.linalg.norm(diff_angles)) / 2.23606798
+            else:
+                d_angle = 0.0
+
+            # 4. Vector pháp tuyến lòng bàn tay 3D - Khoảng cách góc Cosine [0, 1]
+            if has_template_normal:
+                nq = q_traj[i - 1, 9:12]
+                nt = t_traj[j - 1, 9:12]
+                cos_sim = float(np.dot(nq, nt))
+                cos_sim = max(-1.0, min(1.0, cos_sim))
+                d_norm = (1.0 - cos_sim) / 2.0
+            else:
+                d_norm = 0.0
+
+            # 5. Hình phạt nhãn dáng tay rời rạc
+            d_shape = lambda_shape if (q_shapes[i - 1] != t_shapes[j - 1]) else 0.0
+
+            step_cost = w_p * d_pos + w_m * d_dir + w_a * d_angle + w_n * d_norm + d_shape
+            d_mat[i, j] = step_cost + min(
+                d_mat[i - 1, j],
+                d_mat[i, j - 1],
+                d_mat[i - 1, j - 1]
+            )
+
+    total_cost = d_mat[k, k]
+    if math.isinf(total_cost):
+        return 999.0
+    return float(total_cost / float(k))
+
+
+class GoldenTriadDTWMatcher:
+    """
+    Bộ não so khớp cử chỉ v5.1 tích hợp Golden Triad [P + A + JM].
+    Tương thích ngược 100% với cả template 4D cũ và template 9D mới.
+    """
+    def __init__(
+        self,
+        templates_path: str = "dynamic_templates.json",
+        w_p: float = 0.6,
+        w_a: float = 1.0,
+        w_m: float = 0.4,
+        w_n: float = 0.8,
+        lambda_shape: float = 0.5,
+        margin_threshold: float = 0.12,
+        uncertainty_ratio: float = 1.40,
+        threshold_override: Optional[float] = None
+    ):
+        self.templates_path = templates_path
+        self.w_p = w_p
+        self.w_a = w_a
+        self.w_m = w_m
+        self.w_n = w_n
+        self.lambda_shape = lambda_shape
+        self.margin_threshold = margin_threshold
+        self.uncertainty_ratio = uncertainty_ratio
+        self.threshold_override = threshold_override
+        self.vocabulary: Dict[str, Any] = {}
+        self.feature_dim: int = 4
+        self.is_legacy_4d: bool = True
+        self.load_templates()
+
+    def load_templates(self) -> None:
+        if not os.path.exists(self.templates_path):
+            return
+        try:
+            with open(self.templates_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.vocabulary = data.get("vocabulary", {})
+            meta = data.get("metadata", {})
+            self.feature_dim = meta.get("feature_dim", 4)
+            self.is_legacy_4d = (self.feature_dim < 9)
+            if self.is_legacy_4d:
+                print(f"[!] LƯU Ý: {self.templates_path} đang chứa mẫu 4D cũ (chưa có 5D góc ngón tay 3D).")
+                print("    -> Tự động kích hoạt Adaptive Margin Guard (8%) để chống nghẽn UNCERTAIN.")
+                print("    -> Để có độ chính xác cao nhất, hãy chạy 'collect_dynamic_templates.py' để ghi mẫu 9D.")
+        except Exception as e:
+            print(f"[!] Lỗi đọc {self.templates_path}: {e}")
+
+    @staticmethod
+    def compute_margin_ratio(d_top1: float, d_top2: float, eps: float = 1e-4) -> float:
+        """Relative Contrast Margin: (D2 - D1) / max(D1, eps)."""
+        return float((d_top2 - d_top1) / max(d_top1, eps))
+
+    def match(self, query_traj_9d: np.ndarray, query_shapes: List[str]) -> MatchResult:
+        if not self.vocabulary:
+            return MatchResult(status="REJECTED", top_word=None, top_display=None, best_distance=999.0, best_confidence=0.0, candidates=[])
+
+        all_candidates: List[MatchCandidate] = []
+
+        for word_key, word_data in self.vocabulary.items():
+            display_name = word_data.get("display_name", word_key)
+            threshold = float(word_data.get("threshold", 1.25))
+            samples = word_data.get("samples", [])
+            if not samples:
+                continue
+
+            sample_distances = []
+            for s in samples:
+                t_traj_raw = s.get("traj_features_9d")
+                if t_traj_raw is None:
+                    t_traj_raw = s.get("traj_features", [])
+
+                t_traj = np.array(t_traj_raw, dtype=np.float32)
+                t_shapes = s.get("hand_shapes", ["Unknown"] * 32)
+
+                if len(t_traj) != 32:
+                    continue
+
+                dist = compute_golden_triad_dtw_distance(
+                    q_traj=query_traj_9d,
+                    q_shapes=query_shapes,
+                    t_traj=t_traj,
+                    t_shapes=t_shapes,
+                    w_p=self.w_p,
+                    w_a=self.w_a,
+                    w_m=self.w_m,
+                    w_n=self.w_n,
+                    lambda_shape=self.lambda_shape
+                )
+                sample_distances.append(dist)
+
+            if sample_distances:
+                min_dist = min(sample_distances)
+                conf = max(0.0, min(1.0, 1.0 - (min_dist / (threshold + 1e-6))))
+                all_candidates.append(MatchCandidate(word_key=word_key, display_name=display_name, distance=min_dist, confidence=conf))
+
+        if not all_candidates:
+            return MatchResult(status="REJECTED", top_word=None, top_display=None, best_distance=999.0, best_confidence=0.0, candidates=[])
+
+        all_candidates.sort(key=lambda c: c.distance)
+        top1 = all_candidates[0]
+        base_thresh = float(self.vocabulary.get(top1.word_key, {}).get("threshold", 1.25))
+        word_thresh = self.threshold_override if self.threshold_override is not None else base_thresh
+
+        # 1. Kiểm tra ngưỡng tuyệt đối (vượt ngưỡng nghi vấn -> REJECTED)
+        if top1.distance > (word_thresh * self.uncertainty_ratio):
+            return MatchResult(status="REJECTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+
+        # 2. Kiểm tra Adaptive Margin Guard nếu có ít nhất 2 ứng viên
+        effective_margin = 0.08 if (self.is_legacy_4d and self.margin_threshold >= 0.12) else self.margin_threshold
+
+        if len(all_candidates) >= 2:
+            top2 = all_candidates[1]
+            margin_ratio = self.compute_margin_ratio(top1.distance, top2.distance)
+            
+            # Cổng Margin thích ứng: Nếu cử chỉ cực sát mẫu (D1 <= 0.70 * Thresh),
+            # chỉ nghi vấn nếu 2 từ gần như hòa điểm tuyệt đối (< 4% chênh lệch)
+            req_margin = 0.04 if top1.distance <= (0.70 * word_thresh) else effective_margin
+            
+            if margin_ratio < req_margin:
+                # Quá sít sao -> Nghi vấn (UNCERTAIN)
+                return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+
+        # 3. Chấp nhận (ACCEPTED) hoặc UNCERTAIN theo ngưỡng từ
+        if top1.distance <= word_thresh:
+            return MatchResult(status="ACCEPTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+        else:
+            return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+
+
+# =============================================================================
+# 6. CHƯƠNG TRÌNH ĐIỀU PHỐI GHÉP CÂU HOÀN CHỈNH (MAIN PIPELINE RUNNER)
 # =============================================================================
 
 def run_sentence_builder(
     camera_index: int = 0,
     headless: bool = False,
-    max_frames: Optional[int] = None
+    max_frames: Optional[int] = None,
+    margin_threshold: float = 0.12,
+    threshold_override: Optional[float] = None
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -591,26 +1180,27 @@ def run_sentence_builder(
 
     # 3. Khởi tạo DTW Engine (Tầng 3) & Kinetic Segmenter (Tầng 2)
     templates_file = "dynamic_templates.json"
-    cfg = HybridDTWConfig(
-        alpha=1.0,
-        beta=0.5,
-        lambda_shape=0.6,
-        k_resample=32,
-        sakoe_chiba_radius=4,
-        default_threshold=1.25,
-        uncertainty_ratio=1.40
+    dtw_engine = GoldenTriadDTWMatcher(
+        templates_path=templates_file,
+        w_p=CONFIG["w_wrist_pos"],
+        w_a=CONFIG["w_finger_angles"],
+        w_m=CONFIG["w_wrist_dir"],
+        w_n=CONFIG["w_palm_normal"],
+        lambda_shape=CONFIG["lambda_shape"],
+        margin_threshold=margin_threshold if margin_threshold is not None else CONFIG["margin_threshold"],
+        uncertainty_ratio=CONFIG["uncertainty_ratio"],
+        threshold_override=threshold_override if threshold_override is not None else CONFIG["default_threshold"]
     )
-    dtw_engine = HybridDTWEngine(templates_path=templates_file, config=cfg)
     if not dtw_engine.vocabulary:
         print("[!] CẢNH BÁO: dynamic_templates.json chưa có mẫu nào hoặc không tồn tại!")
         print("[!] Vui lòng chạy 'collect_dynamic_templates.py' trước để thu mẫu cử chỉ.")
     else:
-        print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file}.")
+        print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
     segmenter = KineticPauseSegmenter(
-        v_start_ratio=0.08,
-        v_stop_ratio=0.035,
-        pause_frames=11,
+        v_start_ratio=CONFIG["v_start_ratio"],
+        v_stop_ratio=CONFIG["v_stop_ratio"],
+        pause_frames=CONFIG["pause_frames"],
         min_stroke_frames=8,
         max_stroke_frames=60,
         swipe_threshold=-0.80,
@@ -625,6 +1215,8 @@ def run_sentence_builder(
     cached_n_fingers: int = 0
     cached_hull_pts: Optional[np.ndarray] = None
     cached_valid_defects: Optional[List] = None
+    stroke_angles_history: List[np.ndarray] = []
+    stroke_normals_history: List[np.ndarray] = []
 
     # 4. Quản lý Bộ đệm Câu thoại (Tầng 4)
     sentence_words: List[str] = []
@@ -650,16 +1242,49 @@ def run_sentence_builder(
     cached_hand_shape = "B"
     cached_box = (0, 0, 0, 0)
 
-    # Mở Webcam DirectShow
+    # Mở Webcam — thử MSMF trước (hoạt động tốt với Iriun Webcam iPhone),
+    # rồi fallback sang DSHOW nếu MSMF không đọc được frame thực sự.
     cap = None
     if not headless:
-        cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(camera_index)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        def _try_open_camera(index: int, backend) -> "cv2.VideoCapture | None":
+            """Mở camera với backend chỉ định, trả về cap nếu đọc được frame thực, None nếu thất bại."""
+            _cap = cv2.VideoCapture(index, backend)
+            if not _cap.isOpened():
+                _cap.release()
+                return None
+            _cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            _cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            ret, _ = _cap.read()   # kiểm tra đọc frame thực sự
+            if not ret:
+                _cap.release()
+                return None
+            return _cap
+
+        backend_order = [
+            (cv2.CAP_MSMF, "MSMF (Microsoft Media Foundation)"),
+            (cv2.CAP_DSHOW, "DirectShow"),
+            (cv2.CAP_ANY, "Default"),
+        ]
+
+        print(f"[Camera] Đang khởi tạo Camera Index [{camera_index}]...")
+        for backend_id, backend_name in backend_order:
+            cap = _try_open_camera(camera_index, backend_id)
+            if cap is not None:
+                print(f"  → Backend: {backend_name}")
+                break
+            print(f"  [Skip] {backend_name} không đọc được frame tại index {camera_index}")
+
+        if cap is not None and cap.isOpened():
+            # Warm-up buffer: xả thêm vài frame đệm ban đầu
+            for _ in range(4):
+                cap.read()
+            cam_type_name = "iPhone (Iriun Webcam)" if camera_index == 1 else ("Webcam Laptop" if camera_index == 0 else f"Camera Phu {camera_index}")
+            print(f"[Camera] KET NOI THANH CONG: {cam_type_name} (Index {camera_index})")
+        else:
+            print(f"[!] KHONG THE mo Camera [{camera_index}] voi bat ky backend nao!")
 
     flip_cam = False
+    show_features = True
     prev_time = time.time()
     fps = 0.0
 
@@ -668,7 +1293,7 @@ def run_sentence_builder(
     print("  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).")
     print("  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).")
     print("  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.")
-    print("  [c]: Xóa toàn bộ câu | [f]: Lật gương camera | [p]: Cài đặt Cam | [q]: Thoát\n")
+    print("  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát\n")
 
     processed_frames = 0
 
@@ -722,12 +1347,18 @@ def run_sentence_builder(
                 landmarks = det_result.hand_landmarks[0]
                 handedness_label = det_result.handedness[0][0].category_name if det_result.handedness else "Right"
 
-                # 1. Điểm mốc cổ tay & Kích thước Palm Scale (LM 0 - LM 9)
+                # 1. Điểm mốc cổ tay & Kích thước Palm Scale (Anatomical 3D Foreshortening Invariant)
                 lm0 = landmarks[0]
+                lm5 = landmarks[5]
                 lm9 = landmarks[9]
+                lm17 = landmarks[17]
                 raw_wrist_x = lm0.x * w_f
                 raw_wrist_y = lm0.y * h_f
-                palm_len = math.hypot((lm9.x - lm0.x) * w_f, (lm9.y - lm0.y) * h_f)
+                
+                palm_2d = math.hypot((lm9.x - lm0.x) * w_f, (lm9.y - lm0.y) * h_f)
+                palm_3d = math.sqrt(((lm9.x - lm0.x) * w_f)**2 + ((lm9.y - lm0.y) * h_f)**2 + ((lm9.z - lm0.z) * w_f)**2)
+                knuckle_span = math.hypot((lm17.x - lm5.x) * w_f, (lm17.y - lm5.y) * h_f)
+                palm_len = max(palm_2d, palm_3d, knuckle_span * 0.85, 30.0)
                 cached_palm_len = palm_len
 
                 # Áp dụng R3 Layer 1 Guard: 1€ Filter smoothing trên tọa độ cổ tay
@@ -736,6 +1367,17 @@ def run_sentence_builder(
                 # Cập nhật mốc tham chiếu cho LK Inertial Fallback
                 gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 lk_fallback.update_reference(gray_frame, landmarks)
+
+                # Trích xuất 5 góc uốn ngón tay 3D & Vector pháp tuyến lòng bàn tay 3D (12D Features)
+                lm_3d = np.array([[lm.x * w_f, lm.y * h_f, lm.z * w_f] for lm in landmarks], dtype=np.float32)
+                current_angles = compute_joint_flexion_angles(lm_3d)
+                current_normal = compute_palm_normal_vector(lm_3d, handedness=handedness_label)
+                stroke_angles_history.append(current_angles)
+                stroke_normals_history.append(current_normal)
+                if len(stroke_angles_history) > 120:
+                    stroke_angles_history.pop(0)
+                if len(stroke_normals_history) > 120:
+                    stroke_normals_history.pop(0)
 
                 # 2. Nhận diện Dáng tay tức thời qua DIP Engine v4 + Two-Stream CNN + Soft Bayesian Prior
                 # Kỹ thuật xen kẽ suy luận CPU: thực hiện suy luận mỗi 2 khung hình để duy trì FPS >= 25
@@ -790,6 +1432,7 @@ def run_sentence_builder(
                     wrist_smoother.reset()
                     lk_fallback.reset()
                     trail_points.clear()
+                    stroke_angles_history.clear()
 
                 # Tự động chốt câu hoàn chỉnh khi hạ tay > 1.8s (Sentence Commit Timeout)
                 if len(sentence_words) > 0 and (curr_time - last_hand_seen_time) > 1.8 and not sentence_finalized:
@@ -830,16 +1473,54 @@ def run_sentence_builder(
                         banner_color = (0, 200, 255)
                         banner_expire = curr_time + 1.2
                     trail_points.clear()
+                    stroke_angles_history.clear()
 
-                # 6. Xử lý CỬ CHỈ HOÀN THÀNH -> SO KHỚP HYBRID DTW (Tầng 3)
+                # 6. Xử lý CỬ CHỈ HOÀN THÀNH -> SO KHỚP GOLDEN TRIAD DTW (Tầng 3)
                 if completed_stroke is not None:
                     stroke_duration = completed_stroke[-1].timestamp - completed_stroke[0].timestamp
 
                     # Áp dụng R3 Layer 2 Guard: Cổng thời lượng cử chỉ [0.4s, 2.5s]
                     if 0.40 <= stroke_duration <= 2.50:
-                        resampled = resample_gesture_sequence(completed_stroke, k_target=32)
-                        if resampled is not None:
-                            match_result = dtw_engine.match(resampled)
+                        n_stroke = len(completed_stroke)
+                        if len(stroke_angles_history) >= n_stroke:
+                            angles_for_stroke = stroke_angles_history[-n_stroke:]
+                        else:
+                            pad_count = n_stroke - len(stroke_angles_history)
+                            first_ang = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
+                            angles_for_stroke = [first_ang] * pad_count + stroke_angles_history
+
+                        if len(stroke_normals_history) >= n_stroke:
+                            normals_for_stroke = stroke_normals_history[-n_stroke:]
+                        else:
+                            pad_norm = n_stroke - len(stroke_normals_history)
+                            first_norm = stroke_normals_history[0] if stroke_normals_history else np.array([0, 0, -1], dtype=np.float32)
+                            normals_for_stroke = [first_norm] * pad_norm + stroke_normals_history
+
+                        stroke_angles_history.clear()
+                        stroke_normals_history.clear()
+
+                        # Neo gốc chuyển động tại frame đầu tiên của stroke
+                        x0, y0 = completed_stroke[0].x, completed_stroke[0].y
+                        ref_palm = max(completed_stroke[0].palm_len, 15.0)
+
+                        raw_xs = np.array([(f.x - x0) / ref_palm for f in completed_stroke], dtype=np.float32)
+                        raw_ys = np.array([(f.y - y0) / ref_palm for f in completed_stroke], dtype=np.float32)
+
+                        raw_dxs = np.zeros(n_stroke, dtype=np.float32)
+                        raw_dys = np.zeros(n_stroke, dtype=np.float32)
+                        raw_dxs[1:] = raw_xs[1:] - raw_xs[:-1]
+                        raw_dys[1:] = raw_ys[1:] - raw_ys[:-1]
+                        raw_dxs[0] = raw_dxs[1] if n_stroke > 1 else 0.0
+                        raw_dys[0] = raw_dys[1] if n_stroke > 1 else 0.0
+
+                        raw_angles_mat = np.array(angles_for_stroke, dtype=np.float32)
+                        raw_normals_mat = np.array(normals_for_stroke, dtype=np.float32)
+                        raw_12d = np.column_stack([raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat]).astype(np.float32)
+                        stroke_shapes = [f.hand_shape for f in completed_stroke]
+
+                        res_traj_12d, res_shapes = resample_9d_gesture_sequence(raw_12d, stroke_shapes, k_target=32)
+                        if res_traj_12d is not None:
+                            match_result = dtw_engine.match(res_traj_12d, res_shapes)
 
                             # a) Chấp nhận từ vựng (ACCEPTED)
                             if match_result.status == "ACCEPTED" and match_result.top_word:
@@ -874,11 +1555,14 @@ def run_sentence_builder(
                                 c1, c2 = match_result.candidates[0], match_result.candidates[1]
                                 en1 = get_asl_phrase(c1.word_key, lang="en", default=c1.display_name)
                                 en2 = get_asl_phrase(c2.word_key, lang="en", default=c2.display_name)
+                                margin_pct = ((c2.distance - c1.distance) / max(c1.distance, 1e-4)) * 100.0
                                 banner_title = f"? UNCERTAIN: {en1} or {en2}"
-                                banner_subtitle = f"Dist: {match_result.best_distance:.2f} (Threshold exceeded, not committed)"
+                                banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Margin: {margin_pct:.1f}%"
                                 banner_color = (0, 200, 255)
                                 banner_expire = curr_time + 1.4
-                                print(f"[SentenceBuilder] Nghi vấn: {en1} ({c1.distance:.2f}) vs {en2} ({c2.distance:.2f})")
+                                word_th = float(dtw_engine.vocabulary.get(c1.word_key, {}).get("threshold", 1.25))
+                                reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= word_th else "Vượt ngưỡng chuẩn"
+                                print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
 
                             # c) Từ chối (REJECTED) - R3 Layer 3 Guard: Khoảng cách quá xa
                             else:
@@ -907,6 +1591,10 @@ def run_sentence_builder(
                         for s_p, e_p, f_p in valid_defects:
                             cv2.circle(display_frame, (int(f_p[0] + x1), int(f_p[1] + y1)), 4, (0, 0, 255), -1)
 
+                # Vẽ 3D Skeleton & Góc gập (Flexion) & Vector Pháp Tuyến trực tiếp lên bàn tay
+                if show_features:
+                    draw_hand_skeleton_features(display_frame, landmarks, current_angles, w_f, h_f, handedness=handedness_label)
+
             # Lọc bớt các điểm vệt sáng quá cũ (> MAX_TRAIL_AGE_SEC)
             trail_points = [pt for pt in trail_points if (curr_time - pt[2]) <= MAX_TRAIL_AGE_SEC]
 
@@ -919,7 +1607,7 @@ def run_sentence_builder(
             # 2. Thanh trạng thái phía trên (Top Status Bar)
             cv2.rectangle(display_frame, (0, 0), (w_f, 44), (20, 20, 20), -1)
             fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
-            cv2.putText(display_frame, f"FPS: {fps:.1f} (ASL HYBRID DTW)", (10, 28),
+            cv2.putText(display_frame, f"FPS: {fps:.1f} [CAM {camera_index}]", (10, 28),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.62, fps_color, 2, lineType=cv2.LINE_AA)
 
             # Trạng thái phân đoạn động học
@@ -947,7 +1635,22 @@ def run_sentence_builder(
             elif curr_time < banner_expire:
                 draw_prominent_hud_banner(display_frame, banner_title, banner_subtitle, banner_color, h_f, w_f)
 
-            # 4. Hộp phụ đề câu thoại hoàn chỉnh ở đáy màn hình (Bottom Subtitle Box)
+            # 4. Bảng biểu diễn trực quan đặc trưng 3D (Golden Triad Features HUD) khi bấm 'd'
+            if show_features and hand_found and current_angles is not None:
+                vel_vec = (raw_wrist_x - wrist_smoother.prev_x, raw_wrist_y - wrist_smoother.prev_y) if wrist_smoother.prev_x is not None else (0.0, 0.0)
+                draw_feature_metrics_hud(
+                    display_frame,
+                    angles=current_angles,
+                    palm_len=palm_len,
+                    v_norm=v_norm,
+                    wrist_pt=(int(wrist_x), int(wrist_y)),
+                    vel_vector=vel_vec,
+                    palm_normal=current_normal,
+                    x_offset=15,
+                    y_offset=h_f - 265
+                )
+
+            # 5. Hộp phụ đề câu thoại hoàn chỉnh ở đáy màn hình (Bottom Subtitle Box)
             cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), (12, 12, 12), -1)
             border_box_col = (0, 255, 0) if sentence_finalized else (0, 200, 255)
             cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), border_box_col, 2)
@@ -969,9 +1672,9 @@ def run_sentence_builder(
             cv2.putText(display_frame, sentence_display, (15, h_f - 42),
                         cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_col, 2, lineType=cv2.LINE_AA)
 
-            # 5. Hướng dẫn phím tắt chân trang
+            # 6. Hướng dẫn phím tắt chân trang
             cv2.putText(display_frame,
-                        "[Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [f]: Flip | [q]: Quit",
+                        "[d]: Toggle Features HUD | [Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [q]: Quit",
                         (10, h_f - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (190, 190, 190), 1, lineType=cv2.LINE_AA)
 
             if not headless:
@@ -979,6 +1682,9 @@ def run_sentence_builder(
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     break
+                elif key in [ord('d'), ord('D')]:
+                    show_features = not show_features
+                    print(f"[HUD] {'BẬT' if show_features else 'TẮT'} bảng hiển thị đặc trưng 3D.")
                 elif key in [ord('c'), ord('C')]:
                     sentence_words.clear()
                     sentence_finalized = False
@@ -1007,4 +1713,12 @@ def run_sentence_builder(
 
 
 if __name__ == "__main__":
-    run_sentence_builder()
+    import argparse
+    parser = argparse.ArgumentParser(description="Real-time Sign Language Recognition")
+    parser.add_argument("--cam", type=int, default=None, help="Camera index (0=built-in webcam, 1, 2=external/iPhone). Mặc định dùng camera_source từ CONFIG.")
+    parser.add_argument("--margin", type=float, default=0.12, help="Relative contrast margin threshold (default: 0.12 = 12%)")
+    parser.add_argument("--thresh", type=float, default=None, help="Override DTW distance threshold (default: None, uses template threshold 1.25)")
+    args, _ = parser.parse_known_args()
+    
+    selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
+    run_sentence_builder(camera_index=selected_cam, margin_threshold=args.margin, threshold_override=args.thresh)
