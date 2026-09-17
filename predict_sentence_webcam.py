@@ -74,7 +74,7 @@ from dynamic_dtw_engine import (
 # =============================================================================
 CONFIG = {
     # --- Chọn nguồn Camera: 0 = Webcam máy tính, 1 hoặc 2 = iPhone / Cam ngoài ---
-    "camera_source": 1,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
+    "camera_source": 0,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
                                  # (đã xác nhận qua snapshot: index 0 → iPhone, index 1 → laptop webcam)
 
     # --- Trọng số thuật toán DTW (Golden Triad 12D) ---
@@ -93,6 +93,11 @@ CONFIG = {
     "v_start_ratio": 0.08,       # Vận tốc bắt đầu cử chỉ (8% palm_len/frame)
     "v_stop_ratio": 0.040,       # Vận tốc khựng tay dừng từ (4% palm_len/frame)
     "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
+
+    # --- Đường dẫn template và trọng số DTW theo từng ký hiệu (ASL-LEX 2.0) ---
+    "templates_path": "dynamic_templates.json",
+    "sign_weights_path": "ASL_ALEX_2.0/sign_weights_asllex.json",
+    # "sign_weights_path": None,
 }
 
 # =============================================================================
@@ -100,11 +105,28 @@ CONFIG = {
 # =============================================================================
 
 ASL_VOCAB_MAP: Dict[str, Dict[str, str]] = {
-    "xin_chao": {"en": "Hello",     "vi": "Xin chào"},
-    "cam_on":   {"en": "Thank You", "vi": "Cảm ơn"},
-    "toi":      {"en": "Me",        "vi": "Tôi"},
-    "ban":      {"en": "You",       "vi": "Bạn"},
-    "tam_biet": {"en": "Goodbye",   "vi": "Tạm biệt"},
+    # 15 Canonical Sign Keys chuẩn hóa từ ASL-LEX 2.0
+    "HELLO":     {"en": "Hello",     "vi": "Xin chào"},
+    "BYE":       {"en": "Bye",       "vi": "Tạm biệt"},
+    "ME":        {"en": "Me",        "vi": "Tôi"},
+    "YOU":       {"en": "You",       "vi": "Bạn"},
+    "THANK_YOU": {"en": "Thank You", "vi": "Cảm ơn"},
+    "GO":        {"en": "Go",        "vi": "Đi"},
+    "COME":      {"en": "Come",      "vi": "Đến"},
+    "WANT":      {"en": "Want",      "vi": "Muốn"},
+    "MORE":      {"en": "More",      "vi": "Thêm"},
+    "WATER":     {"en": "Water",     "vi": "Nước"},
+    "HELP":      {"en": "Help",      "vi": "Giúp"},
+    "GOOD":      {"en": "Good",      "vi": "Tốt"},
+    "NAME":      {"en": "Name",      "vi": "Tên"},
+    "DRINK":     {"en": "Drink",     "vi": "Uống"},
+    "STOP":      {"en": "Stop",      "vi": "Dừng"},
+    # Alias tương thích ngược cho template tiếng Việt cũ nếu có
+    "xin_chao":  {"en": "Hello",     "vi": "Xin chào"},
+    "cam_on":    {"en": "Thank You", "vi": "Cảm ơn"},
+    "toi":       {"en": "Me",        "vi": "Tôi"},
+    "ban":       {"en": "You",       "vi": "Bạn"},
+    "tam_biet":  {"en": "Bye",       "vi": "Tạm biệt"},
 }
 
 
@@ -1001,6 +1023,7 @@ class GoldenTriadDTWMatcher:
     def __init__(
         self,
         templates_path: str = "dynamic_templates.json",
+        sign_weights_path: Optional[str] = None,
         w_p: float = 0.6,
         w_a: float = 1.0,
         w_m: float = 0.4,
@@ -1008,9 +1031,11 @@ class GoldenTriadDTWMatcher:
         lambda_shape: float = 0.5,
         margin_threshold: float = 0.12,
         uncertainty_ratio: float = 1.40,
-        threshold_override: Optional[float] = None
+        threshold_override: Optional[float] = None,
+        strict_weights: bool = True
     ):
         self.templates_path = templates_path
+        self.sign_weights_path = sign_weights_path if sign_weights_path is not None else CONFIG.get("sign_weights_path")
         self.w_p = w_p
         self.w_a = w_a
         self.w_m = w_m
@@ -1019,10 +1044,127 @@ class GoldenTriadDTWMatcher:
         self.margin_threshold = margin_threshold
         self.uncertainty_ratio = uncertainty_ratio
         self.threshold_override = threshold_override
+        self.strict_weights = strict_weights
         self.vocabulary: Dict[str, Any] = {}
+        self.sign_weights: Dict[str, Dict[str, float]] = {}
         self.feature_dim: int = 4
         self.is_legacy_4d: bool = True
+
+        self.load_sign_weights()
         self.load_templates()
+        self.validate_weights_against_vocabulary()
+
+    def load_sign_weights(self) -> None:
+        """
+        Nạp trọng số Per-Sign DTW từ file JSON tạo bởi ASL-LEX 2.0.
+        Nếu sign_weights_path là None, tự động kích hoạt chế độ Global Weights (1 công thức chung từ CONFIG).
+        """
+        if not self.sign_weights_path:
+            self.sign_weights = {}
+            print(f"ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu "
+                  f"(w_p={self.w_p}, w_a={self.w_a}, w_m={self.w_m}, w_n={self.w_n}).")
+            return
+
+        if not os.path.exists(self.sign_weights_path):
+            if self.strict_weights:
+                raise FileNotFoundError(f"[!] Không tìm thấy file trọng số ASL-LEX: {self.sign_weights_path}")
+            print(f"[!] CẢNH BÁO: Không tìm thấy {self.sign_weights_path}. Sử dụng trọng số toàn cục CONFIG.")
+            return
+
+        try:
+            with open(self.sign_weights_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+
+            parsed_weights = {}
+            for raw_key, w_entry in raw_data.items():
+                canonical_k = str(raw_key).strip().upper()
+                # Hỗ trợ cả schema trực tiếp {"P":..., "A":...} hoặc lồng {"weights": {"P":...}}
+                w_dict = w_entry.get("weights", w_entry) if isinstance(w_entry, dict) else {}
+                
+                for required_field in ["P", "A", "JM", "N"]:
+                    if required_field not in w_dict:
+                        raise ValueError(f"[!] Ký hiệu '{canonical_k}' thiếu trường trọng số '{required_field}'!")
+                
+                p = float(w_dict["P"])
+                a = float(w_dict["A"])
+                jm = float(w_dict["JM"])
+                n = float(w_dict["N"])
+
+                for val, name in [(p, "P"), (a, "A"), (jm, "JM"), (n, "N")]:
+                    if val < 0.0 or math.isnan(val) or math.isinf(val):
+                        raise ValueError(f"[!] Ký hiệu '{canonical_k}' có trọng số '{name}' không hợp lệ: {val}")
+
+                weight_sum = p + a + jm + n
+                if abs(weight_sum - 1.0) > 1e-4:
+                    raise ValueError(f"[!] Ký hiệu '{canonical_k}' có tổng trọng số != 1.0 (Tổng={weight_sum:.6f})!")
+
+                parsed_weights[canonical_k] = {
+                    "P": p, "A": a, "JM": jm, "N": n
+                }
+
+            self.sign_weights = parsed_weights
+            print(f"✓ [DTW] Đã nạp thành công {len(self.sign_weights)} bộ trọng số Per-Sign từ '{self.sign_weights_path}'.")
+        except Exception as e:
+            if self.strict_weights:
+                raise
+            print(f"[!] Lỗi đọc {self.sign_weights_path}: {e}")
+
+    # Ánh xạ bí danh tương thích ngược giữa các phiên bản template (VSL tiếng Việt <-> ASL tiếng Anh)
+    SIGN_KEY_ALIASES: Dict[str, str] = {
+        "XIN_CHAO": "HELLO",
+        "CAM_ON": "THANK_YOU",
+        "TOI": "ME",
+        "BAN": "YOU",
+        "TAM_BIET": "BYE",
+        "GOOD-BYE": "BYE",
+        "GOOD_BYE": "BYE",
+    }
+
+    def validate_weights_against_vocabulary(self) -> None:
+        """
+        Kiểm tra tính nhất quán 2 chiều giữa từ điển templates và bảng trọng số ASL-LEX.
+        Triệt tiêu hoàn toàn lỗi âm thầm (Silent Failure / Key Mismatch).
+        Tự động hỗ trợ ánh xạ bí danh cho các phiên bản template cũ.
+        """
+        if not self.sign_weights_path or not self.vocabulary or not self.sign_weights:
+            return
+
+        missing_weights = []
+        for word_key in self.vocabulary.keys():
+            raw_k = str(word_key).strip().upper()
+            canonical_k = self.SIGN_KEY_ALIASES.get(raw_k, raw_k)
+            if canonical_k not in self.sign_weights:
+                missing_weights.append(word_key)
+
+        if missing_weights:
+            msg = (
+                f"[CRITICAL] Phát hiện {len(missing_weights)} từ vựng trong '{self.templates_path}' "
+                f"không có trọng số trong '{self.sign_weights_path}': {missing_weights}\n"
+                f"Vui lòng đồng bộ Canonical Key hoặc bổ sung trọng số ASL-LEX!"
+            )
+            if self.strict_weights:
+                raise KeyError(msg)
+            else:
+                print(f"[!] CẢNH BÁO: {msg}")
+
+    def _get_weights_for_sign(self, word_key: str) -> Tuple[float, float, float, float]:
+        """
+        Truy xuất vector trọng số W_s = [w_P, w_A, w_JM, w_N] theo candidate sign (O(1)).
+        Tự động chuyển đổi các alias (ví dụ 'xin_chao' -> 'HELLO').
+        Nếu ở chế độ Global Weights, trả về cấu hình CONFIG mà không báo cảnh báo.
+        """
+        if not self.sign_weights_path or not self.sign_weights:
+            return self.w_p, self.w_a, self.w_m, self.w_n
+
+        raw_k = str(word_key).strip().upper()
+        canonical_k = self.SIGN_KEY_ALIASES.get(raw_k, raw_k)
+        if canonical_k in self.sign_weights:
+            sw = self.sign_weights[canonical_k]
+            return sw["P"], sw["A"], sw["JM"], sw["N"]
+
+        print(f"[!] CẢNH BÁO FALLBACK: Ký hiệu '{word_key}' (Canonical: '{canonical_k}') không có Per-Sign Weight! "
+              f"Tạm thời dùng trọng số CONFIG (w_p={self.w_p}, w_a={self.w_a}, w_m={self.w_m}, w_n={self.w_n}).")
+        return self.w_p, self.w_a, self.w_m, self.w_n
 
     def load_templates(self) -> None:
         if not os.path.exists(self.templates_path):
@@ -1059,6 +1201,9 @@ class GoldenTriadDTWMatcher:
             if not samples:
                 continue
 
+            # Lấy vector trọng số W_s riêng biệt cho candidate sign này từ ASL-LEX
+            wp, wa, wm, wn = self._get_weights_for_sign(word_key)
+
             sample_distances = []
             for s in samples:
                 t_traj_raw = s.get("traj_features_9d")
@@ -1076,10 +1221,10 @@ class GoldenTriadDTWMatcher:
                     q_shapes=query_shapes,
                     t_traj=t_traj,
                     t_shapes=t_shapes,
-                    w_p=self.w_p,
-                    w_a=self.w_a,
-                    w_m=self.w_m,
-                    w_n=self.w_n,
+                    w_p=wp,
+                    w_a=wa,
+                    w_m=wm,
+                    w_n=wn,
                     lambda_shape=self.lambda_shape
                 )
                 sample_distances.append(dist)
@@ -1132,7 +1277,9 @@ def run_sentence_builder(
     headless: bool = False,
     max_frames: Optional[int] = None,
     margin_threshold: float = 0.12,
-    threshold_override: Optional[float] = None
+    threshold_override: Optional[float] = None,
+    templates_path: Optional[str] = None,
+    sign_weights_path: Any = "KEEP_DEFAULT"
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1179,9 +1326,11 @@ def run_sentence_builder(
         print("[!] Không tìm thấy best_model_v2.pth, dùng chế độ giả lập dáng tay.")
 
     # 3. Khởi tạo DTW Engine (Tầng 3) & Kinetic Segmenter (Tầng 2)
-    templates_file = "dynamic_templates.json"
+    templates_file = templates_path if templates_path is not None else CONFIG.get("templates_path", "dynamic_templates.json")
+    sw_file = CONFIG.get("sign_weights_path") if sign_weights_path == "KEEP_DEFAULT" else sign_weights_path
     dtw_engine = GoldenTriadDTWMatcher(
         templates_path=templates_file,
+        sign_weights_path=sw_file,
         w_p=CONFIG["w_wrist_pos"],
         w_a=CONFIG["w_finger_angles"],
         w_m=CONFIG["w_wrist_dir"],
@@ -1716,9 +1865,19 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Real-time Sign Language Recognition")
     parser.add_argument("--cam", type=int, default=None, help="Camera index (0=built-in webcam, 1, 2=external/iPhone). Mặc định dùng camera_source từ CONFIG.")
+    parser.add_argument("--templates", type=str, default=None, help="Đường dẫn file template JSON (ví dụ: dynamic_templates.backup_v51.json). Mặc định dùng templates_path từ CONFIG.")
     parser.add_argument("--margin", type=float, default=0.12, help="Relative contrast margin threshold (default: 0.12 = 12%)")
     parser.add_argument("--thresh", type=float, default=None, help="Override DTW distance threshold (default: None, uses template threshold 1.25)")
+    parser.add_argument("--global-weights", action="store_true", help="Bật chế độ dùng chung 1 công thức CONFIG cho mọi từ (tắt Per-Sign weights ASL-LEX)")
     args, _ = parser.parse_known_args()
     
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
-    run_sentence_builder(camera_index=selected_cam, margin_threshold=args.margin, threshold_override=args.thresh)
+    selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
+    sw_override = None if args.global_weights else CONFIG.get("sign_weights_path")
+    run_sentence_builder(
+        camera_index=selected_cam,
+        margin_threshold=args.margin,
+        threshold_override=args.thresh,
+        templates_path=selected_templates,
+        sign_weights_path=sw_override
+    )

@@ -53,6 +53,8 @@ from dynamic_dtw_engine import (
 )
 from predict_sentence_webcam import (
     CONFIG,
+    GoldenTriadDTWMatcher,
+    compute_golden_triad_dtw_distance,
     compute_joint_flexion_angles,
     compute_palm_normal_vector,
     resample_9d_gesture_sequence,
@@ -63,17 +65,27 @@ from predict_sentence_webcam import (
 
 
 DEFAULT_VOCAB = {
-    '1': ('xin_chao', 'Xin chào', 'Vẫy tay mở B qua lại 1 nhịp'),
-    '2': ('cam_on',   'Cảm ơn',   'Chạm tay B/Flat dưới cằm rồi đưa ra trước'),
-    '3': ('toi',      'Tôi',      'Chỉ ngón trỏ L/1 vào ngực'),
-    '4': ('ban',      'Bạn',      'Chỉ ngón trỏ L/1 về phía camera'),
-    '5': ('tam_biet', 'Tạm biệt', 'Nâng tay B lên và lắc cổ tay'),
+    '1': ('HELLO',     'Hello / Xin chào',    'Vẫy tay mở B qua lại 1 nhịp'),
+    '2': ('BYE',       'Bye / Tạm biệt',      'Nâng tay B lên và vẫy ngón tay'),
+    '3': ('ME',        'Me / Tôi',            'Chỉ ngón trỏ L/1 vào ngực'),
+    '4': ('YOU',       'You / Bạn',           'Chỉ ngón trỏ L/1 về phía camera'),
+    '5': ('THANK_YOU', 'Thank You / Cảm ơn',  'Chạm tay B/Flat dưới cằm rồi đưa ra trước'),
+    '6': ('GO',        'Go / Đi',             'Đưa hai ngón trỏ hướng ra xa'),
+    '7': ('COME',      'Come / Đến',          'Hai ngón trỏ ngoắc về phía người'),
+    '8': ('WANT',      'Want / Muốn',         'Hai tay mở ngửa kéo lùi về người và co nhẹ'),
+    '9': ('MORE',      'More / Thêm',         'Hai bàn tay chụm ngón chạm vào nhau lặp lại'),
+    '0': ('WATER',     'Water / Nước',        'Chữ W (3 ngón giữa) chạm cằm 2 lần'),
+    'a': ('HELP',      'Help / Giúp',         'Tay A đặt lên lòng bàn tay kia nâng lên'),
+    'b': ('GOOD',      'Good / Tốt',          'Chạm cằm đưa xuống lòng bàn tay kia'),
+    'c': ('NAME',      'Name / Tên',          'Hai ngón H (trỏ+giữa) gõ chéo lên nhau'),
+    'e': ('DRINK',     'Drink / Uống',        'Tay C đưa lên miệng như cầm cốc uống'),
+    'g': ('STOP',      'Stop / Dừng',         'Cạnh bàn tay B chém xuống lòng bàn tay kia'),
 }
 
 TARGET_SAMPLES_PER_WORD = 3
 
 
-def run_dynamic_collector(camera_index: int = 0):
+def run_dynamic_collector(camera_index: int = 0, templates_path: Optional[str] = None):
     print("=" * 70)
     print("  CÔNG CỤ THU MẪU CỬ CHỈ ĐỘNG THỦ NGỮ VSL (DYNAMIC COLLECTOR v1.0)")
     print("=" * 70)
@@ -116,8 +128,9 @@ def run_dynamic_collector(camera_index: int = 0):
         classes = ['A', 'B', 'C', 'L', 'V']
 
     # 3. Khởi tạo DTW Engine & Segmenter
-    templates_file = "dynamic_templates.json"
+    templates_file = templates_path if templates_path is not None else CONFIG.get("templates_path", "dynamic_templates.json")
     dtw_engine = HybridDTWEngine(templates_path=templates_file)
+    dtw_matcher = GoldenTriadDTWMatcher(templates_path=templates_file, strict_weights=False)
     segmenter = KineticPauseSegmenter(
         v_start_ratio=0.08,
         v_stop_ratio=0.040,
@@ -143,8 +156,8 @@ def run_dynamic_collector(camera_index: int = 0):
     cap = None
     for backend_id, backend_name in [
         (cv2.CAP_MSMF,  "MSMF (Microsoft Media Foundation)"),
-        (cv2.CAP_DSHOW, "DirectShow"),
-        (cv2.CAP_ANY,   "Default"),
+        (cv2.CAP_DSHOW, "DSHOW (DirectShow)"),
+        (cv2.CAP_ANY,   "DEFAULT Backend"),
     ]:
         cap = _try_open_camera(camera_index, backend_id)
         if cap is not None:
@@ -174,13 +187,15 @@ def run_dynamic_collector(camera_index: int = 0):
     hand_lost_frames = 0
     show_features = True
 
-    print("\n[HƯỚNG DẪN THU MẪU]")
-    print("  [1] - [5]: Chọn từ muốn thu mẫu (Xin chào, Cảm ơn, Tôi, Bạn, Tạm biệt)")
-    print("  [d]      : Bật/Tắt bảng đặc trưng 3D (Feature HUD)")
-    print("  [r]      : Xóa mẫu vừa thu gần nhất của từ hiện tại")
-    print("  [f]      : Lật gương camera")
-    print("  [s]      : Lưu ngay từ điển ra file dynamic_templates.json")
-    print("  [q]      : Thoát chương trình\n")
+    print("\n[HƯỚNG DẪN THU MẪU - 15 TỪ VỰNG CANONICAL ASL-LEX]")
+    print("  [1-9, 0]: Chọn từ 1..10 (HELLO .. WATER)")
+    print("  [a,b,c,e,g]: Chọn từ 11..15 (HELP, GOOD, NAME, DRINK, STOP)")
+    print("  [d]     : Bật/Tắt bảng đặc trưng 12D (Feature HUD)")
+    print("  [r]     : Undo mẫu vừa thu gần nhất của từ hiện tại")
+    print("  [x]     : XÓA SẠCH toàn bộ mẫu của từ hiện tại")
+    print("  [f]     : Lật gương camera")
+    print("  [s]     : Lưu file dynamic_templates.json")
+    print("  [q]     : Thoát chương trình\n")
 
     while True:
         ret, frame = cap.read()
@@ -310,19 +325,35 @@ def run_dynamic_collector(camera_index: int = 0):
                         duration = n_stroke / 30.0
                     resampled = ResampledGesture(traj=res_traj_12d, shapes=res_shapes, duration_sec=float(duration))
                     
-                    # Thu mẫu không giới hạn (Unlimited Samples Collection)
                     dtw_engine.add_sample(
                         word_key=curr_word_id,
                         display_name=curr_display_name,
                         sample=resampled
                     )
-                    # Cập nhật metadata feature_dim = 12
-                    # Tự động lưu ra đĩa
                     dtw_engine.save_templates()
 
-                    samples_count = len(dtw_engine.vocabulary.get(curr_word_id, {}).get("samples", []))
-                    flash_message = f"DA LUU MAU 12D [{samples_count}] CHO '{curr_display_name}'! (Nhan 'r' de Undo)"
-                    flash_time = curr_time + 2.0
+                    # Tính DTW distance preview với mẫu trước đó bằng đúng per-sign weights
+                    preview_text = ""
+                    curr_samples = dtw_engine.vocabulary.get(curr_word_id, {}).get("samples", [])
+                    if len(curr_samples) >= 2:
+                        prev_s = curr_samples[-2]
+                        prev_traj_raw = prev_s.get("traj_features_9d", prev_s.get("traj_features", []))
+                        prev_traj = np.array(prev_traj_raw, dtype=np.float32)
+                        prev_shapes = prev_s.get("hand_shapes", ["Unknown"] * 32)
+                        wp, wa, wm, wn = dtw_matcher._get_weights_for_sign(curr_word_id)
+                        p_dist = compute_golden_triad_dtw_distance(
+                            q_traj=res_traj_12d,
+                            q_shapes=res_shapes,
+                            t_traj=prev_traj,
+                            t_shapes=prev_shapes,
+                            w_p=wp, w_a=wa, w_m=wm, w_n=wn,
+                            lambda_shape=0.5
+                        )
+                        preview_text = f" | DTW: {p_dist:.2f}"
+
+                    samples_count = len(curr_samples)
+                    flash_message = f"DA LUU MAU [{samples_count}] CHO '{curr_display_name}'!{preview_text}"
+                    flash_time = curr_time + 2.5
                     trail_points.clear()
         else:
             hand_lost_frames += 1
@@ -367,25 +398,37 @@ def run_dynamic_collector(camera_index: int = 0):
         cv2.putText(frame, "Mua cu chi -> DUNG TAY 0.35s de chot mau",
                     (20, 126), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
 
-        # 4. Danh sách 5 từ vựng ở góc trái dưới
-        y_list = 160
-        cv2.rectangle(frame, (10, y_list - 15), (220, y_list + 115), (15, 15, 15), -1)
-        cv2.rectangle(frame, (10, y_list - 15), (220, y_list + 115), (60, 60, 60), 1)
-        for k_opt, (w_id, d_name, _) in DEFAULT_VOCAB.items():
+        # Danh sách 15 từ vựng (2 Cột gọn gàng)
+        y_list = 150
+        cv2.rectangle(frame, (10, y_list - 8), (280, y_list + 165), (15, 15, 15), -1)
+        cv2.rectangle(frame, (10, y_list - 8), (280, y_list + 165), (60, 60, 60), 1)
+        
+        vocab_items = list(DEFAULT_VOCAB.items())
+        col1 = vocab_items[:8]
+        col2 = vocab_items[8:]
+
+        for i, (k_opt, (w_id, d_name, _)) in enumerate(col1):
             n_samp = len(dtw_engine.vocabulary.get(w_id, {}).get("samples", []))
             is_active = (k_opt == current_key)
             col = (0, 255, 0) if is_active else ((0, 200, 255) if n_samp >= 3 else (150, 150, 150))
-            prefix = "-> " if is_active else "   "
-            cv2.putText(frame, f"{prefix}[{k_opt}] {d_name}: {n_samp} mau", (15, y_list + 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
-            y_list += 22
+            short_name = d_name.split('/')[0].strip()
+            cv2.putText(frame, f"[{k_opt}] {short_name}:{n_samp}", (15, y_list + 12 + i * 19),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, col, 1)
+
+        for i, (k_opt, (w_id, d_name, _)) in enumerate(col2):
+            n_samp = len(dtw_engine.vocabulary.get(w_id, {}).get("samples", []))
+            is_active = (k_opt == current_key)
+            col = (0, 255, 0) if is_active else ((0, 200, 255) if n_samp >= 3 else (150, 150, 150))
+            short_name = d_name.split('/')[0].strip()
+            cv2.putText(frame, f"[{k_opt}] {short_name}:{n_samp}", (145, y_list + 12 + i * 19),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, col, 1)
 
         # 5. Thông báo Toast nổi bật khi vừa lưu mẫu
         if curr_time < flash_time:
-            cv2.rectangle(frame, (80, h_f // 2 - 30), (w_f - 80, h_f // 2 + 30), (0, 0, 0), -1)
-            cv2.rectangle(frame, (80, h_f // 2 - 30), (w_f - 80, h_f // 2 + 30), (0, 255, 0), 2)
-            cv2.putText(frame, flash_message, (95, h_f // 2 + 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 0), 2)
+            cv2.rectangle(frame, (40, h_f // 2 - 30), (w_f - 40, h_f // 2 + 30), (0, 0, 0), -1)
+            cv2.rectangle(frame, (40, h_f // 2 - 30), (w_f - 40, h_f // 2 + 30), (0, 255, 0), 2)
+            cv2.putText(frame, flash_message, (50, h_f // 2 + 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
 
         # 6. Bảng hiển thị đặc trưng 3D & Khung xương tay trực quan (12D Features HUD) khi bật 'd'
         if show_features and hand_found and current_angles is not None:
@@ -404,8 +447,8 @@ def run_dynamic_collector(camera_index: int = 0):
             )
 
         # 7. Hướng dẫn chân trang
-        cv2.putText(frame, "[1-5]: Chon tu | [d]: Toggle HUD | [r]: Undo mau | [c]: Xoa sach tu | [s]: Luu | [q]: Thoat",
-                    (10, h_f - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1)
+        cv2.putText(frame, "[1-9,0,a,b,c,e,g]: Chon tu | [d]: HUD | [r]: Undo | [x]: Xoa sach | [s]: Luu | [q]: Thoat",
+                    (10, h_f - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
 
         cv2.imshow("Thu Thap Mau Cu Chi Dong (VSL Dynamic Collector)", frame)
 
@@ -416,8 +459,8 @@ def run_dynamic_collector(camera_index: int = 0):
         elif key in [ord('d'), ord('D')]:
             show_features = not show_features
             print(f"[HUD] {'BẬT' if show_features else 'TẮT'} bảng hiển thị đặc trưng 3D.")
-        elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5')]:
-            current_key = chr(key)
+        elif chr(key).lower() in DEFAULT_VOCAB:
+            current_key = chr(key).lower()
             curr_word_id, curr_display_name, curr_desc = DEFAULT_VOCAB[current_key]
             segmenter.reset()
             wrist_smoother.reset()
@@ -434,8 +477,8 @@ def run_dynamic_collector(camera_index: int = 0):
                 flash_message = f"DA UNDO MAU! Con lai {now_s} mau cho '{curr_display_name}'"
                 flash_time = curr_time + 1.5
                 print(f"-> Đã xóa mẫu gần nhất của {curr_display_name} (còn lại {now_s} mẫu)")
-        elif key in [ord('c'), ord('C')]:
-            # Xóa toàn bộ mẫu của từ hiện tại
+        elif key in [ord('x'), ord('X')]:
+            # Phím x: Xóa toàn bộ mẫu của từ hiện tại
             if curr_word_id in dtw_engine.vocabulary:
                 dtw_engine.vocabulary[curr_word_id]["samples"].clear()
                 dtw_engine.save_templates()
@@ -459,7 +502,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Collect Dynamic Sign Language Templates")
     parser.add_argument("--cam", type=int, default=None, help="Camera index (0=built-in webcam, 1, 2=external/iPhone). Mặc định dùng camera_source từ CONFIG.")
+    parser.add_argument("--templates", type=str, default=None, help="Đường dẫn file template JSON (ví dụ: dynamic_templates.backup_v51.json). Mặc định dùng templates_path từ CONFIG.")
     args, _ = parser.parse_known_args()
     
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
-    run_dynamic_collector(camera_index=selected_cam)
+    selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
+    run_dynamic_collector(camera_index=selected_cam, templates_path=selected_templates)

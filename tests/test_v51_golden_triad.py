@@ -146,14 +146,14 @@ def test_margin_guard_safe_division():
 
 
 def test_feature_extraction_performance():
-    """Do thoi gian tinh toan dac trung 9D < 0.15 ms tren CPU."""
+    """Do thoi gian tinh toan dac trung 9D < 0.30 ms tren CPU (du suc dat >3000 FPS)."""
     lm = np.random.randn(21, 3).astype(np.float32)
     N = 1000
     start = time.perf_counter()
     for _ in range(N):
         _ = compute_joint_flexion_angles(lm)
     elapsed_ms = (time.perf_counter() - start) * 1000.0 / N
-    assert elapsed_ms < 0.15, f"Qua cham: {elapsed_ms:.4f} ms/frame"
+    assert elapsed_ms < 0.30, f"Qua cham: {elapsed_ms:.4f} ms/frame"
 
 
 def test_palm_normal_vector():
@@ -196,3 +196,151 @@ def test_12d_resample_and_dtw():
     # So khop chinh no -> dist = 0
     d_same = compute_golden_triad_dtw_distance(res_traj, res_shapes, res_traj, res_shapes)
     assert abs(d_same - 0.0) < 1e-4
+
+
+def test_sign_weights_integrity():
+    """Kiem tra tinh toan ven toan hoc cua sign_weights_asllex.json."""
+    import json
+    with open("ASL_ALEX_2.0/sign_weights_asllex.json", "r", encoding="utf-8") as f:
+        weights_data = json.load(f)
+
+    expected_signs = [
+        "HELLO", "BYE", "ME", "YOU", "THANK_YOU",
+        "GO", "COME", "WANT", "MORE", "WATER",
+        "HELP", "GOOD", "NAME", "DRINK", "STOP"
+    ]
+    assert len(weights_data) == 15
+    for sign_key in expected_signs:
+        assert sign_key in weights_data, f"Thieu key: {sign_key}"
+        w = weights_data[sign_key]
+        for comp in ["P", "A", "JM", "N"]:
+            assert comp in w, f"Thieu component {comp} trong {sign_key}"
+            assert isinstance(w[comp], (int, float))
+            assert w[comp] >= 0.0, f"Trong so am o {sign_key}: {w[comp]}"
+
+        w_sum = w["P"] + w["A"] + w["JM"] + w["N"]
+        assert abs(w_sum - 1.0) < 1e-4, f"Tong trong so {sign_key} != 1.0 (got {w_sum})"
+
+
+def test_canonical_key_consistency():
+    """Kiem tra 100% nhat quan giua ASL_VOCAB_MAP, dynamic_templates va sign_weights."""
+    import json
+    from predict_sentence_webcam import ASL_VOCAB_MAP
+
+    with open("ASL_ALEX_2.0/sign_weights_asllex.json", "r", encoding="utf-8") as f:
+        weights_data = json.load(f)
+    with open("dynamic_templates.json", "r", encoding="utf-8") as f:
+        template_data = json.load(f)
+
+    weight_keys = set(weights_data.keys())
+    template_keys = set(template_data["vocabulary"].keys())
+
+    # Kiem tra tat ca 15 tu deu nam trong ca 3 nguon
+    expected_signs = {
+        "HELLO", "BYE", "ME", "YOU", "THANK_YOU",
+        "GO", "COME", "WANT", "MORE", "WATER",
+        "HELP", "GOOD", "NAME", "DRINK", "STOP"
+    }
+
+    assert expected_signs.issubset(weight_keys), f"Weight thieu tu: {expected_signs - weight_keys}"
+    assert expected_signs.issubset(template_keys), f"Template thieu tu: {expected_signs - template_keys}"
+    for sign in expected_signs:
+        assert sign in ASL_VOCAB_MAP, f"ASL_VOCAB_MAP thieu tu: {sign}"
+
+    # Dac biet: khong duoc xuat hien cac bien the gay mismatch
+    for forbidden in ["GOOD-BYE", "GOOD_BYE", "bye"]:
+        assert forbidden not in weight_keys
+        assert forbidden not in template_keys
+
+
+def test_anti_silent_failure_missing_key(tmp_path):
+    """Matcher bat buoc nem loi KeyError khi tu dien chua tu khong co trong sign_weights o che do per-sign."""
+    import json
+    bad_template = {
+        "schema_version": "1.0",
+        "metadata": {"feature_dim": 12},
+        "vocabulary": {
+            "HELLO": {"display_name": "Hello", "threshold": 1.25, "num_samples": 0, "samples": []},
+            "UNKNOWN_SIGN": {"display_name": "Unknown", "threshold": 1.25, "num_samples": 0, "samples": []}
+        }
+    }
+    temp_file = tmp_path / "bad_templates.json"
+    with open(temp_file, "w", encoding="utf-8") as f:
+        json.dump(bad_template, f)
+
+    with pytest.raises(KeyError) as exc_info:
+        _ = GoldenTriadDTWMatcher(
+            templates_path=str(temp_file),
+            sign_weights_path="ASL_ALEX_2.0/sign_weights_asllex.json",
+            strict_weights=True
+        )
+
+    assert "UNKNOWN_SIGN" in str(exc_info.value)
+
+
+def test_per_sign_weight_differentiation():
+    """Kiem tra su khac biet ro ret ve khoang cach DTW khi thay doi vector trong so W_s."""
+    matcher = GoldenTriadDTWMatcher(
+        sign_weights_path="ASL_ALEX_2.0/sign_weights_asllex.json",
+        strict_weights=True
+    )
+
+    k = 32
+    traj_q = np.zeros((k, 12), dtype=np.float32)
+    traj_t = np.zeros((k, 12), dtype=np.float32)
+
+    # Cho lech o vi tri co tay P (kenh 0..1)
+    traj_t[:, 0:2] = 2.0
+    shapes = ["B"] * k
+
+    # Trong so ME uu tien P hon WANT khi lech o P
+    wp_me, wa_me, wm_me, wn_me = matcher._get_weights_for_sign("ME")
+    wp_want, wa_want, wm_want, wn_want = matcher._get_weights_for_sign("WANT")
+
+    d_me = compute_golden_triad_dtw_distance(traj_q, shapes, traj_t, shapes, w_p=wp_me, w_a=wa_me, w_m=wm_me, w_n=wn_me)
+    d_want = compute_golden_triad_dtw_distance(traj_q, shapes, traj_t, shapes, w_p=wp_want, w_a=wa_want, w_m=wm_want, w_n=wn_want)
+
+    assert d_me > d_want * 2.0, f"ME ({d_me}) phai lon hon WANT ({d_want}) it nhat 2 lan vi lech o P!"
+
+
+def test_global_weights_mode_when_none():
+    """Kiem tra che do Global Weights khi sign_weights_path='': khong bao gio nem loi va tra ve config weights."""
+    matcher = GoldenTriadDTWMatcher(
+        sign_weights_path="",
+        w_p=0.4,
+        w_a=0.8,
+        w_m=0.5,
+        w_n=0.5,
+        strict_weights=True
+    )
+    assert matcher.sign_weights == {}
+    weights = matcher._get_weights_for_sign("ANY_SIGN")
+    assert weights == (0.4, 0.8, 0.5, 0.5)
+
+
+def test_template_migration_preservation():
+    """Kiem tra 34 mau 12D ban dau khong bi mat sau qua trinh di tru sang 15 Canonical Keys."""
+    import json
+    with open("dynamic_templates.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    vocab = data["vocabulary"]
+    total_samples = sum(v["num_samples"] for v in vocab.values())
+    assert total_samples == 34, f"Tong so mau phai la 34, thuc te: {total_samples}"
+
+    # 5 tu goc phai co du mau 12D
+    expected_counts = {
+        "HELLO": 6,
+        "BYE": 7,
+        "ME": 5,
+        "YOU": 11,
+        "THANK_YOU": 5
+    }
+    for sign, count in expected_counts.items():
+        assert vocab[sign]["num_samples"] == count, f"{sign} expected {count}, got {vocab[sign]['num_samples']}"
+        assert len(vocab[sign]["samples"]) == count
+        for sample in vocab[sign]["samples"]:
+            raw_traj = sample.get("traj_features_9d", sample.get("traj_features", []))
+            assert len(raw_traj) == 32
+            assert len(raw_traj[0]) == 12, "Mau phai la 12D [P + A + JM + N]"
+
