@@ -34,6 +34,14 @@ from predict_sentence_webcam import (
     compute_palm_normal_vector,
     resample_9d_gesture_sequence
 )
+from dynamic_dtw_engine import canonicalize_chirality
+# SPEC 03: 4 nhóm đặc trưng mới — dùng CHUNG một nguồn công thức với predict / collect / rebuild.
+from dynamic_features import (
+    CachedFaceDetector,
+    compute_extended_columns,
+    append_extended_columns,
+    compute_repetition_count,
+)
 
 # Kết nối xương bàn tay MediaPipe 21 điểm (để vẽ thủ công đẹp mắt)
 HAND_CONNECTIONS = [
@@ -45,13 +53,16 @@ HAND_CONNECTIONS = [
     (0, 17)                                 # Cạnh bàn tay
 ]
 
+CUT_PAUSE_V_THRESHOLD = 0.045  # Đồng bộ với ngưỡng khựng dùng trong _auto_suggest_cut
+
 
 class ASLCitizenTrimmer:
     def __init__(
         self,
         input_dir: str = "ASL_Citizen_videos",
         output_json: str = "asl_citizen_templates.json",
-        target_sign: Optional[str] = None
+        target_sign: Optional[str] = None,
+        load_cnn: bool = True
     ):
         self.input_dir = input_dir
         self.output_json = output_json
@@ -75,6 +86,15 @@ class ASLCitizenTrimmer:
         self.detector = mp.tasks.vision.HandLandmarker.create_from_options(options)
         print("✓ Đã nạp MediaPipe HandLandmarker thành công.")
 
+        # 1b. SPEC 03: bộ dò mặt có cache (mốc cơ thể). Lỗi nạp KHÔNG được làm sập công cụ:
+        # khi đó mọi mẫu lưu ra sẽ có body_anchor_valid=False (mốc cơ thể bị vô hiệu).
+        self.face_detector: Optional[CachedFaceDetector] = None
+        try:
+            self.face_detector = CachedFaceDetector(detect_every_n_frames=8)
+            print("✓ Đã nạp MediaPipe FaceDetector (có cache) cho mốc cơ thể.")
+        except Exception as e:
+            print(f"[!] Không nạp được bộ dò mặt ({e}) -> mẫu sẽ KHÔNG có mốc cơ thể.")
+
         # 2. Khởi tạo Two-Stream Hand CNN
         self.device = torch.device("cpu")
         model_path = "vsl_dataset/models/best_model_v2.pth"
@@ -83,7 +103,9 @@ class ASLCitizenTrimmer:
 
         self.cnn_model = None
         self.classes = ['A', 'B', 'C', 'L', 'V']
-        if os.path.exists(model_path):
+        if not load_cnn:
+            print("[-] Bỏ qua nạp CNN (load_cnn=False): nhãn dáng tay sẽ là 'Unknown'.")
+        elif os.path.exists(model_path):
             try:
                 checkpoint = torch.load(model_path, map_location=self.device)
                 id_map = checkpoint.get("id_to_label")
@@ -125,19 +147,45 @@ class ASLCitizenTrimmer:
 
         print(f"✓ Tìm thấy {len(self.video_list)} video" + (f" cho từ '{self.target_sign}'" if self.target_sign else " trong tập dữ liệu."))
 
-    def analyze_video(self, video_path: str) -> Dict[str, Any]:
-        """Đọc và trích xuất đặc trưng toàn bộ frames của 1 video vào RAM."""
+    def analyze_video(
+        self,
+        video_path: str,
+        frame_range: Optional[Tuple[int, int]] = None,
+        run_cnn: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Đọc và trích xuất đặc trưng toàn bộ frames của 1 video vào RAM.
+
+        SPEC 03 (2 tham số mới, mặc định giữ nguyên hành vi cũ):
+          frame_range : (lo, hi) chỉ nạp các frame có chỉ số gốc trong [lo, hi] (dùng cho
+                        reextract_citizen_batch.py). Chỉ số trong dict trả về là chỉ số TƯƠNG ĐỐI
+                        (trừ đi data["frame_offset"] = lo).
+          run_cnn     : False = bỏ qua crop + CNN dáng tay (nhanh hơn nhiều; hand_shapes = "Unknown").
+        """
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0 or math.isnan(fps):
             fps = 30.0
 
         raw_frames = []
-        while True:
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                break
-            raw_frames.append(frame)
+        frame_offset = 0
+        if frame_range is None:
+            while True:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+                raw_frames.append(frame)
+        else:
+            frame_offset = max(0, int(frame_range[0]))
+            hi = int(frame_range[1])
+            cur = 0
+            while cur <= hi:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+                if cur >= frame_offset:
+                    raw_frames.append(frame)
+                cur += 1
         cap.release()
 
         n_frames = len(raw_frames)
@@ -158,8 +206,13 @@ class ASLCitizenTrimmer:
             "shape_confs": [0.0] * n_frames,
             "v_norms": [0.0] * n_frames,
             "handedness": ["Right"] * n_frames,
-            "crop_boxes": [None] * n_frames
+            "crop_boxes": [None] * n_frames,
+            # SPEC 03: hộp mặt (cx, cy, w, h) pixel từng frame (bộ dò có cache) + độ lệch chỉ số khi nạp một đoạn
+            "face_boxes": [None] * n_frames,
+            "frame_offset": frame_offset,
         }
+        if self.face_detector is not None:
+            self.face_detector.reset()
 
         h_f, w_f = raw_frames[0].shape[:2]
 
@@ -167,6 +220,8 @@ class ASLCitizenTrimmer:
             rgb_f = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_f)
             det = self.detector.detect(mp_img)
+            if self.face_detector is not None:
+                parsed_data["face_boxes"][i] = self.face_detector.detect(rgb_f)
 
             if det.hand_landmarks and len(det.hand_landmarks) > 0:
                 parsed_data["has_hand"][i] = True
@@ -195,6 +250,8 @@ class ASLCitizenTrimmer:
                 parsed_data["normals_3d"][i] = compute_palm_normal_vector(lm_3d, handedness=handed_label)
 
                 # Dáng tay CNN
+                if not run_cnn:
+                    continue
                 hand_crop, (x1, y1, x2, y2), _, _ = extract_smart_hand_crop(
                     frame, lm, handedness_label=handed_label, auto_flip_left=False
                 )
@@ -209,6 +266,42 @@ class ASLCitizenTrimmer:
                         max_idx = int(np.argmax(probs))
                         parsed_data["hand_shapes"][i] = self.classes[max_idx]
                         parsed_data["shape_confs"][i] = float(probs[max_idx])
+
+        # TỰ ĐỘNG NỘI SUY (SMART IMPUTATION) NẾU BỊ MẤT DẤU 1-3 FRAME Ở GIỮA CHỪNG
+        # Chống hiện tượng tọa độ bị giật về (0,0) làm méo mó mẫu cử chỉ
+        for i in range(1, n_frames - 1):
+            if not parsed_data["has_hand"][i]:
+                # Tìm frame trước gần nhất có tay
+                prev_idx = None
+                for p in range(i - 1, max(-1, i - 4), -1):
+                    if parsed_data["has_hand"][p]:
+                        prev_idx = p
+                        break
+                # Tìm frame sau gần nhất có tay
+                next_idx = None
+                for n_idx in range(i + 1, min(n_frames, i + 4)):
+                    if parsed_data["has_hand"][n_idx]:
+                        next_idx = n_idx
+                        break
+
+                if prev_idx is not None and next_idx is not None:
+                    # Nội suy tuyến tính mịn màng giữa 2 frame
+                    t = (i - prev_idx) / float(next_idx - prev_idx)
+                    p_x, p_y = parsed_data["wrist_coords"][prev_idx]
+                    n_x, n_y = parsed_data["wrist_coords"][next_idx]
+                    interp_x = p_x + t * (n_x - p_x)
+                    interp_y = p_y + t * (n_y - p_y)
+
+                    parsed_data["wrist_coords"][i] = (interp_x, interp_y)
+                    parsed_data["palm_lens"][i] = parsed_data["palm_lens"][prev_idx] * (1 - t) + parsed_data["palm_lens"][next_idx] * t
+                    parsed_data["angles_5d"][i] = parsed_data["angles_5d"][prev_idx] * (1 - t) + parsed_data["angles_5d"][next_idx] * t
+                    interp_norm = parsed_data["normals_3d"][prev_idx] * (1 - t) + parsed_data["normals_3d"][next_idx] * t
+                    norm_len = np.linalg.norm(interp_norm)
+                    parsed_data["normals_3d"][i] = (interp_norm / max(norm_len, 1e-6)).astype(np.float32)
+                    parsed_data["hand_shapes"][i] = parsed_data["hand_shapes"][prev_idx]
+                    parsed_data["shape_confs"][i] = parsed_data["shape_confs"][prev_idx]
+                    parsed_data["handedness"][i] = parsed_data["handedness"][prev_idx]
+                    parsed_data["has_hand"][i] = True
 
         # Tính vận tốc chuẩn hóa v_norm = delta_w / palm_len
         for i in range(1, n_frames):
@@ -271,19 +364,57 @@ class ASLCitizenTrimmer:
 
         return int(start_idx), int(end_idx)
 
-    def save_sample_to_json(
+    def _compute_cut_quality(self, data: Dict[str, Any], start_f: int, end_f: int) -> Dict[str, Any]:
+        """
+        Tính chỉ số chất lượng đoạn cắt [start_f, end_f] dựa trên has_hand đã có sẵn.
+        Ngưỡng max_gap dựa theo cửa sổ nội suy tối đa 3 frame đã cứng trong analyze_video()
+        (dòng "for p in range(i - 1, max(-1, i - 4), -1)") — gap > 3 nghĩa là nội suy có thể
+        đã thất bại hoặc để lại khoảng trống dài, không đáng tin.
+        """
+        start_f = max(0, start_f)
+        end_f = min(len(data["has_hand"]) - 1, end_f)
+        window = data["has_hand"][start_f:end_f + 1]
+        n = len(window)
+        if n == 0:
+            return {"dropout_ratio": 1.0, "max_gap": n, "quality": "BAD"}
+
+        dropout_count = sum(1 for h in window if not h)
+        dropout_ratio = dropout_count / n
+
+        max_gap = 0
+        cur_gap = 0
+        for h in window:
+            if not h:
+                cur_gap += 1
+                max_gap = max(max_gap, cur_gap)
+            else:
+                cur_gap = 0
+
+        if dropout_ratio > 0.20 or max_gap > 5:
+            quality = "BAD"
+        elif dropout_ratio > 0.08 or max_gap > 3:
+            quality = "WARNING"
+        else:
+            quality = "GOOD"
+
+        return {"dropout_ratio": dropout_ratio, "max_gap": max_gap, "quality": quality}
+
+    def build_sample_dict(
         self,
-        sign: str,
         video_filename: str,
         data: Dict[str, Any],
         start_frame: int,
         end_frame: int
-    ) -> bool:
-        """Trích xuất chuỗi 12D từ start_frame đến end_frame, resample về 32 frames và lưu JSON."""
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Trích xuất chuỗi 24D (17D cũ + 7 cột SPEC 03) từ start_frame đến end_frame, resample về 32 frames,
+        chuẩn hóa chirality, đếm số nhịp lặp và đóng gói sample dict. KHÔNG ghi file.
+        Dùng chung cho save_sample_to_json() (giao diện tương tác) và reextract_citizen_batch.py.
+        """
         n_stroke = end_frame - start_frame + 1
         if n_stroke < 6:
             print("[!] Đoạn cắt quá ngắn (< 6 frames), không thể lưu mẫu!")
-            return False
+            return None
 
         # Thu thập tọa độ và các đặc trưng trong đoạn cắt
         stroke_wrists = [data["wrist_coords"][i] for i in range(start_frame, end_frame + 1)]
@@ -291,6 +422,7 @@ class ASLCitizenTrimmer:
         stroke_angles = [data["angles_5d"][i] for i in range(start_frame, end_frame + 1)]
         stroke_normals = [data["normals_3d"][i] for i in range(start_frame, end_frame + 1)]
         stroke_shapes = [data["hand_shapes"][i] for i in range(start_frame, end_frame + 1)]
+        stroke_handed = [data["handedness"][i] for i in range(start_frame, end_frame + 1)]
 
         # Chuẩn hóa tọa độ theo mỏ neo ban đầu (Stroke-origin) và Palm length
         x0, y0 = stroke_wrists[0]
@@ -307,36 +439,79 @@ class ASLCitizenTrimmer:
         raw_dys[0] = raw_dys[1] if n_stroke > 1 else 0.0
 
         raw_angles_mat = np.array(stroke_angles, dtype=np.float32)
+        raw_dangles_mat = np.zeros_like(raw_angles_mat)
+        raw_dangles_mat[1:] = raw_angles_mat[1:] - raw_angles_mat[:-1]
+        raw_dangles_mat[0] = raw_dangles_mat[1] if n_stroke > 1 else 0.0
+
         raw_normals_mat = np.array(stroke_normals, dtype=np.float32)
 
-        raw_12d = np.column_stack([
-            raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat
+        raw_17d = np.column_stack([
+            raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat, raw_dangles_mat
         ]).astype(np.float32)
 
+        # SPEC 03: nối 7 cột mới [z_norm, mốc cơ thể(2), độ xòe ngón(4)] => 24D (cùng công thức với 3 đường còn lại)
+        stroke_lms = [data["landmarks_3d"][i] for i in range(start_frame, end_frame + 1)]
+        stroke_faces = [data["face_boxes"][i] for i in range(start_frame, end_frame + 1)]
+        raw_ext, body_ok = compute_extended_columns(stroke_palms, stroke_wrists, stroke_lms, stroke_faces)
+        raw_17d = append_extended_columns(raw_17d, raw_ext)
+
         # Resample về đúng K = 32 frames
-        res_traj_12d, res_shapes = resample_9d_gesture_sequence(raw_12d, stroke_shapes, k_target=32, min_frames=6)
-        if res_traj_12d is None or res_shapes is None:
+        res_traj_17d, res_shapes = resample_9d_gesture_sequence(raw_17d, stroke_shapes, k_target=32, min_frames=6)
+        if res_traj_17d is None or res_shapes is None:
             print("[!] Lỗi khi resample chuỗi cử chỉ!")
-            return False
+            return None
 
         duration = n_stroke / data["fps"]
 
+        # Nhãn tay thuận CHIẾM ĐA SỐ trên đoạn cắt, rồi CHUẨN HÓA CHIRALITY trước khi lưu.
+        # Nhờ đó template ASL Citizen và mẫu webcam nằm trong CÙNG không gian dấu —
+        # đây chính là nguyên nhân gốc làm accuracy cross-domain chỉ còn 35.3% với margin
+        # âm trước khi sửa (xem docstring canonicalize_chirality trong dynamic_dtw_engine.py).
+        dominant_handed = max(set(stroke_handed), key=stroke_handed.count) if stroke_handed else "Right"
+        res_traj_17d, was_flipped = canonicalize_chirality(res_traj_17d, handedness=dominant_handed)
+
+        # SPEC 03: số nhịp lặp tính trên chuỗi K=32 (cùng chỗ với match()).
+        rep_count = compute_repetition_count(res_traj_17d[:, 0], res_traj_17d[:, 1])
+
         # Đóng gói sample dictionary
+        quality_info = self._compute_cut_quality(data, start_frame, end_frame)
         sample_dict = {
-            "traj_features": [[round(float(val), 6) for val in row] for row in res_traj_12d],
+            "traj_features": [[round(float(val), 6) for val in row] for row in res_traj_17d],
             "hand_shapes": res_shapes,
             "duration_sec": round(float(duration), 3),
+            "handedness": dominant_handed,
+            "chirality_canonical": True,
+            "chirality_flipped_on_save": bool(was_flipped),
+            "rep_count": int(rep_count),
+            "body_anchor_valid": bool(body_ok),
             "source_video": video_filename,
             "trim_range": [int(start_frame), int(end_frame)],
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "dropout_ratio": round(float(quality_info["dropout_ratio"]), 4),
+            "max_gap_frames": int(quality_info["max_gap"]),
+            "quality_flag": quality_info["quality"]
         }
+        return sample_dict
+
+    def save_sample_to_json(
+        self,
+        sign: str,
+        video_filename: str,
+        data: Dict[str, Any],
+        start_frame: int,
+        end_frame: int
+    ) -> bool:
+        """Trích xuất chuỗi 24D từ start_frame đến end_frame, resample về 32 frames và lưu JSON."""
+        sample_dict = self.build_sample_dict(video_filename, data, start_frame, end_frame)
+        if sample_dict is None:
+            return False
 
         # Nạp hoặc tạo mới file JSON
         db = {
             "metadata": {
                 "k_resample_frames": 32,
-                "feature_dim": 12,
-                "description": "ASL Citizen Extracted 12D Templates (Interactive Trimmed)",
+                "feature_dim": 24,
+                "description": "ASL Citizen Extracted 24D Templates (Interactive Trimmed)",
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
             },
             "vocabulary": {}
@@ -358,15 +533,51 @@ class ASLCitizenTrimmer:
                 "samples": []
             }
 
-        vocab[sign]["samples"].append(sample_dict)
-        vocab[sign]["num_samples"] = len(vocab[sign]["samples"])
+        # Tự động ghi đè nếu video này đã từng được lưu trước đó
+        samples_list = vocab[sign]["samples"]
+        existing_idx = next((i for i, s in enumerate(samples_list) if s.get("source_video") == video_filename), None)
+        if existing_idx is not None:
+            samples_list[existing_idx] = sample_dict
+            print(f"✓ ĐÃ CẬP NHẬT (GHI ĐÈ) MẪU: Video '{video_filename}' cho từ '{sign}'.")
+        else:
+            samples_list.append(sample_dict)
+            print(f"✓ ĐÃ LƯU MẪU MỚI: Từ '{sign}' hiện có {len(samples_list)} mẫu trong '{self.output_json}'.")
+
+        vocab[sign]["num_samples"] = len(samples_list)
         db["metadata"]["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
         with open(self.output_json, "w", encoding="utf-8") as f:
             json.dump(db, f, indent=2, ensure_ascii=False)
 
-        print(f"✓ ĐÃ LƯU MẪU MỚI: Từ '{sign}' hiện có {vocab[sign]['num_samples']} mẫu trong '{self.output_json}'.")
         return True
+
+    def delete_sample_from_json(self, sign: str, video_filename: str) -> bool:
+        """Xóa mẫu của video này khỏi file JSON nếu đã lưu trước đó."""
+        if not os.path.exists(self.output_json):
+            return False
+        try:
+            with open(self.output_json, "r", encoding="utf-8") as f:
+                db = json.load(f)
+            vocab = db.get("vocabulary", {})
+            if sign not in vocab:
+                return False
+            samples = vocab[sign].get("samples", [])
+            old_len = len(samples)
+            new_samples = [s for s in samples if s.get("source_video") != video_filename]
+            if len(new_samples) < old_len:
+                vocab[sign]["samples"] = new_samples
+                vocab[sign]["num_samples"] = len(new_samples)
+                db["metadata"]["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                with open(self.output_json, "w", encoding="utf-8") as f:
+                    json.dump(db, f, indent=2, ensure_ascii=False)
+                print(f"✓ ĐÃ XÓA MẪU: Đã gỡ video '{video_filename}' khỏi từ '{sign}'. Còn lại {len(new_samples)} mẫu.")
+                return True
+            else:
+                print(f"[-] Video '{video_filename}' chưa được lưu trong file template.")
+                return False
+        except Exception as e:
+            print(f"[!] Lỗi khi xóa mẫu: {e}")
+            return False
 
     def run(self):
         if not self.video_list:
@@ -473,8 +684,8 @@ class ASLCitizenTrimmer:
                 cv2.rectangle(display_frame, (target_w - 360, 15), (target_w - 15, 55), badge_color, 2)
                 cv2.putText(display_frame, phase_text, (target_w - 345, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.58, badge_color, 2)
 
-                # 3. Tạo Bảng điều khiển HUD & Timeline bên dưới (Cao 260px)
-                hud_h = 260
+                # 3. Tạo Bảng điều khiển HUD & Timeline bên dưới (Cao 280px)
+                hud_h = 280
                 hud = np.zeros((hud_h, target_w, 3), dtype=np.uint8)
                 hud[:] = (25, 25, 28)
 
@@ -482,38 +693,56 @@ class ASLCitizenTrimmer:
                 status_str = "PREVIEW LOOP" if is_preview_loop else ("PLAYING" if is_playing else "PAUSED")
                 status_col = (0, 255, 255) if is_preview_loop else ((0, 255, 0) if is_playing else (180, 180, 180))
                 info_line = f"Video [{curr_vid_idx + 1}/{total_vids}]: {video_fname} | {n_frames} frames"
-                cv2.putText(hud, info_line, (20, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
-                cv2.putText(hud, f"Trang thai: {status_str}", (target_w - 240, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, status_col, 2)
+                cv2.putText(hud, info_line, (20, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
+                cv2.putText(hud, f"Trang thai: {status_str}", (target_w - 240, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.55, status_col, 2)
 
-                # Dòng 2: THANH TIẾN TRÌNH TIMELINE TRỰC QUAN
+                # Dòng 2: Badge chất lượng đoạn cắt (TASK A.2)
+                cut_quality = self._compute_cut_quality(data, start_f, end_f)
+                quality_colors = {"GOOD": (0, 220, 0), "WARNING": (0, 200, 255), "BAD": (0, 0, 255)}
+                q_color = quality_colors.get(cut_quality["quality"], (180, 180, 180))
+                q_text = f"Chat luong doan cat: {cut_quality['quality']} (mat dau tay: {cut_quality['dropout_ratio']*100:.1f}%, gap dai nhat: {cut_quality['max_gap']}f)"
+                cv2.putText(hud, q_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, q_color, 2)
+
+                # Dòng 3: THANH TIẾN TRÌNH TIMELINE TRỰC QUAN
                 t_x1, t_x2 = 40, target_w - 40
-                t_y = 65
+                t_y = 100
                 t_w = t_x2 - t_x1
-
-                # Nền thanh timeline
-                cv2.rectangle(hud, (t_x1, t_y - 12), (t_x2, t_y + 12), (45, 45, 50), -1)
 
                 # Vùng chọn Stroke (Start -> End) màu xanh lá cây
                 s_px = int(t_x1 + (start_f / max(n_frames - 1, 1)) * t_w)
                 e_px = int(t_x1 + (end_f / max(n_frames - 1, 1)) * t_w)
+
+                # Cảnh báo điểm cắt không nằm ở pha khựng (TASK A.3)
+                start_v = data["v_norms"][start_f]
+                end_v = data["v_norms"][end_f]
+                warn_y = t_y - 38
+                if start_v > CUT_PAUSE_V_THRESHOLD:
+                    cv2.putText(hud, "! START giua pha chuyen dong", (max(10, s_px - 60), warn_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1)
+                if end_v > CUT_PAUSE_V_THRESHOLD:
+                    cv2.putText(hud, "! END giua pha chuyen dong", (min(target_w - 220, e_px - 40), warn_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1)
+
+                # Nền thanh timeline
+                cv2.rectangle(hud, (t_x1, t_y - 12), (t_x2, t_y + 12), (45, 45, 50), -1)
                 cv2.rectangle(hud, (s_px, t_y - 12), (e_px, t_y + 12), (0, 160, 60), -1)
                 cv2.rectangle(hud, (s_px, t_y - 12), (e_px, t_y + 12), (0, 255, 100), 2)
 
                 # Vạch Start & End Marker
                 cv2.line(hud, (s_px, t_y - 18), (s_px, t_y + 18), (255, 255, 255), 2)
                 cv2.line(hud, (e_px, t_y - 18), (e_px, t_y + 18), (255, 255, 255), 2)
-                cv2.putText(hud, f"START: {start_f}", (max(10, s_px - 35), t_y - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1)
-                cv2.putText(hud, f"END: {end_f}", (min(target_w - 90, e_px - 20), t_y - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1)
+                cv2.putText(hud, f"START: {start_f}", (max(10, s_px - 35), t_y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1)
+                cv2.putText(hud, f"END: {end_f}", (min(target_w - 90, e_px - 20), t_y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1)
 
                 # Con trỏ Current Frame
                 c_px = int(t_x1 + (curr_frame_idx / max(n_frames - 1, 1)) * t_w)
                 cv2.line(hud, (c_px, t_y - 15), (c_px, t_y + 15), (0, 220, 255), 3)
                 cv2.circle(hud, (c_px, t_y), 6, (0, 220, 255), -1)
 
-                # Dòng 3: Đồ thị vận tốc v_norm(t) thu nhỏ
-                g_y_base = 150
-                g_h = 45
-                cv2.putText(hud, "Do thi van toc v(t):", (20, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1)
+                # Dòng 4: Đồ thị vận tốc v_norm(t) thu nhỏ
+                g_y_base = 175
+                g_h = 40
+                cv2.putText(hud, "Do thi van toc v(t):", (20, 132), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1)
                 cv2.line(hud, (t_x1, g_y_base), (t_x2, g_y_base), (60, 60, 65), 1)
 
                 # Vẽ đường vận tốc
@@ -533,22 +762,22 @@ class ASLCitizenTrimmer:
                 # Điểm vận tốc hiện tại
                 curr_v = data["v_norms"][curr_frame_idx]
                 cv2.putText(hud, f"Frame: {curr_frame_idx}/{n_frames-1} | v_norm: {curr_v:.3f} | Do dai cat: {end_f - start_f + 1} frames ({(end_f - start_f + 1)/data['fps']:.2f}s)",
-                            (180, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 230, 230), 1)
+                            (180, 132), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 230, 230), 1)
 
-                # Dòng 4: Bảng điều khiển phím tắt
-                cv2.line(hud, (15, 170), (target_w - 15, 170), (50, 50, 55), 1)
+                # Dòng 5: Bảng điều khiển phím tắt
+                cv2.line(hud, (15, 192), (target_w - 15, 192), (50, 50, 55), 1)
                 controls_1 = "[Space] Play/Pause  |  [A / D] Lui/Tien 1 frame  |  [Q / E] -5 / +5 frames"
                 controls_2 = "[ [ / S ] Dat START  |  [ ] / F ] Dat END  |  [P] Preview Lap doan cat"
-                controls_3 = "[Y] CHAP NHAN LUU MAU  |  [N] Bo qua video  |  [B] Quay lai  |  [Esc] Thoat"
+                controls_3 = "[Y] CHAP NHAN LUU MAU  |  [X] XOA MAU VIDEO NAY  |  [N] Bo qua  |  [B] Quay lai"
 
-                cv2.putText(hud, controls_1, (20, 192), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (190, 190, 190), 1)
-                cv2.putText(hud, controls_2, (20, 215), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 240, 100), 1)
-                cv2.putText(hud, controls_3, (20, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 200, 80), 1)
+                cv2.putText(hud, controls_1, (20, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (190, 190, 190), 1)
+                cv2.putText(hud, controls_2, (20, 236), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 240, 100), 1)
+                cv2.putText(hud, controls_3, (20, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 200, 80), 1)
 
                 # Banner thông báo (Flash Banner)
                 if time.time() < flash_timer:
-                    cv2.rectangle(hud, (target_w - 380, 178), (target_w - 20, 215), (0, 120, 0), -1)
-                    cv2.putText(hud, flash_message, (target_w - 370, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                    cv2.rectangle(hud, (target_w - 380, 200), (target_w - 20, 238), (0, 120, 0), -1)
+                    cv2.putText(hud, flash_message, (target_w - 370, 222), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
                 # Ghép Video và HUD thành 1 cửa sổ hoàn chỉnh
                 combined_window = np.vstack([display_frame, hud])
@@ -617,7 +846,7 @@ class ASLCitizenTrimmer:
                     is_playing = False
                     curr_frame_idx = start_f
 
-                elif key in [ord('y'), ord('Y'), 13]:  # LƯU MẪU (Accept)
+                elif key in [ord('y'), ord('Y')]:  # CHỈ DUY NHẤT PHÍM Y MỚI ĐƯỢC LƯU MẪU
                     is_playing = False
                     is_preview_loop = False
                     success = self.save_sample_to_json(
@@ -634,6 +863,16 @@ class ASLCitizenTrimmer:
                         time.sleep(0.5)
                         curr_vid_idx += 1
                         break
+
+                elif key in [ord('x'), ord('X')]:  # XÓA MẪU CỦA VIDEO HIỆN TẠI
+                    is_playing = False
+                    is_preview_loop = False
+                    deleted = self.delete_sample_from_json(sign=sign_name, video_filename=video_fname)
+                    if deleted:
+                        flash_message = "DA XOA MAU CUA VIDEO NAY!"
+                    else:
+                        flash_message = "VIDEO CHUA DUOC LUU!"
+                    flash_timer = time.time() + 2.0
 
                 elif key in [ord('n'), ord('N')]:  # BỎ QUA VIDEO NÀY
                     print(f"[-] Bỏ qua video {video_fname}")

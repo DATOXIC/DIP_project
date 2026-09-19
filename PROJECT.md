@@ -41,15 +41,24 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 
 ## Interface Contracts
 
-### `dynamic_dtw_engine.py` (STABLE / IMMUTABLE)
-- **`KineticPauseSegmenter.update(wrist_x: float, wrist_y: float, palm_len: float, timestamp: float = None) -> (KineticState, Optional[List[Tuple[float, float, float, str]]], bool)`**:
+### `dynamic_dtw_engine.py` (contains BOTH the legacy 4D engine and the real production 12D engine)
+- **This file now houses two DTW engines side by side:**
+  - **`HybridDTWEngine` (4D, DEPRECATED / LEGACY)**: the original engine, historically documented here as "STABLE/IMMUTABLE", but it is **not** what actually runs in production anymore. It is kept fully intact, unmodified in behavior, solely because `tests/` (`conftest.py` + `test_tier1-4*.py` + `test_verification_steps.py` + `test_harness_utils.py`) still imports and exercises it directly. Migrating those tests to the real engine is deferred to Phase 2 — do not delete this class.
+  - **`GoldenTriadDTWMatcher` (12D "Golden Triad", REAL ENGINE IN PRODUCTION)**: this is the engine actually instantiated by `predict_sentence_webcam.py` and `collect_dynamic_templates.py`. It was moved here from `predict_sentence_webcam.py` so that all DTW matching logic lives in one place.
+- **`KineticPauseSegmenter.update(wrist_x: float, wrist_y: float, palm_len: float, hand_shape: str = "Unknown", timestamp: float = None) -> Tuple[KineticState, Optional[List[GestureFrame]], bool, float]`**:
   - `wrist_x`, `wrist_y`: raw (or smoothed) pixel coordinates.
-  - Returns `(state, completed_stroke, is_swipe_left)`.
-  - Note: When pause detected, `completed_stroke` contains the stroke points; `state` is immediately reset to `KineticState.IDLE`. Integrators MUST check `if completed_stroke is not None:`.
-- **`resample_gesture_sequence(raw_points: List[Tuple[float, float, float, str]], target_k: int = 32) -> ResampledGesture`**:
-  - Returns `ResampledGesture(trajectory: np.ndarray (32, 4), duration_sec: float, shape_sequence: List[str])`.
-- **`HybridDTWEngine.match(query: ResampledGesture) -> DTWMatchResult`**:
-  - Returns `DTWMatchResult(best_word: str, best_distance: float, status: 'ACCEPTED'|'UNCERTAIN'|'REJECTED', margin: float, shape_penalty: float)`.
+  - Returns `(state, completed_stroke, is_swipe_left, v_norm)`.
+  - FSM is now 4-state: `IDLE -> RECORDING -> PENDING_COMMIT -> (RECORDING merge | IDLE commit)`. On a detected pause, the segmenter no longer commits immediately — it enters `PENDING_COMMIT` for a `grace_window_sec` (default 0.20s) to allow multi-phase signs to merge back into `RECORDING` before the stroke is actually committed and `completed_stroke` is populated. Integrators MUST check `if completed_stroke is not None:`.
+  - Swipe-Left (Backspace) detection is now additionally gated by `swipe_max_buffer_frames` (default 10) so it cannot fire mid-way through a long, already-`RECORDING` real word.
+- **`resample_gesture_sequence(raw_frames: List[GestureFrame], k_target: int = 32) -> Optional[ResampledGesture]`** *(legacy, 4D only)*:
+  - Returns `ResampledGesture(traj: np.ndarray (32, 4), shapes: List[str], duration_sec: float)`.
+- **`resample_9d_gesture_sequence(raw_frames_9d: np.ndarray, shapes: List[str], k_target: int = 32) -> Tuple[Optional[np.ndarray], Optional[List[str]]]`** *(real engine, 4D/9D/12D)*:
+  - Temporal-normalizes a raw feature trajectory of D channels (D=4, 9, or 12) to K=32 frames.
+- **`GoldenTriadDTWMatcher.match(query_traj_9d: np.ndarray, query_shapes: List[str]) -> MatchResult`** *(the contract actually in use)*:
+  - Returns `MatchResult(status: 'ACCEPTED'|'UNCERTAIN'|'REJECTED', top_word, top_display, best_distance, best_confidence, candidates: List[MatchCandidate])`.
+  - Decision is 3-tier (`ACCEPTED` if `distance <= threshold`; `REJECTED` if `distance > threshold * uncertainty_ratio`; `UNCERTAIN` otherwise), plus an **adaptive margin guard**: if the top-2 candidates are too close together (`margin_ratio < margin_threshold`, tightened to 8% automatically for legacy 4D templates, or to 4% when the top candidate is already very close to its own threshold), the result is downgraded to `UNCERTAIN` even if the distance alone would have passed.
+- **`HybridDTWEngine.match(query: ResampledGesture) -> MatchResult`** *(legacy, 4D only — see deprecation note above)*:
+  - Same `MatchResult` shape, computed via the legacy `compute_hybrid_dtw_distance`.
 
 ### `improved_dip_pipeline.py` (STABLE / IMMUTABLE)
 - **`extract_smart_hand_crop(frame_bgr: np.ndarray, landmarks_px: np.ndarray) -> Tuple[np.ndarray, Tuple[int, int, int, int], bool, bool]`**:
@@ -65,7 +74,7 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 
 ## Code Layout
 - Immutable / Read-only:
-  - `c:\DIP\DIP_project\dynamic_dtw_engine.py` (Core DTW & Segmenter)
+  - `c:\DIP\DIP_project\dynamic_dtw_engine.py` (Core DTW & Segmenter — contains BOTH the legacy 4D `HybridDTWEngine` (deprecated, kept only for `tests/` compatibility pending Phase 2 migration) AND the real production 12D `GoldenTriadDTWMatcher`)
   - `c:\DIP\DIP_project\improved_dip_pipeline.py` (DIP v4 engine)
   - `c:\DIP\DIP_project\dynamic_templates.json` (ASL template database)
   - `c:\DIP\DIP_project\train.py` (CNN model architecture)

@@ -209,7 +209,7 @@ def test_sign_weights_integrity():
         "GO", "COME", "WANT", "MORE", "WATER",
         "HELP", "GOOD", "NAME", "DRINK", "STOP"
     ]
-    assert len(weights_data) == 15
+    assert len(weights_data) >= 15
     for sign_key in expected_signs:
         assert sign_key in weights_data, f"Thieu key: {sign_key}"
         w = weights_data[sign_key]
@@ -326,21 +326,68 @@ def test_template_migration_preservation():
 
     vocab = data["vocabulary"]
     total_samples = sum(v["num_samples"] for v in vocab.values())
-    assert total_samples == 34, f"Tong so mau phai la 34, thuc te: {total_samples}"
+    assert total_samples >= 34, f"Tong so mau phai it nhat la 34, thuc te: {total_samples}"
 
-    # 5 tu goc phai co du mau 12D
-    expected_counts = {
+    # 5 tu goc phai co it nhat so mau ban dau
+    expected_min_counts = {
         "HELLO": 6,
         "BYE": 7,
         "ME": 5,
         "YOU": 11,
         "THANK_YOU": 5
     }
-    for sign, count in expected_counts.items():
-        assert vocab[sign]["num_samples"] == count, f"{sign} expected {count}, got {vocab[sign]['num_samples']}"
-        assert len(vocab[sign]["samples"]) == count
+    for sign, min_count in expected_min_counts.items():
+        assert vocab[sign]["num_samples"] >= min_count, f"{sign} expected at least {min_count}, got {vocab[sign]['num_samples']}"
+        assert len(vocab[sign]["samples"]) >= min_count
         for sample in vocab[sign]["samples"]:
             raw_traj = sample.get("traj_features_9d", sample.get("traj_features", []))
             assert len(raw_traj) == 32
             assert len(raw_traj[0]) == 12, "Mau phai la 12D [P + A + JM + N]"
+
+
+def test_compute_dominant_shape():
+    """Kiem tra ham tinh dominant shape theo majority vote va xu ly Unknown."""
+    from dynamic_dtw_engine import _compute_dominant_shape
+
+    assert _compute_dominant_shape(["A", "A", "B", "Unknown"]) == "A"
+    assert _compute_dominant_shape(["V", "B", "V", "Unknown", "V"]) == "V"
+    assert _compute_dominant_shape(["Unknown"] * 10) == "Unknown"
+    assert _compute_dominant_shape([]) == "Unknown"
+
+
+def test_global_dominant_shape_dtw_penalty():
+    """Kiem tra hinh phat lambda_shape_global 1 lan cho ca chuoi."""
+    k = 32
+    traj = np.zeros((k, 9), dtype=np.float32)
+    shapes_a = ["A"] * k
+    shapes_b = ["B"] * k
+    shapes_unk = ["Unknown"] * k
+
+    # 1. Hai mau khac dominant shape -> tang dung lambda_shape_global (+0.35)
+    d_off = compute_golden_triad_dtw_distance(traj, shapes_a, traj, shapes_b, lambda_shape=0.0, lambda_shape_global=0.0)
+    d_on = compute_golden_triad_dtw_distance(traj, shapes_a, traj, shapes_b, lambda_shape=0.0, lambda_shape_global=0.35)
+    assert abs((d_on - d_off) - 0.35) < 1e-4, f"Expected +0.35 penalty, got {d_on - d_off}"
+
+    # 2. Hai mau cung dominant shape -> khoang cach khong doi
+    d_same_off = compute_golden_triad_dtw_distance(traj, shapes_a, traj, shapes_a, lambda_shape=0.0, lambda_shape_global=0.0)
+    d_same_on = compute_golden_triad_dtw_distance(traj, shapes_a, traj, shapes_a, lambda_shape=0.0, lambda_shape_global=0.35)
+    assert abs(d_same_on - d_same_off) < 1e-4
+
+    # 3. Mau chua Unknown -> khong phat neu 1 ben la Unknown
+    d_unk = compute_golden_triad_dtw_distance(traj, shapes_a, traj, shapes_unk, lambda_shape=0.0, lambda_shape_global=0.35)
+    assert abs(d_unk - d_off) < 1e-4
+
+
+def test_pair_weight_override_father():
+    """Xac nhan w_p duoc nhan 1.3 lan cho FATHER boi pair_weight_overrides."""
+    matcher_default = GoldenTriadDTWMatcher(strict_weights=False)
+    wp_def, wa_def, wm_def, wn_def = matcher_default._get_weights_for_sign("FATHER")
+
+    matcher_no_override = GoldenTriadDTWMatcher(pair_weight_overrides={}, strict_weights=False)
+    wp_raw, wa_raw, wm_raw, wn_raw = matcher_no_override._get_weights_for_sign("FATHER")
+
+    assert abs(wp_def - wp_raw * 1.3) < 1e-4, f"Expected {wp_raw * 1.3}, got {wp_def}"
+    assert abs(wa_def - wa_raw) < 1e-4
+    assert abs(wm_def - wm_raw) < 1e-4
+    assert abs(wn_def - wn_raw) < 1e-4
 

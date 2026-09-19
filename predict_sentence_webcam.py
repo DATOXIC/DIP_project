@@ -12,7 +12,7 @@ Kiến trúc 4 Tầng Tinh Gọn (Lean 4-Layer Real-time Pipeline):
      - Dò chuyển động / điểm dừng tự nhiên qua vận tốc chuẩn hóa v_norm.
      - Lọc cổng thời lượng cử chỉ [0.4s, 2.5s] loại bỏ kích hoạt sai.
      - Lệnh ưu tiên cấp tốc Swipe-Left (Gạt tay sang trái) = Xóa từ (Backspace).
-  3. TẦNG 3: Bộ So Khớp Chuỗi Lai (HybridDTWEngine) với dải băng Sakoe-Chiba.
+  3. TẦNG 3: Bộ So Khớp GoldenTriadDTWMatcher (Golden Triad 12D) với dải băng Sakoe-Chiba.
      - Chuẩn hóa K=32 khung hình với gốc tọa độ cử chỉ (Stroke-origin anchor).
      - Hàm khoảng cách kết hợp quỹ đạo không gian, hướng tiếp tuyến và dáng tay.
      - Phân tầng 3 mức: ACCEPTED, UNCERTAIN, REJECTED.
@@ -56,6 +56,13 @@ from improved_dip_pipeline import (
     process_lean_dip_tensor
 )
 import json
+# SPEC 03: các hàm trích xuất 4 nhóm đặc trưng mới (z_norm, mốc cơ thể, độ xòe ngón) dùng CHUNG với
+# collect_dynamic_templates.py / inspect_and_trim_asl_citizen.py / rebuild_templates_from_raw.py.
+from dynamic_features import (
+    CachedFaceDetector,
+    compute_extended_columns,
+    append_extended_columns,
+)
 from dynamic_dtw_engine import (
     KineticState,
     GestureFrame,
@@ -65,7 +72,15 @@ from dynamic_dtw_engine import (
     HybridDTWEngine,
     HybridDTWConfig,
     MatchResult,
-    MatchCandidate
+    MatchCandidate,
+    resample_9d_gesture_sequence,
+    compute_golden_triad_dtw_distance,
+    GoldenTriadDTWMatcher,
+    canonicalize_chirality,
+    STROKE_DURATION_MIN_SEC,
+    STROKE_DURATION_MAX_SEC,
+    is_stroke_duration_valid,
+    is_movement_epenthesis
 )
 
 # =============================================================================
@@ -74,7 +89,7 @@ from dynamic_dtw_engine import (
 # =============================================================================
 CONFIG = {
     # --- Chọn nguồn Camera: 0 = Webcam máy tính, 1 hoặc 2 = iPhone / Cam ngoài ---
-    "camera_source": 0,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
+    "camera_source": 1,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
                                  # (đã xác nhận qua snapshot: index 0 → iPhone, index 1 → laptop webcam)
 
     # --- Trọng số thuật toán DTW (Golden Triad 12D) ---
@@ -82,7 +97,9 @@ CONFIG = {
     "w_finger_angles": 0.8,      # Trọng số góc gập 5 ngón tay (d_angle)
     "w_wrist_dir": 0.5,          # Trọng số hướng vận tốc tiếp tuyến (d_dir)
     "w_palm_normal": 0.5,        # Trọng số vector pháp tuyến lòng bàn tay 3D (d_normal - Cosine)
-    "lambda_shape": 0.5,         # Điểm phạt khi dáng tay CNN không khớp
+    "lambda_shape": 0.0,         # Tắt: audit c_shape cho thấy 4/5 từ có độ nhất quán nhãn CNN quá thấp (30-49%) trong lúc chuyển động, tín hiệu nhiễu nhiều hơn hữu ích
+    "asllex_blend_alpha": 1.0,        # 1.0 = giữ hành vi hiện tại (dùng thẳng ASL-LEX). Đổi xuống 0.3-0.7 để bật Hybrid Blend thật sự.
+    "asllex_max_deviation": None,     # None = không giới hạn (giữ hành vi hiện tại). Đặt vd 0.5 để giới hạn ASL-LEX lệch tối đa ±50% so với mặc định.
     
     # --- Ngưỡng quyết định nhận diện ---
     "default_threshold": 1.25,   # Ngưỡng chấp nhận từ chuẩn (<= threshold là khớp)
@@ -98,6 +115,24 @@ CONFIG = {
     "templates_path": "dynamic_templates.json",
     "sign_weights_path": "ASL_ALEX_2.0/sign_weights_asllex.json",
     # "sign_weights_path": None,
+
+    # --- Tối ưu hóa hiệu năng (SPEC 02 - Chống lag) ---
+    "enable_static_shape_cnn": False,   # Tắt DIP + CNN trong vòng lặp động (lambda_shape=0.0 nên không dùng)
+    "detect_scale": 0.5,                 # Tỉ lệ thu nhỏ frame đưa vào MediaPipe detector (tăng FPS)
+
+    # --- SPEC 03: 4 nhóm đặc trưng MỚI (17D -> 24D + số nhịp lặp). 0.0 = TẮT (hành vi cũ, bit-identical) ---
+    # Kết quả ablate_feature_groups.py (bank Citizen 139 mẫu, trọng số cũ global, LOO, margin TB mốc 17D = +0.1006):
+    #   z_norm      margin +0.1063 (+0.0057)  -> GIỮ   (đề xuất 0.5)
+    #   mốc cơ thể  margin +0.1717 (+0.0711)  -> GIỮ   (đề xuất 0.8)
+    #   độ xòe ngón margin +0.1221 (+0.0215)  -> GIỮ   (đề xuất 0.4)
+    #   số nhịp lặp margin +0.0886 (-0.0120)  -> LOẠI  (w_r = 0.0)
+    # Vẫn để 0.0 cho cả 4 ở đây vì bank webcam production (dynamic_templates.json) còn 17D — các nhóm mới
+    # chưa có tác dụng cho tới khi thu lại/rebuild bank webcam sang 24D (SPEC 05/04). Bật khi đó.
+    "w_z": 0.0,                          # z_norm (độ sâu ảo từ palm_len)
+    "w_b": 0.0,                          # mốc cơ thể (cổ tay so với hộp mặt) — CẦN bộ dò mặt
+    "w_s": 0.0,                          # độ xòe ngón (4 góc giữa các ngón liền kề)
+    "w_r": 0.0,                          # số nhịp lặp (cộng 1 lần sau DTW)
+    "face_detect_every_n_frames": 8,     # bộ dò mặt có cache: chỉ chạy mạng mỗi N frame
 }
 
 # =============================================================================
@@ -121,6 +156,18 @@ ASL_VOCAB_MAP: Dict[str, Dict[str, str]] = {
     "NAME":      {"en": "Name",      "vi": "Tên"},
     "DRINK":     {"en": "Drink",     "vi": "Uống"},
     "STOP":      {"en": "Stop",      "vi": "Dừng"},
+    # Các từ 1 tay mở rộng
+    "BAD":       {"en": "Bad",       "vi": "Tệ"},
+    "EAT":       {"en": "Eat",       "vi": "Ăn"},
+    "FATHER":    {"en": "Father",    "vi": "Bố"},
+    "LIKE":      {"en": "Like",      "vi": "Thích"},
+    "MOTHER":    {"en": "Mother",    "vi": "Mẹ"},
+    "PLEASE":    {"en": "Please",    "vi": "Làm ơn"},
+    "SEE":       {"en": "See",       "vi": "Thấy"},
+    "SORRY":     {"en": "Sorry",     "vi": "Xin lỗi"},
+    "TOMORROW":  {"en": "Tomorrow",  "vi": "Ngày mai"},
+    "WHERE":     {"en": "Where",     "vi": "Ở đâu"},
+    "YES":       {"en": "Yes",       "vi": "Vâng"},
     # Alias tương thích ngược cho template tiếng Việt cũ nếu có
     "xin_chao":  {"en": "Hello",     "vi": "Xin chào"},
     "cam_on":    {"en": "Thank You", "vi": "Cảm ơn"},
@@ -896,376 +943,9 @@ def compute_palm_normal_vector(landmarks_3d: np.ndarray, handedness: str = "Righ
     return n
 
 
-def resample_9d_gesture_sequence(
-    raw_frames_9d: np.ndarray,
-    shapes: List[str],
-    k_target: int = 32,
-    min_frames: int = 8
-) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
-    """
-    Nội suy chuỗi đặc trưng đa chiều (4D, 9D hoặc 12D) về K=32 frames cố định (Temporal Normalization).
-    Tương thích hoàn toàn mảng raw_frames_9d có D kênh (D=4, D=9, D=12).
-    """
-    n_orig = len(raw_frames_9d)
-    if n_orig < min_frames:
-        return None, None
-
-    orig_t = np.linspace(0.0, 1.0, n_orig)
-    target_t = np.linspace(0.0, 1.0, k_target)
-
-    # Nội suy tất cả các kênh liên tục
-    res_channels = []
-    for col in range(raw_frames_9d.shape[1]):
-        interp_col = np.interp(target_t, orig_t, raw_frames_9d[:, col]).astype(np.float32)
-        res_channels.append(interp_col)
-    res_traj = np.column_stack(res_channels).astype(np.float32)
-
-    # Nếu có 3 kênh vector pháp tuyến ở cuối (kênh 9, 10, 11), chuẩn hóa lại độ dài vector = 1 sau nội suy
-    if res_traj.shape[1] >= 12:
-        normals = res_traj[:, 9:12]
-        norms = np.linalg.norm(normals, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-6)
-        res_traj[:, 9:12] = (normals / norms).astype(np.float32)
-
-    # Nội suy Nearest-Neighbor cho nhãn dáng tay rời rạc
-    res_shapes = []
-    for t_val in target_t:
-        orig_idx = int(np.clip(np.round(t_val * (n_orig - 1)), 0, n_orig - 1))
-        res_shapes.append(shapes[orig_idx])
-
-    return res_traj, res_shapes
-
-
-def compute_golden_triad_dtw_distance(
-    q_traj: np.ndarray,
-    q_shapes: List[str],
-    t_traj: np.ndarray,
-    t_shapes: List[str],
-    w_p: float = 0.6,
-    w_a: float = 1.0,
-    w_m: float = 0.4,
-    w_n: float = 0.8,
-    lambda_shape: float = 0.5,
-    sakoe_chiba_radius: int = 4
-) -> float:
-    """
-    Tính khoảng cách DTW 12D với dải băng Sakoe-Chiba và chuẩn hóa theo căn bậc hai số chiều:
-      Cost(i, j) = w_p * ||P_q - P_t|| / sqrt(2)
-                 + w_m * ||JM_q - JM_t|| / sqrt(2)
-                 + w_a * ||A_q - A_t|| / sqrt(5)
-                 + w_n * (1.0 - dot(n_q, n_t)) / 2.0  (Cosine distance)
-                 + lambda_shape * I(shape_q != shape_t)
-    """
-    k = len(q_traj)
-    r = sakoe_chiba_radius
-
-    d_mat = np.full((k + 1, k + 1), np.inf, dtype=np.float32)
-    d_mat[0, 0] = 0.0
-
-    has_template_angles = (t_traj.shape[1] >= 9)
-    has_template_normal = (t_traj.shape[1] >= 12 and q_traj.shape[1] >= 12)
-
-    for i in range(1, k + 1):
-        j_start = max(1, i - r)
-        j_end = min(k, i + r)
-
-        for j in range(j_start, j_end + 1):
-            # 1. Quỹ đạo vị trí (x, y) - Chuẩn hóa căn bậc hai của 2
-            d_pos = math.hypot(
-                float(q_traj[i - 1, 0] - t_traj[j - 1, 0]),
-                float(q_traj[i - 1, 1] - t_traj[j - 1, 1])
-            ) / 1.41421356
-
-            # 2. Độ dời tức thời (dx, dy) - Chuẩn hóa căn bậc hai của 2
-            d_dir = math.hypot(
-                float(q_traj[i - 1, 2] - t_traj[j - 1, 2]),
-                float(q_traj[i - 1, 3] - t_traj[j - 1, 3])
-            ) / 1.41421356
-
-            # 3. Góc uốn 5 ngón tay - Chuẩn hóa căn bậc hai của 5
-            if has_template_angles and q_traj.shape[1] >= 9:
-                diff_angles = q_traj[i - 1, 4:9] - t_traj[j - 1, 4:9]
-                d_angle = float(np.linalg.norm(diff_angles)) / 2.23606798
-            else:
-                d_angle = 0.0
-
-            # 4. Vector pháp tuyến lòng bàn tay 3D - Khoảng cách góc Cosine [0, 1]
-            if has_template_normal:
-                nq = q_traj[i - 1, 9:12]
-                nt = t_traj[j - 1, 9:12]
-                cos_sim = float(np.dot(nq, nt))
-                cos_sim = max(-1.0, min(1.0, cos_sim))
-                d_norm = (1.0 - cos_sim) / 2.0
-            else:
-                d_norm = 0.0
-
-            # 5. Hình phạt nhãn dáng tay rời rạc
-            d_shape = lambda_shape if (q_shapes[i - 1] != t_shapes[j - 1]) else 0.0
-
-            step_cost = w_p * d_pos + w_m * d_dir + w_a * d_angle + w_n * d_norm + d_shape
-            d_mat[i, j] = step_cost + min(
-                d_mat[i - 1, j],
-                d_mat[i, j - 1],
-                d_mat[i - 1, j - 1]
-            )
-
-    total_cost = d_mat[k, k]
-    if math.isinf(total_cost):
-        return 999.0
-    return float(total_cost / float(k))
-
-
-class GoldenTriadDTWMatcher:
-    """
-    Bộ não so khớp cử chỉ v5.1 tích hợp Golden Triad [P + A + JM].
-    Tương thích ngược 100% với cả template 4D cũ và template 9D mới.
-    """
-    def __init__(
-        self,
-        templates_path: str = "dynamic_templates.json",
-        sign_weights_path: Optional[str] = None,
-        w_p: float = 0.6,
-        w_a: float = 1.0,
-        w_m: float = 0.4,
-        w_n: float = 0.8,
-        lambda_shape: float = 0.5,
-        margin_threshold: float = 0.12,
-        uncertainty_ratio: float = 1.40,
-        threshold_override: Optional[float] = None,
-        strict_weights: bool = True
-    ):
-        self.templates_path = templates_path
-        self.sign_weights_path = sign_weights_path if sign_weights_path is not None else CONFIG.get("sign_weights_path")
-        self.w_p = w_p
-        self.w_a = w_a
-        self.w_m = w_m
-        self.w_n = w_n
-        self.lambda_shape = lambda_shape
-        self.margin_threshold = margin_threshold
-        self.uncertainty_ratio = uncertainty_ratio
-        self.threshold_override = threshold_override
-        self.strict_weights = strict_weights
-        self.vocabulary: Dict[str, Any] = {}
-        self.sign_weights: Dict[str, Dict[str, float]] = {}
-        self.feature_dim: int = 4
-        self.is_legacy_4d: bool = True
-
-        self.load_sign_weights()
-        self.load_templates()
-        self.validate_weights_against_vocabulary()
-
-    def load_sign_weights(self) -> None:
-        """
-        Nạp trọng số Per-Sign DTW từ file JSON tạo bởi ASL-LEX 2.0.
-        Nếu sign_weights_path là None, tự động kích hoạt chế độ Global Weights (1 công thức chung từ CONFIG).
-        """
-        if not self.sign_weights_path:
-            self.sign_weights = {}
-            print(f"ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu "
-                  f"(w_p={self.w_p}, w_a={self.w_a}, w_m={self.w_m}, w_n={self.w_n}).")
-            return
-
-        if not os.path.exists(self.sign_weights_path):
-            if self.strict_weights:
-                raise FileNotFoundError(f"[!] Không tìm thấy file trọng số ASL-LEX: {self.sign_weights_path}")
-            print(f"[!] CẢNH BÁO: Không tìm thấy {self.sign_weights_path}. Sử dụng trọng số toàn cục CONFIG.")
-            return
-
-        try:
-            with open(self.sign_weights_path, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-
-            parsed_weights = {}
-            for raw_key, w_entry in raw_data.items():
-                canonical_k = str(raw_key).strip().upper()
-                # Hỗ trợ cả schema trực tiếp {"P":..., "A":...} hoặc lồng {"weights": {"P":...}}
-                w_dict = w_entry.get("weights", w_entry) if isinstance(w_entry, dict) else {}
-                
-                for required_field in ["P", "A", "JM", "N"]:
-                    if required_field not in w_dict:
-                        raise ValueError(f"[!] Ký hiệu '{canonical_k}' thiếu trường trọng số '{required_field}'!")
-                
-                p = float(w_dict["P"])
-                a = float(w_dict["A"])
-                jm = float(w_dict["JM"])
-                n = float(w_dict["N"])
-
-                for val, name in [(p, "P"), (a, "A"), (jm, "JM"), (n, "N")]:
-                    if val < 0.0 or math.isnan(val) or math.isinf(val):
-                        raise ValueError(f"[!] Ký hiệu '{canonical_k}' có trọng số '{name}' không hợp lệ: {val}")
-
-                weight_sum = p + a + jm + n
-                if abs(weight_sum - 1.0) > 1e-4:
-                    raise ValueError(f"[!] Ký hiệu '{canonical_k}' có tổng trọng số != 1.0 (Tổng={weight_sum:.6f})!")
-
-                parsed_weights[canonical_k] = {
-                    "P": p, "A": a, "JM": jm, "N": n
-                }
-
-            self.sign_weights = parsed_weights
-            print(f"✓ [DTW] Đã nạp thành công {len(self.sign_weights)} bộ trọng số Per-Sign từ '{self.sign_weights_path}'.")
-        except Exception as e:
-            if self.strict_weights:
-                raise
-            print(f"[!] Lỗi đọc {self.sign_weights_path}: {e}")
-
-    # Ánh xạ bí danh tương thích ngược giữa các phiên bản template (VSL tiếng Việt <-> ASL tiếng Anh)
-    SIGN_KEY_ALIASES: Dict[str, str] = {
-        "XIN_CHAO": "HELLO",
-        "CAM_ON": "THANK_YOU",
-        "TOI": "ME",
-        "BAN": "YOU",
-        "TAM_BIET": "BYE",
-        "GOOD-BYE": "BYE",
-        "GOOD_BYE": "BYE",
-    }
-
-    def validate_weights_against_vocabulary(self) -> None:
-        """
-        Kiểm tra tính nhất quán 2 chiều giữa từ điển templates và bảng trọng số ASL-LEX.
-        Triệt tiêu hoàn toàn lỗi âm thầm (Silent Failure / Key Mismatch).
-        Tự động hỗ trợ ánh xạ bí danh cho các phiên bản template cũ.
-        """
-        if not self.sign_weights_path or not self.vocabulary or not self.sign_weights:
-            return
-
-        missing_weights = []
-        for word_key in self.vocabulary.keys():
-            raw_k = str(word_key).strip().upper()
-            canonical_k = self.SIGN_KEY_ALIASES.get(raw_k, raw_k)
-            if canonical_k not in self.sign_weights:
-                missing_weights.append(word_key)
-
-        if missing_weights:
-            msg = (
-                f"[CRITICAL] Phát hiện {len(missing_weights)} từ vựng trong '{self.templates_path}' "
-                f"không có trọng số trong '{self.sign_weights_path}': {missing_weights}\n"
-                f"Vui lòng đồng bộ Canonical Key hoặc bổ sung trọng số ASL-LEX!"
-            )
-            if self.strict_weights:
-                raise KeyError(msg)
-            else:
-                print(f"[!] CẢNH BÁO: {msg}")
-
-    def _get_weights_for_sign(self, word_key: str) -> Tuple[float, float, float, float]:
-        """
-        Truy xuất vector trọng số W_s = [w_P, w_A, w_JM, w_N] theo candidate sign (O(1)).
-        Tự động chuyển đổi các alias (ví dụ 'xin_chao' -> 'HELLO').
-        Nếu ở chế độ Global Weights, trả về cấu hình CONFIG mà không báo cảnh báo.
-        """
-        if not self.sign_weights_path or not self.sign_weights:
-            return self.w_p, self.w_a, self.w_m, self.w_n
-
-        raw_k = str(word_key).strip().upper()
-        canonical_k = self.SIGN_KEY_ALIASES.get(raw_k, raw_k)
-        if canonical_k in self.sign_weights:
-            sw = self.sign_weights[canonical_k]
-            return sw["P"], sw["A"], sw["JM"], sw["N"]
-
-        print(f"[!] CẢNH BÁO FALLBACK: Ký hiệu '{word_key}' (Canonical: '{canonical_k}') không có Per-Sign Weight! "
-              f"Tạm thời dùng trọng số CONFIG (w_p={self.w_p}, w_a={self.w_a}, w_m={self.w_m}, w_n={self.w_n}).")
-        return self.w_p, self.w_a, self.w_m, self.w_n
-
-    def load_templates(self) -> None:
-        if not os.path.exists(self.templates_path):
-            return
-        try:
-            with open(self.templates_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            self.vocabulary = data.get("vocabulary", {})
-            meta = data.get("metadata", {})
-            self.feature_dim = meta.get("feature_dim", 4)
-            self.is_legacy_4d = (self.feature_dim < 9)
-            if self.is_legacy_4d:
-                print(f"[!] LƯU Ý: {self.templates_path} đang chứa mẫu 4D cũ (chưa có 5D góc ngón tay 3D).")
-                print("    -> Tự động kích hoạt Adaptive Margin Guard (8%) để chống nghẽn UNCERTAIN.")
-                print("    -> Để có độ chính xác cao nhất, hãy chạy 'collect_dynamic_templates.py' để ghi mẫu 9D.")
-        except Exception as e:
-            print(f"[!] Lỗi đọc {self.templates_path}: {e}")
-
-    @staticmethod
-    def compute_margin_ratio(d_top1: float, d_top2: float, eps: float = 1e-4) -> float:
-        """Relative Contrast Margin: (D2 - D1) / max(D1, eps)."""
-        return float((d_top2 - d_top1) / max(d_top1, eps))
-
-    def match(self, query_traj_9d: np.ndarray, query_shapes: List[str]) -> MatchResult:
-        if not self.vocabulary:
-            return MatchResult(status="REJECTED", top_word=None, top_display=None, best_distance=999.0, best_confidence=0.0, candidates=[])
-
-        all_candidates: List[MatchCandidate] = []
-
-        for word_key, word_data in self.vocabulary.items():
-            display_name = word_data.get("display_name", word_key)
-            threshold = float(word_data.get("threshold", 1.25))
-            samples = word_data.get("samples", [])
-            if not samples:
-                continue
-
-            # Lấy vector trọng số W_s riêng biệt cho candidate sign này từ ASL-LEX
-            wp, wa, wm, wn = self._get_weights_for_sign(word_key)
-
-            sample_distances = []
-            for s in samples:
-                t_traj_raw = s.get("traj_features_9d")
-                if t_traj_raw is None:
-                    t_traj_raw = s.get("traj_features", [])
-
-                t_traj = np.array(t_traj_raw, dtype=np.float32)
-                t_shapes = s.get("hand_shapes", ["Unknown"] * 32)
-
-                if len(t_traj) != 32:
-                    continue
-
-                dist = compute_golden_triad_dtw_distance(
-                    q_traj=query_traj_9d,
-                    q_shapes=query_shapes,
-                    t_traj=t_traj,
-                    t_shapes=t_shapes,
-                    w_p=wp,
-                    w_a=wa,
-                    w_m=wm,
-                    w_n=wn,
-                    lambda_shape=self.lambda_shape
-                )
-                sample_distances.append(dist)
-
-            if sample_distances:
-                min_dist = min(sample_distances)
-                conf = max(0.0, min(1.0, 1.0 - (min_dist / (threshold + 1e-6))))
-                all_candidates.append(MatchCandidate(word_key=word_key, display_name=display_name, distance=min_dist, confidence=conf))
-
-        if not all_candidates:
-            return MatchResult(status="REJECTED", top_word=None, top_display=None, best_distance=999.0, best_confidence=0.0, candidates=[])
-
-        all_candidates.sort(key=lambda c: c.distance)
-        top1 = all_candidates[0]
-        base_thresh = float(self.vocabulary.get(top1.word_key, {}).get("threshold", 1.25))
-        word_thresh = self.threshold_override if self.threshold_override is not None else base_thresh
-
-        # 1. Kiểm tra ngưỡng tuyệt đối (vượt ngưỡng nghi vấn -> REJECTED)
-        if top1.distance > (word_thresh * self.uncertainty_ratio):
-            return MatchResult(status="REJECTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
-
-        # 2. Kiểm tra Adaptive Margin Guard nếu có ít nhất 2 ứng viên
-        effective_margin = 0.08 if (self.is_legacy_4d and self.margin_threshold >= 0.12) else self.margin_threshold
-
-        if len(all_candidates) >= 2:
-            top2 = all_candidates[1]
-            margin_ratio = self.compute_margin_ratio(top1.distance, top2.distance)
-            
-            # Cổng Margin thích ứng: Nếu cử chỉ cực sát mẫu (D1 <= 0.70 * Thresh),
-            # chỉ nghi vấn nếu 2 từ gần như hòa điểm tuyệt đối (< 4% chênh lệch)
-            req_margin = 0.04 if top1.distance <= (0.70 * word_thresh) else effective_margin
-            
-            if margin_ratio < req_margin:
-                # Quá sít sao -> Nghi vấn (UNCERTAIN)
-                return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
-
-        # 3. Chấp nhận (ACCEPTED) hoặc UNCERTAIN theo ngưỡng từ
-        if top1.distance <= word_thresh:
-            return MatchResult(status="ACCEPTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
-        else:
-            return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+# resample_9d_gesture_sequence, compute_golden_triad_dtw_distance và GoldenTriadDTWMatcher
+# đã được dời sang dynamic_dtw_engine.py (Mục 6: "BỘ NÃO GOLDEN TRIAD 12D") và được
+# import lại ở đầu file này — xem khối `from dynamic_dtw_engine import (...)` phía trên.
 
 
 # =============================================================================
@@ -1279,7 +959,12 @@ def run_sentence_builder(
     margin_threshold: float = 0.12,
     threshold_override: Optional[float] = None,
     templates_path: Optional[str] = None,
-    sign_weights_path: Any = "KEEP_DEFAULT"
+    sign_weights_path: Any = "KEEP_DEFAULT",
+    video_path: Optional[str] = None,
+    profile: bool = False,
+    enable_static_shape_cnn: Optional[bool] = None,
+    detect_scale: Optional[float] = None,
+    show_features: Optional[bool] = None
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1338,8 +1023,26 @@ def run_sentence_builder(
         lambda_shape=CONFIG["lambda_shape"],
         margin_threshold=margin_threshold if margin_threshold is not None else CONFIG["margin_threshold"],
         uncertainty_ratio=CONFIG["uncertainty_ratio"],
-        threshold_override=threshold_override if threshold_override is not None else CONFIG["default_threshold"]
+        threshold_override=threshold_override if threshold_override is not None else CONFIG["default_threshold"],
+        asllex_blend_alpha=CONFIG.get("asllex_blend_alpha", 1.0),
+        asllex_max_deviation=CONFIG.get("asllex_max_deviation", None),
+        w_z=CONFIG.get("w_z", 0.0),
+        w_b=CONFIG.get("w_b", 0.0),
+        w_s=CONFIG.get("w_s", 0.0),
+        w_r=CONFIG.get("w_r", 0.0)
     )
+
+    # SPEC 03: bộ dò mặt có cache — CHỈ tạo khi nhóm mốc cơ thể đang bật (w_b > 0), để không tốn CPU vô ích.
+    # Nếu không tạo được (thiếu model / không có mạng để tải), query sẽ không có mốc cơ thể và
+    # match() tự vô hiệu w_b cho lần so khớp đó (query_has_body=False) — không làm sập vòng lặp.
+    face_detector: Optional[CachedFaceDetector] = None
+    if CONFIG.get("w_b", 0.0) > 0.0:
+        try:
+            face_detector = CachedFaceDetector(detect_every_n_frames=CONFIG.get("face_detect_every_n_frames", 8))
+            print("✓ Đã nạp bộ dò mặt (mốc cơ thể) có cache.")
+        except Exception as e:
+            print(f"[!] Không nạp được bộ dò mặt ({e}) -> tắt nhóm mốc cơ thể (w_b) cho phiên này.")
+            face_detector = None
     if not dtw_engine.vocabulary:
         print("[!] CẢNH BÁO: dynamic_templates.json chưa có mẫu nào hoặc không tồn tại!")
         print("[!] Vui lòng chạy 'collect_dynamic_templates.py' trước để thu mẫu cử chỉ.")
@@ -1354,7 +1057,10 @@ def run_sentence_builder(
         max_stroke_frames=60,
         swipe_threshold=-0.80,
         swipe_ratio=2.5,
-        swipe_cooldown_sec=1.0
+        swipe_cooldown_sec=1.0,
+        require_ready_pose=True,
+        max_phase_merges=1,
+        grace_window_sec=0.15
     )
 
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
@@ -1366,6 +1072,9 @@ def run_sentence_builder(
     cached_valid_defects: Optional[List] = None
     stroke_angles_history: List[np.ndarray] = []
     stroke_normals_history: List[np.ndarray] = []
+    # SPEC 03: lịch sử (21 landmark pixel-z*w, hộp mặt) từng frame, đồng bộ với stroke_angles_history.
+    stroke_ext_history: List[Tuple[Optional[np.ndarray], Optional[Tuple[float, float, float, float]]]] = []
+    current_face_box: Optional[Tuple[float, float, float, float]] = None
 
     # 4. Quản lý Bộ đệm Câu thoại (Tầng 4)
     sentence_words: List[str] = []
@@ -1386,15 +1095,41 @@ def run_sentence_builder(
     MAX_TRAIL_AGE_SEC = 1.2
     hand_lost_frames = 0
 
+    # Cấu hình tối ưu hóa hiệu năng (SPEC 02)
+    if enable_static_shape_cnn is None:
+        enable_static_shape_cnn = bool(CONFIG.get("enable_static_shape_cnn", False))
+    if detect_scale is None:
+        detect_scale = float(CONFIG.get("detect_scale", 0.5))
+    detect_scale = max(0.1, min(1.0, float(detect_scale)))
+
     # Biến phục vụ tối ưu hóa xen kẽ suy luận DIP + CNN trên CPU
     frame_counter = 0
-    cached_hand_shape = "B"
+    cached_hand_shape = "Unknown" if not enable_static_shape_cnn else "B"
     cached_box = (0, 0, 0, 0)
+    recording_streak = 0   # Số khung liên tiếp đang ở trạng thái RECORDING (dùng để ép CNN chạy đủ ngay lúc bắt đầu cử chỉ)
 
-    # Mở Webcam — thử MSMF trước (hoạt động tốt với Iriun Webcam iPhone),
-    # rồi fallback sang DSHOW nếu MSMF không đọc được frame thực sự.
+    # Bộ đệm đo thời gian theo tầng (SPEC 02 Nhiệm vụ 1)
+    if profile:
+        from collections import deque
+        prof_mediapipe = deque(maxlen=60)
+        prof_dip_cnn = deque(maxlen=60)
+        prof_features = deque(maxlen=60)
+        prof_dtw = deque(maxlen=60)
+        prof_draw = deque(maxlen=60)
+        prof_total = deque(maxlen=60)
+    else:
+        prof_total = []
+
+    # Mở nguồn video hoặc Webcam — thử MSMF trước, rồi fallback sang DSHOW
     cap = None
-    if not headless:
+    if video_path is not None:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"[!] KHÔNG THỂ mở video: {video_path}")
+            cap = None
+        else:
+            print(f"[Video] KẾT NỐI THÀNH CÔNG video file: {video_path}")
+    elif not headless:
         def _try_open_camera(index: int, backend) -> "cv2.VideoCapture | None":
             """Mở camera với backend chỉ định, trả về cap nếu đọc được frame thực, None nếu thất bại."""
             _cap = cv2.VideoCapture(index, backend)
@@ -1433,7 +1168,8 @@ def run_sentence_builder(
             print(f"[!] KHONG THE mo Camera [{camera_index}] voi bat ky backend nao!")
 
     flip_cam = False
-    show_features = True
+    if show_features is None:
+        show_features = False
     prev_time = time.time()
     fps = 0.0
 
@@ -1445,17 +1181,30 @@ def run_sentence_builder(
     print("  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát\n")
 
     processed_frames = 0
+    has_predicted_pending = False
 
     try:
         while True:
-            if headless or cap is None or not cap.isOpened():
+            if profile:
+                _t_frame_start = time.perf_counter()
+                _t_mp = 0.0
+                _t_dip = 0.0
+                _t_feat = 0.0
+                _t_dtw = 0.0
+                _t_draw = 0.0
+
+            if cap is None or not cap.isOpened():
                 # Chế độ headless kiểm thử: tạo khung hình giả lập nếu không có camera thật
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
                 time.sleep(0.033)
             else:
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    if video_path is not None and max_frames is not None and processed_frames < max_frames:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = cap.read()
+                    if not ret:
+                        break
 
             if flip_cam:
                 frame = cv2.flip(frame, 1)
@@ -1471,9 +1220,23 @@ def run_sentence_builder(
             prev_time = curr_time
 
             display_frame = frame.copy()
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if detect_scale < 0.999:
+                det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
+            else:
+                det_frame = frame
+            rgb_frame = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            if profile:
+                _t0_mp = time.perf_counter()
             det_result = detector.detect(mp_image)
+            if profile:
+                _t_mp = time.perf_counter() - _t0_mp
+
+            # SPEC 03: hộp mặt (cx, cy, w, h) theo pixel KHUNG GỐC; ảnh dò có thể đã thu nhỏ (detect_scale).
+            if face_detector is not None:
+                current_face_box = face_detector.detect(rgb_frame, out_size=(w_f, h_f))
+            else:
+                current_face_box = None
 
             hand_found = False
             raw_wrist_x, raw_wrist_y = 0.0, 0.0
@@ -1488,6 +1251,8 @@ def run_sentence_builder(
             is_swipe = False
             v_norm = 0.0
             x1, y1, x2, y2 = cached_box
+            current_angles: Optional[np.ndarray] = None
+            current_normal: Optional[np.ndarray] = None
 
             if det_result.hand_landmarks and len(det_result.hand_landmarks) > 0:
                 hand_lost_frames = 0
@@ -1519,48 +1284,63 @@ def run_sentence_builder(
 
                 # Trích xuất 5 góc uốn ngón tay 3D & Vector pháp tuyến lòng bàn tay 3D (12D Features)
                 lm_3d = np.array([[lm.x * w_f, lm.y * h_f, lm.z * w_f] for lm in landmarks], dtype=np.float32)
+                if profile:
+                    _t0_feat = time.perf_counter()
                 current_angles = compute_joint_flexion_angles(lm_3d)
                 current_normal = compute_palm_normal_vector(lm_3d, handedness=handedness_label)
+                if profile:
+                    _t_feat = time.perf_counter() - _t0_feat
                 stroke_angles_history.append(current_angles)
                 stroke_normals_history.append(current_normal)
+                stroke_ext_history.append((lm_3d, current_face_box))
                 if len(stroke_angles_history) > 120:
                     stroke_angles_history.pop(0)
                 if len(stroke_normals_history) > 120:
                     stroke_normals_history.pop(0)
+                if len(stroke_ext_history) > 120:
+                    stroke_ext_history.pop(0)
 
                 # 2. Nhận diện Dáng tay tức thời qua DIP Engine v4 + Two-Stream CNN + Soft Bayesian Prior
                 # Kỹ thuật xen kẽ suy luận CPU: thực hiện suy luận mỗi 2 khung hình để duy trì FPS >= 25
-                run_dip_cnn = (frame_counter % 2 == 0) or (cached_hand_shape == "Unknown")
-                if run_dip_cnn:
-                    hand_crop, (x1, y1, x2, y2), touching_border, _ = extract_smart_hand_crop(
-                        frame, landmarks, handedness_label=handedness_label, auto_flip_left=False
-                    )
-                    cached_box = (x1, y1, x2, y2)
-                    if hand_crop.shape[0] >= 30 and hand_crop.shape[1] >= 30 and not touching_border:
-                        # Trích xuất hình thái học DIP: Convex Hull & Convexity Defects
-                        n_fingers, hull_pts, valid_defects = compute_finger_count_from_defects(hand_crop, palm_len)
-                        cached_n_fingers = n_fingers
-                        cached_hull_pts = hull_pts
-                        cached_valid_defects = valid_defects
+                if enable_static_shape_cnn:
+                    if profile:
+                        _t0_dip = time.perf_counter()
+                    run_dip_cnn = (frame_counter % 2 == 0) or (cached_hand_shape == "Unknown") or (recording_streak < 4)
+                    if run_dip_cnn:
+                        hand_crop, (x1, y1, x2, y2), touching_border, _ = extract_smart_hand_crop(
+                            frame, landmarks, handedness_label=handedness_label, auto_flip_left=False
+                        )
+                        cached_box = (x1, y1, x2, y2)
+                        if hand_crop.shape[0] >= 30 and hand_crop.shape[1] >= 30 and not touching_border:
+                            # Trích xuất hình thái học DIP: Convex Hull & Convexity Defects
+                            n_fingers, hull_pts, valid_defects = compute_finger_count_from_defects(hand_crop, palm_len)
+                            cached_n_fingers = n_fingers
+                            cached_hull_pts = hull_pts
+                            cached_valid_defects = valid_defects
 
-                        if cnn_model is not None:
-                            tensor_np, _, _ = process_lean_dip_tensor(hand_crop, target_size=(128, 128))
-                            t_pt = torch.from_numpy(tensor_np.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0)
-                            with torch.no_grad():
-                                logits = cnn_model(t_pt)
-                                raw_probs = F.softmax(logits, dim=1).numpy()[0]
-                                probs = apply_soft_morphological_prior(raw_probs, n_fingers, classes)
-                                hand_shape = classes[int(np.argmax(probs))]
-                                cached_hand_shape = hand_shape
+                            if cnn_model is not None:
+                                tensor_np, _, _ = process_lean_dip_tensor(hand_crop, target_size=(128, 128))
+                                t_pt = torch.from_numpy(tensor_np.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0)
+                                with torch.no_grad():
+                                    logits = cnn_model(t_pt)
+                                    raw_probs = F.softmax(logits, dim=1).numpy()[0]
+                                    probs = apply_soft_morphological_prior(raw_probs, n_fingers, classes)
+                                    hand_shape = classes[int(np.argmax(probs))]
+                                    cached_hand_shape = hand_shape
+                        else:
+                            cached_hull_pts = None
+                            cached_valid_defects = None
                     else:
-                        cached_hull_pts = None
-                        cached_valid_defects = None
+                        hand_shape = cached_hand_shape
+                        x1, y1, x2, y2 = cached_box
+                        n_fingers = cached_n_fingers
+                        hull_pts = cached_hull_pts
+                        valid_defects = cached_valid_defects
+                    if profile:
+                        _t_dip = time.perf_counter() - _t0_dip
                 else:
-                    hand_shape = cached_hand_shape
-                    x1, y1, x2, y2 = cached_box
-                    n_fingers = cached_n_fingers
-                    hull_pts = cached_hull_pts
-                    valid_defects = cached_valid_defects
+                    hand_shape = "Unknown"
+                    cached_hand_shape = "Unknown"
 
             else:
                 # Khi MediaPipe không thấy tay: Thử kích hoạt LK Inertial Fallback cho 1-2 frames
@@ -1582,6 +1362,7 @@ def run_sentence_builder(
                     lk_fallback.reset()
                     trail_points.clear()
                     stroke_angles_history.clear()
+                    stroke_ext_history.clear()
 
                 # Tự động chốt câu hoàn chỉnh khi hạ tay > 1.8s (Sentence Commit Timeout)
                 if len(sentence_words) > 0 and (curr_time - last_hand_seen_time) > 1.8 and not sentence_finalized:
@@ -1602,6 +1383,77 @@ def run_sentence_builder(
                     hand_shape=hand_shape,
                     timestamp=curr_time
                 )
+                if seg_state == KineticState.RECORDING:
+                    recording_streak += 1
+                    has_predicted_pending = False
+                else:
+                    recording_streak = 0
+                if seg_state in (KineticState.IDLE, KineticState.READY):
+                    has_predicted_pending = False
+
+                # 3.5. Dự đoán tạm thời khi PENDING_COMMIT (Nhiệm vụ E)
+                if seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending:
+                    has_predicted_pending = True
+                    temp_stroke = segmenter.buffer
+                    if temp_stroke and len(temp_stroke) >= segmenter.min_stroke_frames:
+                        temp_duration = temp_stroke[-1].timestamp - temp_stroke[0].timestamp
+                        if is_stroke_duration_valid(temp_duration) and not is_movement_epenthesis(temp_stroke):
+                            n_ts = len(temp_stroke)
+                            if len(stroke_angles_history) >= n_ts:
+                                t_angs = stroke_angles_history[-n_ts:]
+                            else:
+                                pad_a = n_ts - len(stroke_angles_history)
+                                fa = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
+                                t_angs = [fa] * pad_a + stroke_angles_history
+                            if len(stroke_normals_history) >= n_ts:
+                                t_norms = stroke_normals_history[-n_ts:]
+                            else:
+                                pad_n = n_ts - len(stroke_normals_history)
+                                fn = stroke_normals_history[0] if stroke_normals_history else np.array([0,0,-1], dtype=np.float32)
+                                t_norms = [fn] * pad_n + stroke_normals_history
+                            if len(stroke_ext_history) >= n_ts:
+                                t_exts = stroke_ext_history[-n_ts:]
+                            else:
+                                t_exts = [stroke_ext_history[0] if stroke_ext_history else (None, None)] * (n_ts - len(stroke_ext_history)) + stroke_ext_history
+
+                            tx0, ty0 = temp_stroke[0].x, temp_stroke[0].y
+                            tref = max(temp_stroke[0].palm_len, 15.0)
+                            txs = np.array([(f.x - tx0) / tref for f in temp_stroke], dtype=np.float32)
+                            tys = np.array([(f.y - ty0) / tref for f in temp_stroke], dtype=np.float32)
+                            tdxs = np.zeros(n_ts, dtype=np.float32)
+                            tdys = np.zeros(n_ts, dtype=np.float32)
+                            tdxs[1:] = txs[1:] - txs[:-1]
+                            tdys[1:] = tys[1:] - tys[:-1]
+                            tdxs[0] = tdxs[1] if n_ts > 1 else 0.0
+                            tdys[0] = tdys[1] if n_ts > 1 else 0.0
+                            t_ang_mat = np.array(t_angs, dtype=np.float32)
+                            t_dang_mat = np.zeros_like(t_ang_mat)
+                            t_dang_mat[1:] = t_ang_mat[1:] - t_ang_mat[:-1]
+                            t_dang_mat[0] = t_dang_mat[1] if n_ts > 1 else 0.0
+                            t_norm_mat = np.array(t_norms, dtype=np.float32)
+                            t_17d = np.column_stack([txs, tys, tdxs, tdys, t_ang_mat, t_norm_mat, t_dang_mat]).astype(np.float32)
+                            # SPEC 03: nối 7 cột mới [z_norm, mốc cơ thể(2), độ xòe ngón(4)] => 24D
+                            t_ext, t_body_ok = compute_extended_columns(
+                                [f.palm_len for f in temp_stroke],
+                                [(f.x, f.y) for f in temp_stroke],
+                                [e[0] for e in t_exts],
+                                [e[1] for e in t_exts]
+                            )
+                            t_17d = append_extended_columns(t_17d, t_ext)
+                            t_shapes = [f.hand_shape for f in temp_stroke]
+                            rt_17d, rt_shapes = resample_9d_gesture_sequence(t_17d, t_shapes, k_target=32)
+                            if rt_17d is not None:
+                                if profile:
+                                    _t0_dtw = time.perf_counter()
+                                t_match = dtw_engine.match(rt_17d, rt_shapes, handedness=handedness_label, query_has_body=t_body_ok)
+                                if profile:
+                                    _t_dtw += time.perf_counter() - _t0_dtw
+                                if t_match.status == "ACCEPTED" and t_match.top_word:
+                                    t_phrase = get_asl_phrase(t_match.top_word, lang="en", default=t_match.top_display or t_match.top_word)
+                                    banner_title = f"? {t_phrase} (pending)"
+                                    banner_subtitle = f"Temporary prediction"
+                                    banner_color = (180, 180, 180) # màu xám nhạt
+                                    banner_expire = curr_time + 1.0
 
                 # 4. Quản lý vệt sáng chuyển động neon (Lưu tọa độ + nhãn thời gian)
                 trail_points.append((int(wrist_x), int(wrist_y), curr_time))
@@ -1623,112 +1475,146 @@ def run_sentence_builder(
                         banner_expire = curr_time + 1.2
                     trail_points.clear()
                     stroke_angles_history.clear()
+                    stroke_ext_history.clear()
 
                 # 6. Xử lý CỬ CHỈ HOÀN THÀNH -> SO KHỚP GOLDEN TRIAD DTW (Tầng 3)
                 if completed_stroke is not None:
                     stroke_duration = completed_stroke[-1].timestamp - completed_stroke[0].timestamp
 
-                    # Áp dụng R3 Layer 2 Guard: Cổng thời lượng cử chỉ [0.4s, 2.5s]
-                    if 0.40 <= stroke_duration <= 2.50:
-                        n_stroke = len(completed_stroke)
-                        if len(stroke_angles_history) >= n_stroke:
-                            angles_for_stroke = stroke_angles_history[-n_stroke:]
+                    # Áp dụng R3 Layer 2 Guard: Cổng thời lượng cử chỉ [0.4s, 2.5s].
+                    # Hai con số này lấy từ hằng số DÙNG CHUNG trong dynamic_dtw_engine.py
+                    # (STROKE_DURATION_MIN_SEC / STROKE_DURATION_MAX_SEC) để cổng ở đây và
+                    # cổng ở collect_dynamic_templates.py không bao giờ lệch nhau nữa.
+                    if is_stroke_duration_valid(stroke_duration):
+                        if is_movement_epenthesis(completed_stroke):
+                            print("[BO QUA: chuyen dong chuyen tiep]")
                         else:
-                            pad_count = n_stroke - len(stroke_angles_history)
-                            first_ang = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
-                            angles_for_stroke = [first_ang] * pad_count + stroke_angles_history
-
-                        if len(stroke_normals_history) >= n_stroke:
-                            normals_for_stroke = stroke_normals_history[-n_stroke:]
-                        else:
-                            pad_norm = n_stroke - len(stroke_normals_history)
-                            first_norm = stroke_normals_history[0] if stroke_normals_history else np.array([0, 0, -1], dtype=np.float32)
-                            normals_for_stroke = [first_norm] * pad_norm + stroke_normals_history
-
-                        stroke_angles_history.clear()
-                        stroke_normals_history.clear()
-
-                        # Neo gốc chuyển động tại frame đầu tiên của stroke
-                        x0, y0 = completed_stroke[0].x, completed_stroke[0].y
-                        ref_palm = max(completed_stroke[0].palm_len, 15.0)
-
-                        raw_xs = np.array([(f.x - x0) / ref_palm for f in completed_stroke], dtype=np.float32)
-                        raw_ys = np.array([(f.y - y0) / ref_palm for f in completed_stroke], dtype=np.float32)
-
-                        raw_dxs = np.zeros(n_stroke, dtype=np.float32)
-                        raw_dys = np.zeros(n_stroke, dtype=np.float32)
-                        raw_dxs[1:] = raw_xs[1:] - raw_xs[:-1]
-                        raw_dys[1:] = raw_ys[1:] - raw_ys[:-1]
-                        raw_dxs[0] = raw_dxs[1] if n_stroke > 1 else 0.0
-                        raw_dys[0] = raw_dys[1] if n_stroke > 1 else 0.0
-
-                        raw_angles_mat = np.array(angles_for_stroke, dtype=np.float32)
-                        raw_normals_mat = np.array(normals_for_stroke, dtype=np.float32)
-                        raw_12d = np.column_stack([raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat]).astype(np.float32)
-                        stroke_shapes = [f.hand_shape for f in completed_stroke]
-
-                        res_traj_12d, res_shapes = resample_9d_gesture_sequence(raw_12d, stroke_shapes, k_target=32)
-                        if res_traj_12d is not None:
-                            match_result = dtw_engine.match(res_traj_12d, res_shapes)
-
-                            # a) Chấp nhận từ vựng (ACCEPTED)
-                            if match_result.status == "ACCEPTED" and match_result.top_word:
-                                word_key = match_result.top_word
-                                en_phrase = get_asl_phrase(word_key, lang="en", default=match_result.top_display or word_key)
-                                vi_phrase = get_asl_phrase(word_key, lang="vi", default="")
-
-                                # R3 Layer 3 / Debouncing: Chống bắn lặp từ trong 0.8s
-                                is_repeat = (en_phrase == last_committed_word and (curr_time - last_commit_time) < 0.8)
-                                if not is_repeat:
-                                    sentence_words.append(en_phrase)
-                                    last_commit_time = curr_time
-                                    last_committed_word = en_phrase
-                                    sentence_finalized = False
-
-                                    # Điểm tin cậy quy đổi theo công thức yêu cầu
-                                    target_thresh = dtw_engine.vocabulary[word_key]["threshold"]
-                                    conf_pct = max(0.0, min(100.0, (1.0 - (match_result.best_distance / (target_thresh + 1e-6))) * 100.0))
-
-                                    # Banner phản hồi trực quan cỡ lớn giữ trong 2.0s (R4)
-                                    banner_title = f"{en_phrase} ({conf_pct:.0f}%)"
-                                    banner_subtitle = f"ASL Match: {en_phrase} [{vi_phrase}] | Dist: {match_result.best_distance:.3f}"
-                                    banner_color = (0, 255, 100)
-                                    banner_expire = curr_time + 2.0
-
-                                    # Phát âm tiếng Anh bất đồng bộ không chặn (R4 Non-blocking TTS)
-                                    speak_async(en_phrase)
-                                    print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' ({conf_pct:.0f}%) | Câu: {' '.join(sentence_words)}")
-
-                            # b) Nghi vấn Top-2 (UNCERTAIN) - R3 Layer 3 Guard: Không commit từ
-                            elif match_result.status == "UNCERTAIN" and len(match_result.candidates) >= 2:
-                                c1, c2 = match_result.candidates[0], match_result.candidates[1]
-                                en1 = get_asl_phrase(c1.word_key, lang="en", default=c1.display_name)
-                                en2 = get_asl_phrase(c2.word_key, lang="en", default=c2.display_name)
-                                margin_pct = ((c2.distance - c1.distance) / max(c1.distance, 1e-4)) * 100.0
-                                banner_title = f"? UNCERTAIN: {en1} or {en2}"
-                                banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Margin: {margin_pct:.1f}%"
-                                banner_color = (0, 200, 255)
-                                banner_expire = curr_time + 1.4
-                                word_th = float(dtw_engine.vocabulary.get(c1.word_key, {}).get("threshold", 1.25))
-                                reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= word_th else "Vượt ngưỡng chuẩn"
-                                print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
-
-                            # c) Từ chối (REJECTED) - R3 Layer 3 Guard: Khoảng cách quá xa
+                            n_stroke = len(completed_stroke)
+                            if len(stroke_angles_history) >= n_stroke:
+                                angles_for_stroke = stroke_angles_history[-n_stroke:]
                             else:
-                                banner_title = "X UNKNOWN GESTURE"
-                                banner_subtitle = f"DTW Distance: {match_result.best_distance:.2f} (Rejected)"
-                                banner_color = (0, 0, 240)
-                                banner_expire = curr_time + 1.0
-                                print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f})")
+                                pad_count = n_stroke - len(stroke_angles_history)
+                                first_ang = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
+                                angles_for_stroke = [first_ang] * pad_count + stroke_angles_history
+
+                            if len(stroke_normals_history) >= n_stroke:
+                                normals_for_stroke = stroke_normals_history[-n_stroke:]
+                            else:
+                                pad_norm = n_stroke - len(stroke_normals_history)
+                                first_norm = stroke_normals_history[0] if stroke_normals_history else np.array([0, 0, -1], dtype=np.float32)
+                                normals_for_stroke = [first_norm] * pad_norm + stroke_normals_history
+
+                            if len(stroke_ext_history) >= n_stroke:
+                                ext_for_stroke = stroke_ext_history[-n_stroke:]
+                            else:
+                                ext_for_stroke = [stroke_ext_history[0] if stroke_ext_history else (None, None)] * (n_stroke - len(stroke_ext_history)) + stroke_ext_history
+
+                            stroke_angles_history.clear()
+                            stroke_normals_history.clear()
+                            stroke_ext_history.clear()
+
+                            # Neo gốc chuyển động tại frame đầu tiên của stroke
+                            x0, y0 = completed_stroke[0].x, completed_stroke[0].y
+                            ref_palm = max(completed_stroke[0].palm_len, 15.0)
+
+                            raw_xs = np.array([(f.x - x0) / ref_palm for f in completed_stroke], dtype=np.float32)
+                            raw_ys = np.array([(f.y - y0) / ref_palm for f in completed_stroke], dtype=np.float32)
+
+                            raw_dxs = np.zeros(n_stroke, dtype=np.float32)
+                            raw_dys = np.zeros(n_stroke, dtype=np.float32)
+                            raw_dxs[1:] = raw_xs[1:] - raw_xs[:-1]
+                            raw_dys[1:] = raw_ys[1:] - raw_ys[:-1]
+                            raw_dxs[0] = raw_dxs[1] if n_stroke > 1 else 0.0
+                            raw_dys[0] = raw_dys[1] if n_stroke > 1 else 0.0
+
+                            raw_angles_mat = np.array(angles_for_stroke, dtype=np.float32)
+                            raw_dangles_mat = np.zeros_like(raw_angles_mat)
+                            raw_dangles_mat[1:] = raw_angles_mat[1:] - raw_angles_mat[:-1]
+                            raw_dangles_mat[0] = raw_dangles_mat[1] if n_stroke > 1 else 0.0
+
+                            raw_normals_mat = np.array(normals_for_stroke, dtype=np.float32)
+                            raw_17d = np.column_stack([raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat, raw_dangles_mat]).astype(np.float32)
+                            # SPEC 03: nối 7 cột mới [z_norm, mốc cơ thể(2), độ xòe ngón(4)] => 24D (cùng công thức với 3 đường còn lại)
+                            raw_ext, body_ok = compute_extended_columns(
+                                [f.palm_len for f in completed_stroke],
+                                [(f.x, f.y) for f in completed_stroke],
+                                [e[0] for e in ext_for_stroke],
+                                [e[1] for e in ext_for_stroke]
+                            )
+                            raw_17d = append_extended_columns(raw_17d, raw_ext)
+                            stroke_shapes = [f.hand_shape for f in completed_stroke]
+
+                            res_traj_17d, res_shapes = resample_9d_gesture_sequence(raw_17d, stroke_shapes, k_target=32)
+                            if res_traj_17d is not None:
+                                # Truyền nhãn tay thuận trực tiếp -> match() chuẩn hóa chirality
+                                # theo nhánh chính thống, không phải đoán bằng heuristic mean(nx).
+                                if profile:
+                                    _t0_dtw = time.perf_counter()
+                                match_result = dtw_engine.match(res_traj_17d, res_shapes, handedness=handedness_label, query_has_body=body_ok)
+                                if profile:
+                                    _t_dtw += time.perf_counter() - _t0_dtw
+
+                                # a) Chấp nhận từ vựng (ACCEPTED)
+                                if match_result.status == "ACCEPTED" and match_result.top_word:
+                                    word_key = match_result.top_word
+                                    en_phrase = get_asl_phrase(word_key, lang="en", default=match_result.top_display or word_key)
+                                    vi_phrase = get_asl_phrase(word_key, lang="vi", default="")
+
+                                    # R3 Layer 3 / Debouncing: Chống bắn lặp từ trong 0.8s
+                                    is_repeat = (en_phrase == last_committed_word and (curr_time - last_commit_time) < 0.8)
+                                    if not is_repeat:
+                                        sentence_words.append(en_phrase)
+                                        last_commit_time = curr_time
+                                        last_committed_word = en_phrase
+                                        sentence_finalized = False
+
+                                        # Điểm tin cậy quy đổi theo công thức yêu cầu
+                                        target_thresh = dtw_engine.vocabulary[word_key]["threshold"]
+                                        conf_pct = max(0.0, min(100.0, (1.0 - (match_result.best_distance / (target_thresh + 1e-6))) * 100.0))
+
+                                        # Banner phản hồi trực quan cỡ lớn giữ trong 2.0s (R4)
+                                        banner_title = f"{en_phrase} ({conf_pct:.0f}%)"
+                                        banner_subtitle = f"ASL Match: {en_phrase} [{vi_phrase}] | Dist: {match_result.best_distance:.3f}"
+                                        banner_color = (0, 255, 100)
+                                        banner_expire = curr_time + 2.0
+
+                                        # Phát âm tiếng Anh bất đồng bộ không chặn (R4 Non-blocking TTS)
+                                        speak_async(en_phrase)
+                                        print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' ({conf_pct:.0f}%) | Câu: {' '.join(sentence_words)}")
+
+                                # b) Nghi vấn Top-2 (UNCERTAIN) - R3 Layer 3 Guard: Không commit từ
+                                elif match_result.status == "UNCERTAIN" and len(match_result.candidates) >= 2:
+                                    c1, c2 = match_result.candidates[0], match_result.candidates[1]
+                                    en1 = get_asl_phrase(c1.word_key, lang="en", default=c1.display_name)
+                                    en2 = get_asl_phrase(c2.word_key, lang="en", default=c2.display_name)
+                                    margin_pct = ((c2.distance - c1.distance) / max(c1.distance, 1e-4)) * 100.0
+                                    banner_title = f"? UNCERTAIN: {en1} or {en2}"
+                                    banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Margin: {margin_pct:.1f}%"
+                                    banner_color = (0, 200, 255)
+                                    banner_expire = curr_time + 1.4
+                                    word_th = float(dtw_engine.vocabulary.get(c1.word_key, {}).get("threshold", 1.25))
+                                    reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= word_th else "Vượt ngưỡng chuẩn"
+                                    print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
+
+                                # c) Từ chối (REJECTED) - R3 Layer 3 Guard: Khoảng cách quá xa
+                                else:
+                                    banner_title = "X UNKNOWN GESTURE"
+                                    banner_subtitle = f"DTW Distance: {match_result.best_distance:.2f} (Rejected)"
+                                    banner_color = (0, 0, 240)
+                                    banner_expire = curr_time + 1.0
+                                    print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f})")
                     else:
                         # R3 Layer 2: Cử chỉ nằm ngoài [0.4s, 2.5s] bị bỏ qua trong im lặng
                         print(f"[SentenceBuilder] Cử chỉ bị loại bởi Duration Gate ({stroke_duration:.2f}s).")
 
                     # LƯU Ý R4: Không xóa trail_points tại đây để vệt sáng phai tự nhiên
 
+                if profile:
+                    _t0_draw_box = time.perf_counter()
                 # Vẽ Bounding Box & Trực quan hóa DIP (Convex Hull & Defects)
-                if x2 > x1 and y2 > y1:
-                    box_col = (0, 255, 0) if seg_state == KineticState.RECORDING else (255, 255, 0)
+                if cached_box is not None and len(cached_box) == 4 and cached_box[2] > cached_box[0] and cached_box[3] > cached_box[1]:
+                    x1, y1, x2, y2 = cached_box
+                    box_col = (0, 255, 0) if seg_state in (KineticState.RECORDING, KineticState.PENDING_COMMIT) else (255, 255, 0)
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_col, 2)
                     cv2.putText(display_frame, f"Shape: {hand_shape} (Fingers: {n_fingers})", (x1, max(20, y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_col, 1, lineType=cv2.LINE_AA)
@@ -1736,14 +1622,18 @@ def run_sentence_builder(
                     if hull_pts is not None and len(hull_pts) > 0:
                         hull_display = hull_pts + np.array([x1, y1])
                         cv2.polylines(display_frame, [hull_display], True, (0, 255, 128), 1, lineType=cv2.LINE_AA)
-                    if valid_defects:
+                    if valid_defects is not None and len(valid_defects) > 0:
                         for s_p, e_p, f_p in valid_defects:
                             cv2.circle(display_frame, (int(f_p[0] + x1), int(f_p[1] + y1)), 4, (0, 0, 255), -1)
 
                 # Vẽ 3D Skeleton & Góc gập (Flexion) & Vector Pháp Tuyến trực tiếp lên bàn tay
                 if show_features:
                     draw_hand_skeleton_features(display_frame, landmarks, current_angles, w_f, h_f, handedness=handedness_label)
+                if profile:
+                    _t_draw += time.perf_counter() - _t0_draw_box
 
+            if profile:
+                _t0_draw_hud = time.perf_counter()
             # Lọc bớt các điểm vệt sáng quá cũ (> MAX_TRAIL_AGE_SEC)
             trail_points = [pt for pt in trail_points if (curr_time - pt[2]) <= MAX_TRAIL_AGE_SEC]
 
@@ -1762,6 +1652,9 @@ def run_sentence_builder(
             # Trạng thái phân đoạn động học
             if seg_state == KineticState.RECORDING:
                 k_text = "DANG CHUYEN DONG"
+                k_color = (0, 255, 0)
+            elif seg_state == KineticState.READY:
+                k_text = "SAN SANG"
                 k_color = (0, 255, 0)
             else:
                 k_text = "KHUNG TAY" if hand_found else "CHO TAY"
@@ -1826,6 +1719,38 @@ def run_sentence_builder(
                         "[d]: Toggle Features HUD | [Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [q]: Quit",
                         (10, h_f - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (190, 190, 190), 1, lineType=cv2.LINE_AA)
 
+            if profile:
+                _t_draw += time.perf_counter() - _t0_draw_hud
+
+            # Bảng nhỏ profile góc màn hình (SPEC 02 Nhiệm vụ 1)
+            if profile and len(prof_total) > 0:
+                avg_mp = sum(prof_mediapipe) / len(prof_mediapipe) * 1000.0
+                avg_dip = sum(prof_dip_cnn) / len(prof_dip_cnn) * 1000.0
+                avg_feat = sum(prof_features) / len(prof_features) * 1000.0
+                avg_dtw = sum(prof_dtw) / len(prof_dtw) * 1000.0
+                avg_draw = sum(prof_draw) / len(prof_draw) * 1000.0
+                avg_tot = sum(prof_total) / len(prof_total) * 1000.0
+                fps_prof = 1000.0 / avg_tot if avg_tot > 0 else 0.0
+
+                px0 = max(10, w_f - 230)
+                py0 = 50
+                cv2.rectangle(display_frame, (px0, py0), (w_f - 10, py0 + 155), (15, 15, 15), -1)
+                cv2.rectangle(display_frame, (px0, py0), (w_f - 10, py0 + 155), (80, 80, 80), 1)
+                lines_prof = [
+                    "PROFILE (60f avg)",
+                    f"FPS:       {fps_prof:5.1f}",
+                    f"mediapipe: {avg_mp:5.2f} ms",
+                    f"dip_cnn:   {avg_dip:5.2f} ms",
+                    f"features:  {avg_feat:5.2f} ms",
+                    f"dtw:       {avg_dtw:5.2f} ms",
+                    f"draw:      {avg_draw:5.2f} ms",
+                    f"total:     {avg_tot:5.2f} ms",
+                ]
+                for li, ltext in enumerate(lines_prof):
+                    col = (0, 255, 255) if li == 0 else ((0, 255, 0) if li == 1 else (220, 220, 220))
+                    cv2.putText(display_frame, ltext, (px0 + 8, py0 + 16 + li * 17),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.40, col, 1, lineType=cv2.LINE_AA)
+
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -1850,7 +1775,42 @@ def run_sentence_builder(
                         cap.set(cv2.CAP_PROP_SETTINGS, 1)
 
             if max_frames is not None and processed_frames >= max_frames:
+                if profile:
+                    _t_frame_end = time.perf_counter()
+                    _t_total = _t_frame_end - _t_frame_start
+                    prof_mediapipe.append(_t_mp)
+                    prof_dip_cnn.append(_t_dip)
+                    prof_features.append(_t_feat)
+                    prof_dtw.append(_t_dtw)
+                    prof_draw.append(_t_draw)
+                    prof_total.append(_t_total)
                 break
+
+            if profile:
+                _t_frame_end = time.perf_counter()
+                _t_total = _t_frame_end - _t_frame_start
+                prof_mediapipe.append(_t_mp)
+                prof_dip_cnn.append(_t_dip)
+                prof_features.append(_t_feat)
+                prof_dtw.append(_t_dtw)
+                prof_draw.append(_t_draw)
+                prof_total.append(_t_total)
+
+                if frame_counter % 60 == 0 and len(prof_total) > 0:
+                    avg_mp = sum(prof_mediapipe) / len(prof_mediapipe) * 1000.0
+                    avg_dip = sum(prof_dip_cnn) / len(prof_dip_cnn) * 1000.0
+                    avg_feat = sum(prof_features) / len(prof_features) * 1000.0
+                    avg_dtw = sum(prof_dtw) / len(prof_dtw) * 1000.0
+                    avg_draw = sum(prof_draw) / len(prof_draw) * 1000.0
+                    avg_tot = sum(prof_total) / len(prof_total) * 1000.0
+                    fps_prof = 1000.0 / avg_tot if avg_tot > 0 else 0.0
+                    print(f"[PROFILE] Frame {frame_counter:4d} (60f avg) | FPS: {fps_prof:5.1f}")
+                    print(f"  mediapipe: {avg_mp:6.2f} ms")
+                    print(f"  dip_cnn:   {avg_dip:6.2f} ms")
+                    print(f"  features:  {avg_feat:6.2f} ms")
+                    print(f"  dtw:       {avg_dtw:6.2f} ms")
+                    print(f"  draw:      {avg_draw:6.2f} ms")
+                    print(f"  total:     {avg_tot:6.2f} ms")
 
     finally:
         if cap is not None:
@@ -1860,24 +1820,52 @@ def run_sentence_builder(
         detector.close()
         print("-> Đã đóng chương trình nhận diện ghép câu an toàn.")
 
+    if profile and len(prof_total) > 0:
+        avg_mp = sum(prof_mediapipe) / len(prof_mediapipe) * 1000.0
+        avg_dip = sum(prof_dip_cnn) / len(prof_dip_cnn) * 1000.0
+        avg_feat = sum(prof_features) / len(prof_features) * 1000.0
+        avg_dtw = sum(prof_dtw) / len(prof_dtw) * 1000.0
+        avg_draw = sum(prof_draw) / len(prof_draw) * 1000.0
+        avg_tot = sum(prof_total) / len(prof_total) * 1000.0
+        fps_prof = 1000.0 / avg_tot if avg_tot > 0 else 0.0
+        return {
+            "mediapipe_ms": avg_mp,
+            "dip_cnn_ms": avg_dip,
+            "features_ms": avg_feat,
+            "dtw_ms": avg_dtw,
+            "draw_ms": avg_draw,
+            "total_ms": avg_tot,
+            "fps": fps_prof
+        }
+    return None
+
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Real-time Sign Language Recognition")
     parser.add_argument("--cam", type=int, default=None, help="Camera index (0=built-in webcam, 1, 2=external/iPhone). Mặc định dùng camera_source từ CONFIG.")
     parser.add_argument("--templates", type=str, default=None, help="Đường dẫn file template JSON (ví dụ: dynamic_templates.backup_v51.json). Mặc định dùng templates_path từ CONFIG.")
-    parser.add_argument("--margin", type=float, default=0.12, help="Relative contrast margin threshold (default: 0.12 = 12%)")
+    parser.add_argument("--margin", type=float, default=0.12, help="Relative contrast margin threshold (default: 0.12 = 12%%)")
     parser.add_argument("--thresh", type=float, default=None, help="Override DTW distance threshold (default: None, uses template threshold 1.25)")
     parser.add_argument("--global-weights", action="store_true", help="Bật chế độ dùng chung 1 công thức CONFIG cho mọi từ (tắt Per-Sign weights ASL-LEX)")
+    parser.add_argument("--profile", action="store_true", help="Bật đo thời gian chi tiết theo tầng (ms) và hiển thị HUD / console mỗi 60 frame")
+    parser.add_argument("--with-cnn", action="store_true", help="Bật lại suy luận DIP + CNN dáng tay tĩnh (mặc định tắt theo CONFIG)")
+    parser.add_argument("--detect-scale", type=float, default=None, help="Tỉ lệ scale frame đưa vào MediaPipe detector (mặc định 0.5 từ CONFIG)")
+    parser.add_argument("--video", type=str, default=None, help="Đường dẫn file video đầu vào thay vì webcam")
     args, _ = parser.parse_known_args()
     
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
     selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
     sw_override = None if args.global_weights else CONFIG.get("sign_weights_path")
+    enable_cnn = True if args.with_cnn else None
     run_sentence_builder(
         camera_index=selected_cam,
         margin_threshold=args.margin,
         threshold_override=args.thresh,
         templates_path=selected_templates,
-        sign_weights_path=sw_override
+        sign_weights_path=sw_override,
+        video_path=args.video,
+        profile=args.profile,
+        enable_static_shape_cnn=enable_cnn,
+        detect_scale=args.detect_scale
     )
