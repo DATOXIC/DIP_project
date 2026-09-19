@@ -25,10 +25,12 @@ thô đó và TÍNH LẠI vector 17D bằng ĐÚNG các công thức production 
 SPEC 03 — 7 CỘT MỚI + rep_count (cùng công thức với predict / collect / inspect, xem dynamic_features.py):
     z_norm (17), mốc cơ thể (18:20), độ xòe ngón (20:24); rep_count lưu vào dict mẫu.
 
-HAI THẾ HỆ SCHEMA CỦA KHO THÔ (đọc được CẢ HAI):
+BỐN THẾ HỆ SCHEMA CỦA KHO THÔ (đọc được CẢ BỐN):
     raw_stroke_v1.0 : KHÔNG có "face_box" => không tái tạo được mốc cơ thể. Stroke đó được đặt
-                      body_anchor_valid=False (w_b bị vô hiệu cho mẫu này) và in cảnh báo.
-    raw_stroke_v1.1 : mỗi frame có "face_box": [cx, cy, w, h] hoặc null => tái tạo đầy đủ.
+                      body_anchor_valid=False (w_b bị vô hiệu cho mẫu này) và in cảnh báo. Thiếu session_id -> "unknown".
+    raw_stroke_v1.1 : mỗi frame có "face_box": [cx, cy, w, h] hoặc null => tái tạo đầy đủ. Thiếu session_id -> "unknown".
+    raw_stroke_v1.2 : bổ sung session_id top-level và trong meta => tái tạo đầy đủ kèm nhãn phiên thu.
+    raw_stroke_v1.3 : bổ sung capture_fourcc và capture_fps_reported vào top-level metadata (SPEC 05B).
 
 => Đổi đặc trưng lần sau chỉ tốn một lệnh rebuild offline, KHÔNG phải thu lại mẫu.
 
@@ -211,6 +213,11 @@ def rebuild_one_stroke(
     if duration <= 0.0:
         duration = float(frames[-1]["timestamp"] - frames[0]["timestamp"])
 
+    session_id = raw.get("session_id")
+    if session_id is None:
+        session_id = "unknown"
+        print(f"  [Canh bao] Stroke '{raw.get('word_key')}' schema {raw.get('schema_version')} khong co session_id -> dat 'unknown'.")
+
     return {
         # Ban FULL-PRECISION (khong lam tron) chi dung de do sai so round-trip; bi xoa
         # truoc khi ghi file. Nho no ta tach duoc sai so TINH TOAN that ra khoi sai so
@@ -222,6 +229,7 @@ def rebuild_one_stroke(
         "handedness": dominant_handed,
         "chirality_canonical": True,
         "chirality_flipped_on_save": bool(was_flipped),
+        "session_id": session_id,
         "rep_count": int(rep_count),
         "body_anchor_valid": bool(body_ok),
         "rebuilt_from_raw": True,
@@ -279,8 +287,7 @@ def main() -> None:
             continue
 
         word_key = raw.get("word_key")
-        if not word_key:
-            n_skip_err += 1
+        if not word_key or word_key == "__NEG__":
             continue
 
         dur = float(raw.get("stroke_duration_sec") or 0.0)

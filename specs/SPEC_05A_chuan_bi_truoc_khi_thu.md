@@ -99,6 +99,11 @@ Không có camera trong môi trường agent, nên:
 3. **Nói rõ trong báo cáo**: đường webcam thật KHÔNG kiểm chứng được. Người dùng phải
    tự chạy thử một lần (xem SPEC 05 bước 0).
 
+## NHIỆM VỤ 6 — Công cụ Audit thông minh và Logging Session phục vụ Test Phiên 3
+
+1. **`audit_sign_quality.py`**: Tự động nhận diện `webcam_templates.json` làm mặc định nếu file tồn tại (tránh chạy nhầm sang Citizen template cũ khi người dùng gõ lệnh ngắn gọn). Nâng cấp `audit_all_words` hiển thị ma trận va chạm và cảnh báo các cặp từ có khoảng cách DTW nguy hiểm (< 0.85).
+2. **`predict_sentence_webcam.py`**: Thêm cờ `--log-session <file.csv>` (hoặc `-l <file.csv>`) tự động ghi chi tiết từng cử chỉ live (thời điểm, kết quả ACCEPTED/UNCERTAIN/REJECTED, từ dự đoán, khoảng cách DTW, margin, FPS, mốc cơ thể) để phục vụ test Phiên 3 không cần ghi tay 100+ lần.
+
 ## Tiêu chí hoàn thành
 
 - Kết quả 5 kiểm tra ở nhiệm vụ 5, kèm bằng chứng.

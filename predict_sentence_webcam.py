@@ -35,6 +35,7 @@ import sys
 import time
 import math
 import threading
+from collections import deque
 from typing import List, Tuple, Optional, Dict, Any
 
 if sys.platform == "win32":
@@ -92,17 +93,17 @@ CONFIG = {
     "camera_source": 1,          # Iriun Webcam (iPhone) = 0 trên máy này; webcam laptop = 1
                                  # (đã xác nhận qua snapshot: index 0 → iPhone, index 1 → laptop webcam)
 
-    # --- Trọng số thuật toán DTW (Golden Triad 12D) ---
-    "w_wrist_pos": 0.4,          # Trọng số tọa độ vị trí cổ tay (d_pos)
-    "w_finger_angles": 0.8,      # Trọng số góc gập 5 ngón tay (d_angle)
-    "w_wrist_dir": 0.5,          # Trọng số hướng vận tốc tiếp tuyến (d_dir)
-    "w_palm_normal": 0.5,        # Trọng số vector pháp tuyến lòng bàn tay 3D (d_normal - Cosine)
+    # --- Trọng số thuật toán DTW (Golden Triad 24D - Calibrated SPEC 04A.1) ---
+    "w_wrist_pos": 0.6,          # Trọng số tọa độ vị trí cổ tay (d_pos)
+    "w_finger_angles": 1.0,      # Trọng số góc gập 5 ngón tay (d_angle)
+    "w_wrist_dir": 0.4,          # Trọng số hướng vận tốc tiếp tuyến (d_dir)
+    "w_palm_normal": 0.8,        # Trọng số vector pháp tuyến lòng bàn tay 3D (d_normal - Cosine)
     "lambda_shape": 0.0,         # Tắt: audit c_shape cho thấy 4/5 từ có độ nhất quán nhãn CNN quá thấp (30-49%) trong lúc chuyển động, tín hiệu nhiễu nhiều hơn hữu ích
     "asllex_blend_alpha": 1.0,        # 1.0 = giữ hành vi hiện tại (dùng thẳng ASL-LEX). Đổi xuống 0.3-0.7 để bật Hybrid Blend thật sự.
     "asllex_max_deviation": None,     # None = không giới hạn (giữ hành vi hiện tại). Đặt vd 0.5 để giới hạn ASL-LEX lệch tối đa ±50% so với mặc định.
     
     # --- Ngưỡng quyết định nhận diện ---
-    "default_threshold": 1.25,   # Ngưỡng chấp nhận từ chuẩn (<= threshold là khớp)
+    "default_threshold": 0.40,   # Ngưỡng chấp nhận chuẩn hóa SPEC 04A.1 (tạm thời 0.40 thay vì 1.25 cũ)
     "uncertainty_ratio": 1.40,   # Vùng nghi vấn: từ threshold đến 1.4 * threshold
     "margin_threshold": 0.12,    # Độ chênh lệch an toàn giữa Top 1 và Top 2 (12%)
     
@@ -112,24 +113,17 @@ CONFIG = {
     "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
 
     # --- Đường dẫn template và trọng số DTW theo từng ký hiệu (ASL-LEX 2.0) ---
-    "templates_path": "dynamic_templates.json",
-    "sign_weights_path": "ASL_ALEX_2.0/sign_weights_asllex.json",
-    # "sign_weights_path": None,
+    "templates_path": "webcam_templates.json",
+    "sign_weights_path": "",     # Tắt ASL-LEX (chuỗi rỗng kích hoạt Global Weights theo SPEC 04A.1)
 
-    # --- Tối ưu hóa hiệu năng (SPEC 02 - Chống lag) ---
+    # --- Tối ưu hóa hiệu năng (SPEC 02 & SPEC 05C - Chống lag) ---
     "enable_static_shape_cnn": False,   # Tắt DIP + CNN trong vòng lặp động (lambda_shape=0.0 nên không dùng)
-    "detect_scale": 0.5,                 # Tỉ lệ thu nhỏ frame đưa vào MediaPipe detector (tăng FPS)
+    "detect_scale": 1.0,                 # SPEC 05C: Trả về 1.0 vì MediaPipe không giảm ms khi resize
+    "detector_workers": None,           # SPEC 05C: Số worker song song (None = tự chọn theo CPU)
 
-    # --- SPEC 03: 4 nhóm đặc trưng MỚI (17D -> 24D + số nhịp lặp). 0.0 = TẮT (hành vi cũ, bit-identical) ---
-    # Kết quả ablate_feature_groups.py (bank Citizen 139 mẫu, trọng số cũ global, LOO, margin TB mốc 17D = +0.1006):
-    #   z_norm      margin +0.1063 (+0.0057)  -> GIỮ   (đề xuất 0.5)
-    #   mốc cơ thể  margin +0.1717 (+0.0711)  -> GIỮ   (đề xuất 0.8)
-    #   độ xòe ngón margin +0.1221 (+0.0215)  -> GIỮ   (đề xuất 0.4)
-    #   số nhịp lặp margin +0.0886 (-0.0120)  -> LOẠI  (w_r = 0.0)
-    # Vẫn để 0.0 cho cả 4 ở đây vì bank webcam production (dynamic_templates.json) còn 17D — các nhóm mới
-    # chưa có tác dụng cho tới khi thu lại/rebuild bank webcam sang 24D (SPEC 05/04). Bật khi đó.
+    # --- SPEC 03: 4 nhóm đặc trưng MỚI (17D -> 24D + số nhịp lặp). 0.0 = TẮT ---
     "w_z": 0.0,                          # z_norm (độ sâu ảo từ palm_len)
-    "w_b": 0.0,                          # mốc cơ thể (cổ tay so với hộp mặt) — CẦN bộ dò mặt
+    "w_b": 0.8,                          # mốc cơ thể (cổ tay so với hộp mặt) — BẬT để chống cử chỉ rác
     "w_s": 0.0,                          # độ xòe ngón (4 góc giữa các ngón liền kề)
     "w_r": 0.0,                          # số nhịp lặp (cộng 1 lần sau DTW)
     "face_detect_every_n_frames": 8,     # bộ dò mặt có cache: chỉ chạy mạng mỗi N frame
@@ -168,6 +162,7 @@ ASL_VOCAB_MAP: Dict[str, Dict[str, str]] = {
     "TOMORROW":  {"en": "Tomorrow",  "vi": "Ngày mai"},
     "WHERE":     {"en": "Where",     "vi": "Ở đâu"},
     "YES":       {"en": "Yes",       "vi": "Vâng"},
+    "HUNGRY":    {"en": "Hungry",    "vi": "Đói"},
     # Alias tương thích ngược cho template tiếng Việt cũ nếu có
     "xin_chao":  {"en": "Hello",     "vi": "Xin chào"},
     "cam_on":    {"en": "Thank You", "vi": "Cảm ơn"},
@@ -289,139 +284,18 @@ def speak_async(text: str) -> bool:
 # 3. BỘ LỌC LÀM MƯỢT TỌA ĐỘ CỔ TAY (1€ FILTER) & HÌNH THÁI HỌC DIP V2.0
 # =============================================================================
 
-class WristCoordinateSmoother:
-    """
-    Bộ lọc tọa độ cổ tay thích ứng đa tần số 1€ Filter (One-Euro Filter, Casiez et al., CHI 2012).
-    - Tự động điều chỉnh tần số cắt fc dựa trên vận tốc tức thời:
-        fc = fc_min + beta * speed
-    - Khi đứng yên / chuyển động chậm: fc tiến về fc_min (1.0 Hz) giúp lọc triệt để rung nhiễu cảm biến.
-    - Khi bứt tốc / ngoặt nhanh: fc tăng nhanh theo vận tốc giúp loại bỏ trễ pha (zero-lag).
-    - Tương thích ngược 100% với chữ ký update(raw_x, raw_y) và reset().
-    """
-    def __init__(
-        self,
-        alpha: float = 0.70,
-        f_c_min: Optional[float] = None,
-        beta: float = 0.001,
-        d_cutoff: float = 1.0
-    ):
-        self.alpha = float(np.clip(alpha, 0.01, 0.99))
-        # Nếu f_c_min không chỉ định rõ, suy dẫn tự nhiên từ alpha theo chu kỳ 30 FPS:
-        # fc = alpha / (2 * pi * dt * (1 - alpha))
-        if f_c_min is not None:
-            self.f_c_min = float(f_c_min)
-        else:
-            self.f_c_min = float(self.alpha / (2.0 * math.pi * (1.0 / 30.0) * (1.0 - self.alpha)))
-        self.beta = float(beta)
-        self.d_cutoff = float(d_cutoff)
-
-        self.prev_x: Optional[float] = None
-        self.prev_y: Optional[float] = None
-        self._dx: float = 0.0
-        self._dy: float = 0.0
-        self._prev_ts: Optional[float] = None
-
-    @staticmethod
-    def _alpha_from_cutoff(f_c: float, dt: float) -> float:
-        tau = 1.0 / (2.0 * math.pi * max(f_c, 1e-4))
-        return 1.0 / (1.0 + tau / max(dt, 1e-6))
-
-    def update(
-        self,
-        raw_x: float,
-        raw_y: float,
-        timestamp: Optional[float] = None
-    ) -> Tuple[float, float]:
-        if self.prev_x is None or self.prev_y is None:
-            self.prev_x = float(raw_x)
-            self.prev_y = float(raw_y)
-            self._prev_ts = timestamp
-            return self.prev_x, self.prev_y
-
-        # Nếu không truyền timestamp (ví dụ trong các test harness giả lập): dùng EMA chuẩn
-        if timestamp is None or self._prev_ts is None:
-            self.prev_x = self.alpha * float(raw_x) + (1.0 - self.alpha) * self.prev_x
-            self.prev_y = self.alpha * float(raw_y) + (1.0 - self.alpha) * self.prev_y
-            return self.prev_x, self.prev_y
-
-        # Khi có nhãn thời gian thực: áp dụng 1€ Filter thích ứng zero-lag
-        dt = max(timestamp - self._prev_ts, 1e-6)
-
-        # 1. Ước lượng đạo hàm vận tốc qua EMA
-        alpha_d = self._alpha_from_cutoff(self.d_cutoff, dt)
-        raw_dx = (float(raw_x) - self.prev_x) / dt
-        raw_dy = (float(raw_y) - self.prev_y) / dt
-        self._dx = alpha_d * raw_dx + (1.0 - alpha_d) * self._dx
-        self._dy = alpha_d * raw_dy + (1.0 - alpha_d) * self._dy
-
-        # 2. Tần số cắt thích ứng theo vận tốc chuyển động
-        speed = math.hypot(self._dx, self._dy)
-        f_c = self.f_c_min + self.beta * speed
-
-        # 3. Lọc vị trí tọa độ
-        alpha_val = self._alpha_from_cutoff(f_c, dt)
-        smooth_x = alpha_val * float(raw_x) + (1.0 - alpha_val) * self.prev_x
-        smooth_y = alpha_val * float(raw_y) + (1.0 - alpha_val) * self.prev_y
-
-        self.prev_x = smooth_x
-        self.prev_y = smooth_y
-        self._prev_ts = timestamp
-        return smooth_x, smooth_y
-
-    def reset(self):
-        self.prev_x = None
-        self.prev_y = None
-        self._dx = 0.0
-        self._dy = 0.0
-        self._prev_ts = None
-
-
-class LKInertialFallback:
-    """
-    Phao cứu sinh quán tính Lucas-Kanade (Inertial Fallback Tracker) cho tọa độ cổ tay:
-    - Khi MediaPipe BlazeHand tạm thời mất dấu 1-2 frames (do che khuất, bóng đổ, hoặc vung nhanh),
-      sử dụng luồng quang thông thưa (Sparse Optical Flow) để nội suy vị trí cổ tay.
-    - Giữ nhịp liên tục cho FSM KineticPauseSegmenter, tránh reset stroke giữa chừng.
-    - Chỉ chạy fallback tối đa 2 frames liên tiếp; nếu mất dấu >= 4 frames thì chuyển về IDLE.
-    """
-    def __init__(self):
-        self.prev_gray: Optional[np.ndarray] = None
-        self.prev_points: Optional[np.ndarray] = None
-        self.lk_params = dict(
-            winSize=(15, 15),
-            maxLevel=2,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
-        )
-
-    def update_reference(self, gray_frame: np.ndarray, landmarks) -> None:
-        """Lưu frame xám và 6 điểm mốc (LM0 cổ tay + 5 đầu ngón tay LM4, 8, 12, 16, 20)."""
-        if gray_frame is None or landmarks is None or len(landmarks) < 21:
-            return
-        self.prev_gray = gray_frame.copy()
-        h, w = gray_frame.shape[:2]
-        pts = [(landmarks[idx].x * w, landmarks[idx].y * h) for idx in [0, 4, 8, 12, 16, 20]]
-        self.prev_points = np.array(pts, dtype=np.float32).reshape(-1, 1, 2)
-
-    def predict_wrist(self, curr_gray: np.ndarray) -> Optional[Tuple[float, float]]:
-        """Dự đoán tọa độ cổ tay qua Optical Flow khi MediaPipe mất dấu."""
-        if self.prev_gray is None or self.prev_points is None or curr_gray is None:
-            return None
-        try:
-            next_pts, status, _ = cv2.calcOpticalFlowPyrLK(
-                self.prev_gray, curr_gray, self.prev_points, None, **self.lk_params
-            )
-            if status is None or status[0][0] != 1:
-                return None
-            wrist_pred = next_pts[0][0]
-            self.prev_gray = curr_gray.copy()
-            self.prev_points = next_pts.copy()
-            return float(wrist_pred[0]), float(wrist_pred[1])
-        except Exception:
-            return None
-
-    def reset(self):
-        self.prev_gray = None
-        self.prev_points = None
+# Tái xuất từ pipeline_common (nguồn sự thật duy nhất) để giữ tương thích ngược 100%
+from pipeline_common import (
+    WristCoordinateSmoother,
+    LKInertialFallback,
+    make_wrist_smoother,
+    make_segmenter,
+    open_camera,
+    MIN_COLLECT_FPS,
+    SlidingFPSMeter,
+    ParallelHandDetector,
+    get_default_detector_workers,
+)
 
 
 def compute_finger_count_from_defects(
@@ -873,6 +747,61 @@ def draw_hand_skeleton_features(
         pass
 
 
+def draw_face_anchor_box(
+    frame: np.ndarray,
+    face_box: Optional[Tuple[float, float, float, float]],
+    wrist_pt: Optional[Tuple[int, int]] = None,
+    draw_vector: bool = False
+) -> None:
+    """
+    Vẽ bounding box và tâm mốc cơ thể của khuôn mặt lên frame OpenCV.
+    - face_box: (cx, cy, w, h) tính bằng pixel khung gốc.
+    - wrist_pt: (wx, wy) tọa độ cổ tay (tùy chọn).
+    - draw_vector: nếu True, vẽ đường nối từ tâm mặt đến cổ tay (vector mốc cơ thể).
+    """
+    if face_box is None:
+        return
+    h_f, w_f = frame.shape[:2]
+    cx, cy, w, h = face_box
+    x1 = int(round(cx - w / 2.0))
+    y1 = int(round(cy - h / 2.0))
+    x2 = int(round(cx + w / 2.0))
+    y2 = int(round(cy + h / 2.0))
+
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w_f - 1, x2), min(h_f - 1, y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+
+    # Khung chữ nhật bo góc nhấn màu cyan mềm (255, 200, 0)
+    box_col = (255, 200, 0)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), box_col, 1)
+
+    corner_len = max(8, int(min(w, h) * 0.15))
+    cv2.line(frame, (x1, y1), (x1 + corner_len, y1), box_col, 2)
+    cv2.line(frame, (x1, y1), (x1, y1 + corner_len), box_col, 2)
+    cv2.line(frame, (x2, y1), (x2 - corner_len, y1), box_col, 2)
+    cv2.line(frame, (x2, y1), (x2, y1 + corner_len), box_col, 2)
+    cv2.line(frame, (x1, y2), (x1 + corner_len, y2), box_col, 2)
+    cv2.line(frame, (x1, y2), (x1, y2 - corner_len), box_col, 2)
+    cv2.line(frame, (x2, y2), (x2 - corner_len, y2), box_col, 2)
+    cv2.line(frame, (x2, y2), (x2 - corner_len, y2), box_col, 2)
+
+    # Tâm khuôn mặt (Body Anchor Origin)
+    icx, icy = int(round(cx)), int(round(cy))
+    cv2.circle(frame, (icx, icy), 4, (0, 255, 255), -1)
+
+    # Nhãn text tinh tế phía trên hộp
+    cv2.putText(frame, "MAT (BODY ANCHOR)", (x1, max(14, y1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, box_col, 1, lineType=cv2.LINE_AA)
+
+    # Đường vector nối từ tâm mặt đến cổ tay khi bật chế độ xem đặc trưng
+    if draw_vector and wrist_pt is not None:
+        wx, wy = wrist_pt
+        cv2.line(frame, (icx, icy), (wx, wy), (0, 180, 255), 1, lineType=cv2.LINE_AA)
+        cv2.circle(frame, (wx, wy), 3, (0, 255, 0), -1)
+
+
 # =============================================================================
 # 5. CÔNG NGHỆ NHẬN DIỆN THỦ NGỮ V5.1: GOLDEN TRIAD [P + A + JM] ENGINE
 # =============================================================================
@@ -964,7 +893,9 @@ def run_sentence_builder(
     profile: bool = False,
     enable_static_shape_cnn: Optional[bool] = None,
     detect_scale: Optional[float] = None,
-    show_features: Optional[bool] = None
+    show_features: Optional[bool] = None,
+    log_session_path: Optional[str] = None,
+    detector_workers: Optional[int] = None
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -973,7 +904,30 @@ def run_sentence_builder(
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
     print("=" * 75)
 
-    # 1. Khởi tạo MediaPipe Hand Landmarker
+    if detector_workers is None:
+        detector_workers = CONFIG.get("detector_workers", None)
+
+    # Khởi tạo CSV session logger nếu có chỉ định log_session_path
+    session_file = None
+    session_writer = None
+    if log_session_path is not None:
+        import csv
+        log_dir = os.path.dirname(os.path.abspath(log_session_path))
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        file_is_new = (not os.path.exists(log_session_path)) or (os.path.getsize(log_session_path) == 0)
+        session_file = open(log_session_path, mode="a", newline="", encoding="utf-8")
+        session_writer = csv.writer(session_file)
+        if file_is_new:
+            session_writer.writerow([
+                "timestamp", "event", "predicted_word", "best_distance",
+                "second_word", "second_distance", "margin_pct",
+                "duration_sec", "num_frames", "body_anchor_valid", "fps"
+            ])
+            session_file.flush()
+        print(f"✓ Đang ghi log phiên cử chỉ vào: '{log_session_path}'")
+
+    # 1. Khởi tạo MediaPipe Hand Landmarker song song đa luồng (SPEC 05C)
     model_asset_path = 'hand_landmarker.task'
     if not os.path.exists(model_asset_path):
         print(f"[-] Đang tải model {model_asset_path}...")
@@ -982,18 +936,12 @@ def run_sentence_builder(
         urllib.request.urlretrieve(url, model_asset_path)
         print("✓ Tải xong bộ dò bàn tay!")
 
-    BaseOptions = mp.tasks.BaseOptions
-    HandLandmarker = mp.tasks.vision.HandLandmarker
-    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-    VisionRunningMode = mp.tasks.vision.RunningMode
-
-    options = HandLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=model_asset_path),
-        running_mode=VisionRunningMode.IMAGE,
+    detector_pool = ParallelHandDetector(
+        model_path=model_asset_path,
+        workers=detector_workers,
         num_hands=1
     )
-    detector = HandLandmarker.create_from_options(options)
-    print("✓ Đã nạp BlazeHand Detector siêu nhẹ.")
+    print(f"✓ Đã nạp ParallelHandDetector ({detector_pool.num_workers} workers, max_in_flight={detector_pool.max_in_flight}).")
 
     # 2. Khởi tạo Two-Stream CNN nhận diện Dáng tay tĩnh (Tầng 1)
     device = torch.device('cpu')
@@ -1049,22 +997,10 @@ def run_sentence_builder(
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
-    segmenter = KineticPauseSegmenter(
-        v_start_ratio=CONFIG["v_start_ratio"],
-        v_stop_ratio=CONFIG["v_stop_ratio"],
-        pause_frames=CONFIG["pause_frames"],
-        min_stroke_frames=8,
-        max_stroke_frames=60,
-        swipe_threshold=-0.80,
-        swipe_ratio=2.5,
-        swipe_cooldown_sec=1.0,
-        require_ready_pose=True,
-        max_phase_merges=1,
-        grace_window_sec=0.15
-    )
+    segmenter = make_segmenter(CONFIG)
 
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
-    wrist_smoother = WristCoordinateSmoother(alpha=0.70, f_c_min=1.0, beta=0.007, d_cutoff=1.0)
+    wrist_smoother = make_wrist_smoother()
     lk_fallback = LKInertialFallback()
     cached_palm_len: float = 80.0
     cached_n_fingers: int = 0
@@ -1099,7 +1035,7 @@ def run_sentence_builder(
     if enable_static_shape_cnn is None:
         enable_static_shape_cnn = bool(CONFIG.get("enable_static_shape_cnn", False))
     if detect_scale is None:
-        detect_scale = float(CONFIG.get("detect_scale", 0.5))
+        detect_scale = float(CONFIG.get("detect_scale", 1.0))
     detect_scale = max(0.1, min(1.0, float(detect_scale)))
 
     # Biến phục vụ tối ưu hóa xen kẽ suy luận DIP + CNN trên CPU
@@ -1110,7 +1046,6 @@ def run_sentence_builder(
 
     # Bộ đệm đo thời gian theo tầng (SPEC 02 Nhiệm vụ 1)
     if profile:
-        from collections import deque
         prof_mediapipe = deque(maxlen=60)
         prof_dip_cnn = deque(maxlen=60)
         prof_features = deque(maxlen=60)
@@ -1130,42 +1065,7 @@ def run_sentence_builder(
         else:
             print(f"[Video] KẾT NỐI THÀNH CÔNG video file: {video_path}")
     elif not headless:
-        def _try_open_camera(index: int, backend) -> "cv2.VideoCapture | None":
-            """Mở camera với backend chỉ định, trả về cap nếu đọc được frame thực, None nếu thất bại."""
-            _cap = cv2.VideoCapture(index, backend)
-            if not _cap.isOpened():
-                _cap.release()
-                return None
-            _cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            _cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            ret, _ = _cap.read()   # kiểm tra đọc frame thực sự
-            if not ret:
-                _cap.release()
-                return None
-            return _cap
-
-        backend_order = [
-            (cv2.CAP_MSMF, "MSMF (Microsoft Media Foundation)"),
-            (cv2.CAP_DSHOW, "DirectShow"),
-            (cv2.CAP_ANY, "Default"),
-        ]
-
-        print(f"[Camera] Đang khởi tạo Camera Index [{camera_index}]...")
-        for backend_id, backend_name in backend_order:
-            cap = _try_open_camera(camera_index, backend_id)
-            if cap is not None:
-                print(f"  → Backend: {backend_name}")
-                break
-            print(f"  [Skip] {backend_name} không đọc được frame tại index {camera_index}")
-
-        if cap is not None and cap.isOpened():
-            # Warm-up buffer: xả thêm vài frame đệm ban đầu
-            for _ in range(4):
-                cap.read()
-            cam_type_name = "iPhone (Iriun Webcam)" if camera_index == 1 else ("Webcam Laptop" if camera_index == 0 else f"Camera Phu {camera_index}")
-            print(f"[Camera] KET NOI THANH CONG: {cam_type_name} (Index {camera_index})")
-        else:
-            print(f"[!] KHONG THE mo Camera [{camera_index}] voi bat ky backend nao!")
+        cap = open_camera(camera_index, prefer_mjpg=True)
 
     flip_cam = False
     if show_features is None:
@@ -1182,6 +1082,8 @@ def run_sentence_builder(
 
     processed_frames = 0
     has_predicted_pending = False
+    ready_queue: deque = deque()
+    cap_exhausted = False
 
     try:
         while True:
@@ -1193,44 +1095,73 @@ def run_sentence_builder(
                 _t_dtw = 0.0
                 _t_draw = 0.0
 
-            if cap is None or not cap.isOpened():
-                # Chế độ headless kiểm thử: tạo khung hình giả lập nếu không có camera thật
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                time.sleep(0.033)
-            else:
-                ret, frame = cap.read()
-                if not ret:
-                    if video_path is not None and max_frames is not None and processed_frames < max_frames:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        ret, frame = cap.read()
+            if not cap_exhausted:
+                if cap is None or not cap.isOpened():
+                    # Chế độ headless kiểm thử: tạo khung hình giả lập nếu không có camera thật
+                    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    time.sleep(0.033)
+                    ret = True
+                else:
+                    ret, frame = cap.read()
                     if not ret:
+                        if video_path is not None and max_frames is not None and processed_frames < max_frames:
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            ret, frame = cap.read()
+                        if not ret:
+                            cap_exhausted = True
+                            ready_queue.extend(detector_pool.flush())
+
+                if ret and frame is not None:
+                    capture_ts = time.time()
+                    frame_counter += 1
+                    if flip_cam:
+                        frame = cv2.flip(frame, 1)
+
+                    if detect_scale < 0.999:
+                        det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
+                    else:
+                        det_frame = frame
+                    rgb_frame = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
+
+                    meta = {
+                        "capture_ts": capture_ts,
+                        "frame": frame,
+                        "rgb_frame": rgb_frame,
+                        "submit_perf_ts": time.perf_counter()
+                    }
+                    detector_pool.submit(frame_counter, rgb_frame, meta)
+
+                    if profile:
+                        _t0_mp = time.perf_counter()
+                    new_ready = detector_pool.poll(block_oldest=(detector_pool.in_flight >= detector_pool.max_in_flight))
+                    if profile:
+                        _t_mp = time.perf_counter() - _t0_mp
+                    ready_queue.extend(new_ready)
+
+            if not ready_queue:
+                if cap_exhausted:
+                    break
+                if not headless:
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
                         break
+                continue
 
-            if flip_cam:
-                frame = cv2.flip(frame, 1)
-
-            h_f, w_f = frame.shape[:2]
-            curr_time = time.time()
-            frame_counter += 1
+            seq, meta_item, det_result = ready_queue.popleft()
             processed_frames += 1
+            frame = meta_item["frame"]
+            curr_time = meta_item["capture_ts"]
+            rgb_frame = meta_item.get("rgb_frame")
+            if rgb_frame is None:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h_f, w_f = frame.shape[:2]
 
-            # Tính toán FPS trung bình trượt
+            # Tính toán FPS trung bình trượt từ capture_ts
             loop_duration = max(curr_time - prev_time, 1e-4)
             fps = 0.9 * fps + 0.1 * (1.0 / loop_duration)
             prev_time = curr_time
 
             display_frame = frame.copy()
-            if detect_scale < 0.999:
-                det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
-            else:
-                det_frame = frame
-            rgb_frame = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-            if profile:
-                _t0_mp = time.perf_counter()
-            det_result = detector.detect(mp_image)
-            if profile:
-                _t_mp = time.perf_counter() - _t0_mp
 
             # SPEC 03: hộp mặt (cx, cy, w, h) theo pixel KHUNG GỐC; ảnh dò có thể đã thu nhỏ (detect_scale).
             if face_detector is not None:
@@ -1582,6 +1513,17 @@ def run_sentence_builder(
                                         speak_async(en_phrase)
                                         print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' ({conf_pct:.0f}%) | Câu: {' '.join(sentence_words)}")
 
+                                    # Ghi CSV Session Log
+                                    if session_writer is not None:
+                                        c2_k = match_result.candidates[1].word_key if len(match_result.candidates) >= 2 else ""
+                                        c2_d = round(match_result.candidates[1].distance, 4) if len(match_result.candidates) >= 2 else ""
+                                        m_val = round(((match_result.candidates[1].distance - match_result.best_distance) / max(match_result.best_distance, 1e-4)) * 100.0, 2) if len(match_result.candidates) >= 2 else 100.0
+                                        session_writer.writerow([
+                                            time.strftime("%Y-%m-%d %H:%M:%S"), "ACCEPTED", word_key, round(match_result.best_distance, 4),
+                                            c2_k, c2_d, m_val, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                        ])
+                                        session_file.flush()
+
                                 # b) Nghi vấn Top-2 (UNCERTAIN) - R3 Layer 3 Guard: Không commit từ
                                 elif match_result.status == "UNCERTAIN" and len(match_result.candidates) >= 2:
                                     c1, c2 = match_result.candidates[0], match_result.candidates[1]
@@ -1596,6 +1538,14 @@ def run_sentence_builder(
                                     reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= word_th else "Vượt ngưỡng chuẩn"
                                     print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
 
+                                    # Ghi CSV Session Log
+                                    if session_writer is not None:
+                                        session_writer.writerow([
+                                            time.strftime("%Y-%m-%d %H:%M:%S"), "UNCERTAIN", c1.word_key, round(c1.distance, 4),
+                                            c2.word_key, round(c2.distance, 4), round(margin_pct, 2), round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                        ])
+                                        session_file.flush()
+
                                 # c) Từ chối (REJECTED) - R3 Layer 3 Guard: Khoảng cách quá xa
                                 else:
                                     banner_title = "X UNKNOWN GESTURE"
@@ -1603,9 +1553,24 @@ def run_sentence_builder(
                                     banner_color = (0, 0, 240)
                                     banner_expire = curr_time + 1.0
                                     print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f})")
+
+                                    # Ghi CSV Session Log
+                                    if session_writer is not None:
+                                        top_k = match_result.candidates[0].word_key if match_result.candidates else ""
+                                        session_writer.writerow([
+                                            time.strftime("%Y-%m-%d %H:%M:%S"), "REJECTED", top_k, round(match_result.best_distance, 4),
+                                            "", "", 0.0, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                        ])
+                                        session_file.flush()
                     else:
                         # R3 Layer 2: Cử chỉ nằm ngoài [0.4s, 2.5s] bị bỏ qua trong im lặng
                         print(f"[SentenceBuilder] Cử chỉ bị loại bởi Duration Gate ({stroke_duration:.2f}s).")
+                        if session_writer is not None:
+                            session_writer.writerow([
+                                time.strftime("%Y-%m-%d %H:%M:%S"), "OUT_OF_DURATION", "", 0.0,
+                                "", "", 0.0, round(stroke_duration, 3), len(completed_stroke), False, round(fps, 1)
+                            ])
+                            session_file.flush()
 
                     # LƯU Ý R4: Không xóa trail_points tại đây để vệt sáng phai tự nhiên
 
@@ -1640,6 +1605,14 @@ def run_sentence_builder(
             # =================================================================
             # HIỂN THỊ GIAO DIỆN ĐỒ HỌA HUD THÔNG MINH (TẦNG 4)
             # =================================================================
+            # 0. Vẽ Bounding Box & Mốc cơ thể Khuôn mặt trực quan (Body Anchor)
+            draw_face_anchor_box(
+                display_frame,
+                face_box=current_face_box,
+                wrist_pt=(int(wrist_x), int(wrist_y)) if hand_found else None,
+                draw_vector=show_features
+            )
+
             # 1. Vẽ vệt sáng chuyển động neon (Fading Neon Motion Trail)
             draw_fading_neon_trail(display_frame, trail_points, curr_time, max_age_sec=MAX_TRAIL_AGE_SEC)
 
@@ -1647,11 +1620,24 @@ def run_sentence_builder(
             cv2.rectangle(display_frame, (0, 0), (w_f, 44), (20, 20, 20), -1)
             fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
             cv2.putText(display_frame, f"FPS: {fps:.1f} [CAM {camera_index}]", (10, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, fps_color, 2, lineType=cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.52, fps_color, 2, lineType=cv2.LINE_AA)
+
+            # Trạng thái mốc cơ thể (khuôn mặt)
+            if face_detector is None:
+                face_badge = "MAT: TAT"
+                face_col = (130, 130, 130)
+            elif current_face_box is not None:
+                face_badge = "MAT: OK"
+                face_col = (0, 255, 0)
+            else:
+                face_badge = "MAT: TIM..."
+                face_col = (0, 165, 255)
+            cv2.putText(display_frame, f"| {face_badge}", (195, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, face_col, 2, lineType=cv2.LINE_AA)
 
             # Trạng thái phân đoạn động học
             if seg_state == KineticState.RECORDING:
-                k_text = "DANG CHUYEN DONG"
+                k_text = "DANG GHI"
                 k_color = (0, 255, 0)
             elif seg_state == KineticState.READY:
                 k_text = "SAN SANG"
@@ -1659,8 +1645,8 @@ def run_sentence_builder(
             else:
                 k_text = "KHUNG TAY" if hand_found else "CHO TAY"
                 k_color = (180, 180, 180)
-            cv2.putText(display_frame, f"| {k_text}", (280, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.58, k_color, 2, lineType=cv2.LINE_AA)
+            cv2.putText(display_frame, f"| {k_text}", (310, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, k_color, 2, lineType=cv2.LINE_AA)
 
             # Thanh hiển thị vận tốc chuẩn hóa
             v_bar = int(min(1.0, v_norm / 0.15) * 80)
@@ -1813,11 +1799,17 @@ def run_sentence_builder(
                     print(f"  total:     {avg_tot:6.2f} ms")
 
     finally:
+        if session_file is not None:
+            try:
+                session_file.close()
+                print(f"[SessionLogger] ✓ Đã lưu và đóng file log phiên: '{log_session_path}'")
+            except Exception:
+                pass
         if cap is not None:
             cap.release()
         if not headless:
             cv2.destroyAllWindows()
-        detector.close()
+        detector_pool.close()
         print("-> Đã đóng chương trình nhận diện ghép câu an toàn.")
 
     if profile and len(prof_total) > 0:
@@ -1844,22 +1836,28 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Real-time Sign Language Recognition")
     parser.add_argument("--cam", type=int, default=None, help="Camera index (0=built-in webcam, 1, 2=external/iPhone). Mặc định dùng camera_source từ CONFIG.")
-    parser.add_argument("--templates", type=str, default=None, help="Đường dẫn file template JSON (ví dụ: dynamic_templates.backup_v51.json). Mặc định dùng templates_path từ CONFIG.")
+    parser.add_argument("--templates", type=str, default=None, help="Đường dẫn file template JSON (ví dụ: webcam_templates.json). Mặc định dùng templates_path từ CONFIG.")
     parser.add_argument("--margin", type=float, default=0.12, help="Relative contrast margin threshold (default: 0.12 = 12%%)")
     parser.add_argument("--thresh", type=float, default=None, help="Override DTW distance threshold (default: None, uses template threshold 1.25)")
     parser.add_argument("--global-weights", action="store_true", help="Bật chế độ dùng chung 1 công thức CONFIG cho mọi từ (tắt Per-Sign weights ASL-LEX)")
     parser.add_argument("--profile", action="store_true", help="Bật đo thời gian chi tiết theo tầng (ms) và hiển thị HUD / console mỗi 60 frame")
     parser.add_argument("--with-cnn", action="store_true", help="Bật lại suy luận DIP + CNN dáng tay tĩnh (mặc định tắt theo CONFIG)")
-    parser.add_argument("--detect-scale", type=float, default=None, help="Tỉ lệ scale frame đưa vào MediaPipe detector (mặc định 0.5 từ CONFIG)")
+    parser.add_argument("--detect-scale", type=float, default=None, help="Tỉ lệ scale frame đưa vào MediaPipe detector (mặc định 1.0 từ CONFIG)")
+    parser.add_argument("--detector-workers", type=int, default=None, help="Số luồng làm việc song song cho MediaPipe (mặc định None = tự chọn min(3, max(1, CPU//4))).")
     parser.add_argument("--video", type=str, default=None, help="Đường dẫn file video đầu vào thay vì webcam")
+    parser.add_argument("--log-session", "-l", type=str, default=None, help="Đường dẫn file CSV lưu log kết quả từng cử chỉ live (phục vụ test Phiên 3)")
+    parser.add_argument("--headless", action="store_true", default=False, help="Chạy không mở cửa sổ đồ họa OpenCV (dùng cho đo benchmark/test).")
+    parser.add_argument("--max-frames", type=int, default=None, help="Dừng sau số khung hình nhất định (dùng cho benchmark/test).")
     args, _ = parser.parse_known_args()
     
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
     selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
-    sw_override = None if args.global_weights else CONFIG.get("sign_weights_path")
+    sw_override = "" if args.global_weights else CONFIG.get("sign_weights_path", "")
     enable_cnn = True if args.with_cnn else None
     run_sentence_builder(
         camera_index=selected_cam,
+        headless=args.headless,
+        max_frames=args.max_frames,
         margin_threshold=args.margin,
         threshold_override=args.thresh,
         templates_path=selected_templates,
@@ -1867,5 +1865,7 @@ if __name__ == "__main__":
         video_path=args.video,
         profile=args.profile,
         enable_static_shape_cnn=enable_cnn,
-        detect_scale=args.detect_scale
+        detect_scale=args.detect_scale,
+        log_session_path=args.log_session,
+        detector_workers=args.detector_workers,
     )

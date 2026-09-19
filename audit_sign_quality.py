@@ -212,43 +212,105 @@ def audit_all_words(matcher: GoldenTriadDTWMatcher, vocab: dict):
     total_samples = 0
     correct_samples = 0
     per_word_stats = {}
+    confusion_map = {}  # {word: {pred_word: count}}
+    words_list = list(vocab.keys())
 
     for word_key, entry in vocab.items():
         s_list = entry.get("samples", [])
         w_correct = 0
+        confusion_map[word_key] = {}
         for s in s_list:
             total_samples += 1
             q_traj = load_sample_traj(s)
             q_shapes = s.get("hand_shapes", ["Unknown"] * len(q_traj))
             res = matcher.match(q_traj, q_shapes)
-            if res.candidates and res.candidates[0].word_key == word_key:
+            pred_word = res.candidates[0].word_key if res.candidates else "REJECTED"
+            confusion_map[word_key][pred_word] = confusion_map[word_key].get(pred_word, 0) + 1
+            if pred_word == word_key:
                 correct_samples += 1
                 w_correct += 1
         per_word_stats[word_key] = (w_correct, len(s_list))
 
-    print(f"{'Tu vung':<14}{'So mau':>10}{'Dung Top-1':>14}{'Ty le':>12}{'Trang thai':>14}")
+    print(f"\n{'Tu vung':<14}{'So mau':>10}{'Dung Top-1':>14}{'Ty le':>12}{'Trang thai':>14}")
     print("-" * 65)
     for word_key, (c, tot) in per_word_stats.items():
         pct = (c / tot * 100.0) if tot > 0 else 0.0
-        status = "✅ OK" if c == tot else "❌ REGRESSION"
+        status = "✅ OK" if c == tot else "❌ VA CHAM"
         print(f"{word_key:<14}{tot:>10}{c:>14}{pct:>11.1f}%{status:>14}")
     print("-" * 65)
     total_pct = (correct_samples / total_samples * 100.0) if total_samples > 0 else 0.0
     print(f"TONG CONG: {correct_samples}/{total_samples} mau dat chuan ({total_pct:.1f}%)\n")
-    print("=" * 80)
+
+    # 2. Chi tiết các trường hợp va chạm nhầm lẫn (nếu có)
+    has_collisions = False
+    print("-" * 80)
+    print("  CHI TIET VA CHAM (CONFUSION / COLLISION ANALYSIS):")
+    print("-" * 80)
+    for word_key, preds in confusion_map.items():
+        for p_word, count in preds.items():
+            if p_word != word_key:
+                has_collisions = True
+                print(f"  ❌ Tu '{word_key}' co {count} mau bi he thong doan nham sang '{p_word}'!")
+    if not has_collisions:
+        print("  ✅ Khong co mau nao bi nhan nham sang tu khac (Zero Collision)!")
+
+    # 3. Đo khoảng cách phân biệt liên từ (Inter-word Distance & Safety Margin)
+    if len(words_list) >= 2:
+        print("\n" + "-" * 80)
+        print("  DO KHOANG CACH PHAN BIET LIEN TU (INTER-WORD DISTANCE & SAFETY MARGIN):")
+        print("-" * 80)
+        close_pairs = []
+        for i in range(len(words_list)):
+            w1 = words_list[i]
+            s1_list = vocab[w1].get("samples", [])
+            wp1, wa1, wm1, wn1 = matcher._get_weights_for_sign(w1)
+            for j in range(i + 1, len(words_list)):
+                w2 = words_list[j]
+                s2_list = vocab[w2].get("samples", [])
+                if not s1_list or not s2_list:
+                    continue
+                wp2, wa2, wm2, wn2 = matcher._get_weights_for_sign(w2)
+
+                # Tinh khoang cach DTW 2 chieu doi xung giua cac mau cua w1 va w2
+                d12, d21 = [], []
+                for s1 in s1_list:
+                    t1 = load_sample_traj(s1)
+                    sh1 = s1.get("hand_shapes", ["Unknown"] * len(t1))
+                    for s2 in s2_list:
+                        t2 = load_sample_traj(s2)
+                        sh2 = s2.get("hand_shapes", ["Unknown"] * len(t2))
+                        d12.append(compute_golden_triad_dtw_distance(t1, sh1, t2, sh2, wp2, wa2, wm2, wn2))
+                        d21.append(compute_golden_triad_dtw_distance(t2, sh2, t1, sh1, wp1, wa1, wm1, wn1))
+
+                if d12 and d21:
+                    avg_sym = (float(np.mean(d12)) + float(np.mean(d21))) / 2.0
+                    close_pairs.append((w1, w2, avg_sym))
+
+        if close_pairs:
+            for w1, w2, d in sorted(close_pairs, key=lambda x: x[2]):
+                if d < 0.45:
+                    print(f"  ❌ NGUY CO VA CHAM: ({w1} <-> {w2}): Khoang cach DTW = {d:.3f} (Qua sat nhau, can thu ky hon)")
+                elif d < 0.65:
+                    print(f"  ⚠️ CANH BAO NHE:    ({w1} <-> {w2}): Khoang cach DTW = {d:.3f} (Khoang cach trung binh)")
+                else:
+                    print(f"  ✅ PHAN BIET TOT:   ({w1} <-> {w2}): Khoang cach DTW = {d:.3f} (An toan, gap ~3-4x noi cum)")
+    print("=" * 80 + "\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Audit chat luong mau cu chi ASL Citizen")
-    parser.add_argument("--word", type=str, default=None, help="Ten tu vung can kiem tra (vi du: TOMORROW, YOU, WATER)")
+    default_templates = "webcam_templates.json" if os.path.exists("webcam_templates.json") else "asl_citizen_templates.json"
+    parser = argparse.ArgumentParser(description="Audit chat luong mau cu chi Dynamic DTW")
+    parser.add_argument("--word", type=str, default=None, help="Ten tu vung can kiem tra (vi du: HELLO, ME, YOU)")
     parser.add_argument("--all", action="store_true", help="Kiem tra hoi quy toan bo tat ca cac tu trong database")
-    parser.add_argument("--templates", type=str, default="asl_citizen_templates.json", help="Duong dan file template JSON")
+    parser.add_argument("--templates", type=str, default=default_templates,
+                        help=f"Duong dan file template JSON (Mac dinh: {default_templates})")
     args = parser.parse_args()
 
     if not os.path.exists(args.templates):
         print(f"[!] Khong tim thay file template: {args.templates}")
         sys.exit(1)
 
+    print(f"[Audit] Su dung template bank: '{args.templates}'")
     matcher = GoldenTriadDTWMatcher(templates_path=args.templates, strict_weights=False)
     vocab = matcher.vocabulary
 

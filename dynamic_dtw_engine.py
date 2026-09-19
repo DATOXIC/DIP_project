@@ -130,7 +130,8 @@ CHIRALITY_FLIP_COLUMNS = (0, 2, 9)
 def canonicalize_chirality(
     traj: np.ndarray,
     handedness: Optional[str] = None,
-    ambiguity_eps: float = CHIRALITY_AMBIGUITY_EPS
+    ambiguity_eps: float = CHIRALITY_AMBIGUITY_EPS,
+    flip_body_x: bool = True
 ) -> Tuple[np.ndarray, bool]:
     """
     Đưa một quỹ đạo đặc trưng 12D/17D về KHÔNG GIAN CHUẨN TẮC "tay phải" (canonical space),
@@ -215,7 +216,7 @@ def canonicalize_chirality(
     # SPEC 03: với vector 24D, cột 18 (x của mốc cơ thể = (wrist_x - tâm mặt) / bề rộng mặt) cũng là một
     # đại lượng ngang trong ảnh nên PHẢI đổi dấu theo khi lật gương, nếu không mẫu đã lật và chưa lật
     # của cùng một từ sẽ có mốc cơ thể trái dấu nhau. Vector <= 17D KHÔNG bị ảnh hưởng (tương thích ngược).
-    if flipped.shape[1] >= BODY_X_COLUMN + 2:
+    if flip_body_x and flipped.shape[1] >= BODY_X_COLUMN + 2:
         flipped[:, BODY_X_COLUMN] = -flipped[:, BODY_X_COLUMN]
     return flipped, True
 
@@ -261,6 +262,7 @@ class ResampledGesture:
     # --- Hai trường BỔ SUNG (mặc định None/False nên mọi lời gọi cũ vẫn chạy y nguyên) ---
     handedness: Optional[str] = None       # Nhãn tay thuận MediaPipe chiếm đa số của stroke
     chirality_canonical: bool = False      # True = traj đã nằm trong không gian chuẩn tắc
+    session_id: Optional[str] = None       # SPEC 05A: Mã phiên thu (session_id)
     # Giữ lại nguyên vẹn mọi khóa lạ đọc được từ JSON (vd "source_video") để chu trình
     # load -> save của HybridDTWEngine không âm thầm làm mất dữ liệu gốc khó thu lại.
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -276,18 +278,21 @@ class ResampledGesture:
             out["handedness"] = self.handedness
         if self.chirality_canonical:
             out["chirality_canonical"] = True
+        if self.session_id is not None:
+            out["session_id"] = self.session_id
         return out
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResampledGesture":
         traj_arr = np.array(data["traj_features"], dtype=np.float32)
-        known = {"traj_features", "hand_shapes", "duration_sec", "handedness", "chirality_canonical"}
+        known = {"traj_features", "hand_shapes", "duration_sec", "handedness", "chirality_canonical", "session_id"}
         return cls(
             traj=traj_arr,
             shapes=data["hand_shapes"],
             duration_sec=data.get("duration_sec", 1.0),
             handedness=data.get("handedness"),
             chirality_canonical=bool(data.get("chirality_canonical", False)),
+            session_id=data.get("session_id"),
             extra={k: v for k, v in data.items() if k not in known}
         )
 
@@ -742,17 +747,19 @@ class HybridDTWEngine:
             }
 
         existing_created_at = None
+        existing_feature_dim = None
         if os.path.exists(self.templates_path):
             try:
                 with open(self.templates_path, "r", encoding="utf-8") as f_old:
                     old_data = json.load(f_old)
                     existing_created_at = old_data.get("metadata", {}).get("created_at")
+                    existing_feature_dim = old_data.get("metadata", {}).get("feature_dim")
             except Exception:
                 pass
 
         # Suy ra feature_dim từ dữ liệu thật thay vì hardcode 4.
         # Lấy độ dài của traj_features[0] của mẫu đầu tiên tìm được trong toàn bộ vocabulary.
-        # Nếu không có mẫu nào (từ vựng rỗng), giữ nguyên 4 như cũ để không đổi hành vi với file rỗng.
+        # Nếu không có mẫu nào (từ vựng rỗng), ưu tiên giữ existing_feature_dim nếu có, hoặc 4.
         inferred_feature_dim = 4
         found_dim = False
         for w_info in vocab_out.values():
@@ -764,6 +771,8 @@ class HybridDTWEngine:
                     break
             if found_dim:
                 break
+        if not found_dim and existing_feature_dim is not None:
+            inferred_feature_dim = existing_feature_dim
 
         payload = {
             "schema_version": "1.0",
@@ -1127,7 +1136,13 @@ class GoldenTriadDTWMatcher:
         w_z: float = 0.0,
         w_b: float = 0.0,
         w_s: float = 0.0,
-        w_r: float = 0.0
+        w_r: float = 0.0,
+        templates_dict: Optional[Dict[str, Any]] = None,
+        asllex_mode: str = "replace",
+        asllex_lambda: float = 0.0,
+        asllex_mapping: str = "legacy",
+        flip_body_x: bool = True,
+        threshold_dict: Optional[Dict[str, float]] = None
     ):
         self.templates_path = templates_path
         self.sign_weights_path = sign_weights_path if sign_weights_path is not None else DEFAULT_SIGN_WEIGHTS_PATH
@@ -1160,8 +1175,24 @@ class GoldenTriadDTWMatcher:
         self.feature_dim: int = 4
         self.is_legacy_4d: bool = True
 
+        self.templates_dict = templates_dict
+        self.asllex_mode = str(asllex_mode).lower()
+        if self.asllex_mode == "replace" and asllex_lambda == 0.0:
+            self.asllex_lambda = float(asllex_blend_alpha)
+        else:
+            self.asllex_lambda = float(asllex_lambda)
+        self.asllex_mapping = str(asllex_mapping).lower()
+        self.flip_body_x = bool(flip_body_x)
+        self.threshold_dict = threshold_dict
+
         self.load_sign_weights()
-        self.load_templates()
+        if self.templates_dict is not None:
+            self.set_vocabulary(
+                self.templates_dict.get("vocabulary", self.templates_dict),
+                self.templates_dict.get("metadata")
+            )
+        else:
+            self.load_templates()
         self.validate_weights_against_vocabulary()
 
     def load_sign_weights(self) -> None:
@@ -1236,6 +1267,8 @@ class GoldenTriadDTWMatcher:
         Triệt tiêu hoàn toàn lỗi âm thầm (Silent Failure / Key Mismatch).
         Tự động hỗ trợ ánh xạ bí danh cho các phiên bản template cũ.
         """
+        if getattr(self, "asllex_mode", "replace") == "none":
+            return
         if not self.sign_weights_path or not self.vocabulary or not self.sign_weights:
             return
 
@@ -1257,24 +1290,8 @@ class GoldenTriadDTWMatcher:
             else:
                 print(f"[!] CẢNH BÁO: {msg}")
 
-    def _get_weights_for_sign(self, word_key: str) -> Tuple[float, float, float, float]:
-        """
-        Truy xuất vector trọng số W_s = [w_P, w_A, w_JM, w_N] theo candidate sign.
-        KIẾN TRÚC HYBRID BLEND (thay cho full-override cũ):
-          1. Trọng số mặc định (self.w_p/w_a/w_m/w_n, tổng = S_default) là ANCHOR.
-          2. Trọng số ASL-LEX cho từ này (P, A, JM, N, tổng LUÔN = 1.0) chỉ là GỢI Ý
-             về tỷ lệ tương đối giữa 4 kênh, không phải giá trị tuyệt đối để dùng thẳng.
-          3. Cả 2 được chuẩn hóa về CÙNG thang đo (tổng = 1.0) trước khi trộn tuyến tính
-             theo self.blend_alpha, rồi nội suy CẢ độ lớn tổng theo alpha (Lựa chọn 2)
-             để tương thích ngược tuyệt đối tại alpha=1.0.
-          4. Nếu self.max_deviation được đặt, mỗi kênh bị kẹp trong khoảng
-             [w_default * (1 - max_deviation), w_default * (1 + max_deviation)] — đúng
-             tinh thần "ASL-LEX được định hướng nhưng không được cực đoan".
-
-        Tương thích ngược: với blend_alpha=1.0 (mặc định) và max_deviation=None (mặc định),
-        hàm này trả về ĐÚNG HỆT giá trị ASL-LEX thô như hành vi cũ (full override) —
-        KHÔNG được để hành vi mặc định thay đổi so với trước khi thêm Hybrid Blend.
-        """
+    def _get_weights_for_sign_replace(self, word_key: str) -> Tuple[float, float, float, float]:
+        """Hành vi replace hiện tại của GoldenTriadDTWMatcher (giữ nguyên 100% logic cũ)."""
         base = np.array([self.w_p, self.w_a, self.w_m, self.w_n], dtype=np.float64)
         base_sum = float(base.sum())
 
@@ -1318,6 +1335,87 @@ class GoldenTriadDTWMatcher:
 
         return float(w_final[0]), float(w_final[1]), float(w_final[2]), float(w_final[3])
 
+    def _get_effective_weights(self, word_key: str) -> Dict[str, float]:
+        """
+        Truy xuất bộ 8 trọng số hiệu dụng [w_p, w_a, w_m, w_n, w_z, w_b, w_s, w_r] theo candidate sign.
+        Hỗ trợ 3 chế độ:
+          - "none": chỉ dùng weights toàn cục (không đọc ASL-LEX).
+          - "replace": hành vi production hiện tại (blend tuyến tính giữa base và ASL-LEX, cộng overrides).
+          - "modulate": chế độ MỚI từ SPEC 04, điều biến w_p, w_a, w_m, w_n, w_b, w_s theo ASL-LEX,
+                        rồi chuẩn hóa để tổng trọng số nhóm bằng tổng toàn cục. w_z và w_r không bị điều biến.
+                        lambda = 0 cho kết quả giống hệt bit chế độ "none".
+        """
+        w_global = {
+            "w_p": float(self.w_p),
+            "w_a": float(self.w_a),
+            "w_m": float(self.w_m),
+            "w_n": float(self.w_n),
+            "w_z": float(self.w_z),
+            "w_b": float(self.w_b),
+            "w_s": float(self.w_s),
+            "w_r": float(self.w_r),
+        }
+
+        if getattr(self, "asllex_mode", "replace") == "none":
+            return w_global
+
+        raw_k = str(word_key).strip().upper()
+        canonical_k = self.SIGN_KEY_ALIASES.get(raw_k, raw_k)
+
+        if self.asllex_mode == "replace":
+            wp, wa, wm, wn = self._get_weights_for_sign_replace(word_key)
+            res = w_global.copy()
+            res["w_p"] = wp
+            res["w_a"] = wa
+            res["w_m"] = wm
+            res["w_n"] = wn
+            return res
+
+        if self.asllex_mode == "modulate":
+            res = w_global.copy()
+            mod_keys = ["w_p", "w_a", "w_m", "w_n", "w_b", "w_s"]
+            if not self.sign_weights or canonical_k not in self.sign_weights or self.asllex_lambda == 0.0:
+                return res
+
+            sw = self.sign_weights[canonical_k]
+            if self.asllex_mapping == "semantic":
+                share_g = {
+                    "w_b": sw["P"],
+                    "w_a": sw["A"],
+                    "w_s": sw["A"],
+                    "w_p": sw["JM"],
+                    "w_m": sw["JM"],
+                    "w_n": sw["N"]
+                }
+            else:  # legacy
+                share_g = {
+                    "w_p": sw["P"],
+                    "w_a": sw["A"],
+                    "w_m": sw["JM"],
+                    "w_n": sw["N"],
+                    "w_b": 0.25,
+                    "w_s": 0.25
+                }
+
+            sum_global = sum(w_global[k] for k in mod_keys)
+            for k in mod_keys:
+                share = share_g.get(k, 0.25)
+                factor_k = float(np.clip(1.0 + self.asllex_lambda * (share / 0.25 - 1.0), 0.5, 1.5))
+                res[k] = w_global[k] * factor_k
+
+            sum_eff = sum(res[k] for k in mod_keys)
+            if sum_eff > 1e-9 and sum_global > 1e-9:
+                scale = sum_global / sum_eff
+                for k in mod_keys:
+                    res[k] *= scale
+            return res
+
+        return w_global
+
+    def _get_weights_for_sign(self, word_key: str) -> Tuple[float, float, float, float]:
+        eff = self._get_effective_weights(word_key)
+        return float(eff["w_p"]), float(eff["w_a"]), float(eff["w_m"]), float(eff["w_n"])
+
     def load_templates(self) -> None:
         if not os.path.exists(self.templates_path):
             return
@@ -1337,6 +1435,19 @@ class GoldenTriadDTWMatcher:
         except Exception as e:
             print(f"[!] Lỗi đọc {self.templates_path}: {e}")
 
+    def set_vocabulary(self, vocabulary: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Gán trực tiếp từ điển mẫu in-memory (dùng cho cross-validation / LOSO / kiểm định).
+        Không cần ghi và đọc lại file JSON. Tự động chuẩn hóa chirality một lần cho toàn bộ mẫu.
+        """
+        import copy
+        self.vocabulary = copy.deepcopy(vocabulary)
+        meta = metadata or {}
+        self.feature_dim = meta.get("feature_dim", 24 if self.vocabulary else 4)
+        self.is_legacy_4d = (self.feature_dim < 9)
+        self._canonicalize_loaded_templates()
+        self.validate_weights_against_vocabulary()
+
     def _canonicalize_loaded_templates(self) -> None:
         """
         Chuẩn hóa chirality MỘT LẦN cho toàn bộ template vừa nạp, để template và query
@@ -1351,6 +1462,7 @@ class GoldenTriadDTWMatcher:
         n_skipped = 0
         n_by_label = 0
 
+        flip_body = getattr(self, "flip_body_x", True)
         for word_data in self.vocabulary.values():
             for s in word_data.get("samples", []):
                 if not isinstance(s, dict):
@@ -1369,7 +1481,7 @@ class GoldenTriadDTWMatcher:
                 handed = s.get("handedness")
                 if handed is not None:
                     n_by_label += 1
-                canon, was_flipped = canonicalize_chirality(traj, handedness=handed)
+                canon, was_flipped = canonicalize_chirality(traj, handedness=handed, flip_body_x=flip_body)
                 if was_flipped:
                     s[key] = canon.tolist()
                     n_flipped += 1
@@ -1409,7 +1521,7 @@ class GoldenTriadDTWMatcher:
           query_rep_count: số nhịp lặp của query; None = tự tính từ cột 0, 1 của chuỗi K=32.
         """
         if query_traj_9d is not None:
-            query_traj_9d, _ = canonicalize_chirality(query_traj_9d, handedness=handedness)
+            query_traj_9d, _ = canonicalize_chirality(query_traj_9d, handedness=handedness, flip_body_x=getattr(self, "flip_body_x", True))
 
         # Số nhịp lặp của query chỉ cần khi w_r > 0 (tránh tốn phép tính khi nhóm này đang tắt).
         q_rep = query_rep_count
@@ -1423,13 +1535,27 @@ class GoldenTriadDTWMatcher:
 
         for word_key, word_data in self.vocabulary.items():
             display_name = word_data.get("display_name", word_key)
-            threshold = float(word_data.get("threshold", 1.25))
+            if self.threshold_override is not None:
+                threshold = self.threshold_override
+            elif self.threshold_dict is not None and word_key in self.threshold_dict:
+                threshold = float(self.threshold_dict[word_key])
+            else:
+                threshold = float(word_data.get("threshold", 1.25))
+
             samples = word_data.get("samples", [])
             if not samples:
                 continue
 
-            # Lấy vector trọng số W_s riêng biệt cho candidate sign này từ ASL-LEX
-            wp, wa, wm, wn = self._get_weights_for_sign(word_key)
+            # Lấy vector trọng số hiệu dụng cho candidate sign này
+            eff = self._get_effective_weights(word_key)
+            wp = eff["w_p"]
+            wa = eff["w_a"]
+            wm = eff["w_m"]
+            wn = eff["w_n"]
+            wb = eff["w_b"]
+            ws = eff["w_s"]
+            wz = eff["w_z"]
+            wr = eff["w_r"]
 
             sample_distances = []
             for s in samples:
@@ -1444,7 +1570,7 @@ class GoldenTriadDTWMatcher:
                     continue
 
                 # SPEC 03: w_b bị vô hiệu nếu query HOẶC template không có mốc cơ thể hợp lệ.
-                wb_eff = self.w_b if (query_has_body and s.get("body_anchor_valid", True)) else 0.0
+                wb_eff = wb if (query_has_body and s.get("body_anchor_valid", True)) else 0.0
 
                 dist = compute_golden_triad_dtw_distance(
                     q_traj=query_traj_9d,
@@ -1457,10 +1583,10 @@ class GoldenTriadDTWMatcher:
                     w_n=wn,
                     lambda_shape=self.lambda_shape,
                     lambda_shape_global=self.lambda_shape_global,
-                    w_z=self.w_z,
+                    w_z=wz,
                     w_b=wb_eff,
-                    w_s=self.w_s,
-                    w_r=self.w_r,
+                    w_s=ws,
+                    w_r=wr,
                     q_rep_count=q_rep,
                     t_rep_count=s.get("rep_count")
                 )
@@ -1477,7 +1603,12 @@ class GoldenTriadDTWMatcher:
         all_candidates.sort(key=lambda c: c.distance)
         top1 = all_candidates[0]
         base_thresh = float(self.vocabulary.get(top1.word_key, {}).get("threshold", 1.25))
-        word_thresh = self.threshold_override if self.threshold_override is not None else base_thresh
+        if self.threshold_override is not None:
+            word_thresh = self.threshold_override
+        elif self.threshold_dict is not None and top1.word_key in self.threshold_dict:
+            word_thresh = float(self.threshold_dict[top1.word_key])
+        else:
+            word_thresh = base_thresh
 
         # 1. Kiểm tra ngưỡng tuyệt đối (vượt ngưỡng nghi vấn -> REJECTED)
         if top1.distance > (word_thresh * self.uncertainty_ratio):

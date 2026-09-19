@@ -1,0 +1,8 @@
+{
+  "primary": "margin_mean",
+  "require_ci95_lower_gt": 0.0,
+  "max_false_accept_neg_increase": 0,
+  "max_wrong_accept_increase": 0,
+  "max_word_regression_samples": 1,
+  "max_latency_increase_pct": 20
+}
