@@ -50,6 +50,7 @@ from dynamic_features import (
     compute_extended_columns,
     append_extended_columns,
     compute_repetition_count,
+    compute_palm_len,
 )
 from dynamic_dtw_engine import (
     KineticState,
@@ -676,10 +677,9 @@ def run_dynamic_collector(
             wrist_x, wrist_y = wrist_smoother.update(raw_wrist_x, raw_wrist_y, timestamp=curr_time)
 
             # Tính Palm Scale chống co ngắn phối cảnh khi chĩa ngón tay vào camera (Foreshortening Invariant)
-            palm_2d = math.hypot((lm9.x - lm0.x) * w_f, (lm9.y - lm0.y) * h_f)
-            palm_3d = math.sqrt(((lm9.x - lm0.x) * w_f)**2 + ((lm9.y - lm0.y) * w_f)**2 + ((lm9.z - lm0.z) * w_f)**2)
-            knuckle_span = math.hypot((lm17.x - lm5.x) * w_f, (lm17.y - lm5.y) * h_f)
-            palm_len = max(palm_2d, palm_3d, knuckle_span * 0.85, 30.0)
+            # Nguồn sự thật duy nhất của palm_len (dynamic_features.compute_palm_len), dùng chung với predict.
+            # (Lỗi cũ: thành phần y của kích thước 3D nhân bề rộng thay vì bề cao, làm palm_len lúc thu lớn hơn lúc chạy tới 1.33 lần.)
+            palm_len = compute_palm_len(lm0, lm5, lm9, lm17, w_f, h_f)
             cached_palm_len = palm_len
 
             # Cập nhật mốc tham chiếu cho LK Inertial Fallback

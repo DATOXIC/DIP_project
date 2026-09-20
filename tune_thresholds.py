@@ -74,6 +74,10 @@ def parse_args() -> argparse.Namespace:
         "--apply", action="store_true",
         help="Ghi ngưỡng mới trực tiếp vào file templates (mặc định chỉ xem trước, KHÔNG ghi gì)."
     )
+    parser.add_argument(
+        "--legacy-clamp", action="store_true",
+        help="Giữ hành vi kẹp cứng ngưỡng vào dải [0.6, 2.0] cũ (SPEC 04B: mặc định không kẹp cứng để khớp thang đo mới)."
+    )
     return parser.parse_args()
 
 
@@ -184,7 +188,12 @@ def main() -> None:
         # Nếu không có từ nào khác có mẫu để so sánh, không giới hạn theo inter_min
         # (min(...) với inf tự động bỏ qua nhánh này).
         proposed_raw = min(intra_max * INTRA_MARGIN, inter_min * INTER_MARGIN)
-        proposed = max(THRESH_FLOOR, min(THRESH_CEIL, proposed_raw))
+        if args.legacy_clamp:
+            proposed = max(THRESH_FLOOR, min(THRESH_CEIL, proposed_raw))
+        else:
+            if proposed_raw < THRESH_FLOOR or proposed_raw > THRESH_CEIL:
+                print(f"[!] CẢNH BÁO THANG ĐO: Ngưỡng đề xuất '{word_key}' ({proposed_raw:.4f}) nằm ngoài dải cũ [{THRESH_FLOOR}, {THRESH_CEIL}]. Không kẹp cứng.")
+            proposed = proposed_raw
 
         rows.append({
             "word_key": word_key,

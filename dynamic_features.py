@@ -87,6 +87,31 @@ def groups_available_for_dim(dim: int) -> List[str]:
 # 2. CÁC HÀM TRÍCH XUẤT ĐẶC TRƯNG (đúng công thức trong SPEC 03)
 # =============================================================================
 
+def compute_palm_len(lm0: Any, lm5: Any, lm9: Any, lm17: Any, w_f: float, h_f: float) -> float:
+    """
+    Kích thước lòng bàn tay (palm_len, đơn vị pixel) chống co ngắn phối cảnh — NGUỒN SỰ THẬT DUY NHẤT.
+
+        palm_2d      = |(lm9 - lm0)| trên mặt phẳng ảnh              (x nhân w_f, y nhân h_f)
+        palm_3d      = sqrt(palm_2d^2 + ((lm9.z - lm0.z) * w_f)^2)    (z của MediaPipe cùng thang với x => nhân w_f)
+        knuckle_span = |(lm17 - lm5)| trên mặt phẳng ảnh              (x nhân w_f, y nhân h_f)
+        palm_len     = max(palm_2d, palm_3d, 0.85 * knuckle_span, 30.0)
+
+    lm0, lm5, lm9, lm17: bốn mốc MediaPipe (cổ tay, gốc ngón trỏ, gốc ngón giữa, gốc ngón út), mỗi mốc là
+    đối tượng có thuộc tính .x, .y, .z CHUẨN HÓA [0, 1] (z cùng thang với x). w_f, h_f: bề rộng, bề cao khung
+    hình (pixel).
+
+    CẢNH BÁO LỊCH SỬ: trước đây collect_dynamic_templates.py sao chép công thức này nhưng nhân thành phần y của
+    palm_3d với w_f (bề RỘNG) thay vì h_f (bề CAO) => ở khung 640x480 palm_len khi thu lớn hơn lúc chạy thật tới
+    640/480 = 1.33 lần (khi tay hướng lên). Từ nay MỌI đường thu / chạy / dựng lại phải GỌI hàm này.
+    """
+    dx = (lm9.x - lm0.x) * w_f
+    dy = (lm9.y - lm0.y) * h_f
+    palm_2d = math.hypot(dx, dy)
+    palm_3d = math.sqrt(dx ** 2 + dy ** 2 + ((lm9.z - lm0.z) * w_f) ** 2)
+    knuckle_span = math.hypot((lm17.x - lm5.x) * w_f, (lm17.y - lm5.y) * h_f)
+    return max(palm_2d, palm_3d, knuckle_span * 0.85, 30.0)
+
+
 def compute_z_norm(palm_len_seq: Sequence[float]) -> np.ndarray:
     """
     Độ sâu ảo per-frame: z[t] = clip((palm_len[t] - palm_len[0]) / palm_len[0], -1, 1).
@@ -273,6 +298,136 @@ def compute_extended_columns(
 def append_extended_columns(base_17d: np.ndarray, ext: np.ndarray) -> np.ndarray:
     """Ghép 17 cột cũ + 7 cột mới => (N, 24). Thứ tự: [..17.., z_norm, body(2), abduction(4)]."""
     return np.concatenate([np.asarray(base_17d, dtype=np.float32), np.asarray(ext, dtype=np.float32)], axis=1).astype(np.float32)
+
+
+def build_segment_features(
+    frames: Sequence[Dict[str, Any]],
+    k_target: int = 32,
+) -> Tuple[Optional[np.ndarray], Optional[List[str]], bool, Optional[str]]:
+    """
+    MỘT hàm duy nhất dựng đặc trưng 24D đã resample K cho MỘT đoạn khung (SPEC 08 Nhiệm vụ "dùng chung", cũng là
+    SPEC 09 Nhiệm vụ A). Đây chính là đoạn code trước kia viết inline ở predict_sentence_webcam.py (cả nhánh chốt
+    thật lẫn nhánh "dự đoán tạm"); công thức GIỮ NGUYÊN, kết quả bit-giống hệt.
+
+    `frames`: danh sách bản ghi từng khung (dict), theo thứ tự thời gian, có các khóa:
+        x, y          : tọa độ cổ tay (đúng giá trị đã đưa vào bộ phân đoạn, tức bản đã làm mượt)
+        palm_len      : độ dài lòng bàn tay (bản đã kẹp >= 15 như GestureFrame.palm_len)
+        hand_shape    : nhãn dáng tay (chuỗi)
+        angles        : (5,) góc gập ngón
+        normal        : (3,) pháp tuyến lòng bàn tay
+        landmarks     : (21, 3) landmark pixel (z nhân bề rộng khung) hoặc None
+        face_box      : (cx, cy, w, h) hoặc None
+        handedness    : nhãn tay thuận của khung, hoặc None (khóa này có thể vắng)
+    Trả về (res_traj_24d (K, 24), res_shapes (K,), body_ok, dominant_handedness).
+    res_traj_24d = None nếu đoạn quá ngắn cho resample. dominant_handedness = nhãn chiếm đa số trong các khung
+    (None nếu không khung nào có nhãn).
+    """
+    from dynamic_dtw_engine import resample_9d_gesture_sequence
+
+    n = len(frames)
+    x0, y0 = frames[0]["x"], frames[0]["y"]
+    ref_palm = max(frames[0]["palm_len"], 15.0)
+
+    raw_xs = np.array([(f["x"] - x0) / ref_palm for f in frames], dtype=np.float32)
+    raw_ys = np.array([(f["y"] - y0) / ref_palm for f in frames], dtype=np.float32)
+
+    raw_dxs = np.zeros(n, dtype=np.float32)
+    raw_dys = np.zeros(n, dtype=np.float32)
+    raw_dxs[1:] = raw_xs[1:] - raw_xs[:-1]
+    raw_dys[1:] = raw_ys[1:] - raw_ys[:-1]
+    raw_dxs[0] = raw_dxs[1] if n > 1 else 0.0
+    raw_dys[0] = raw_dys[1] if n > 1 else 0.0
+
+    raw_angles_mat = np.array([f["angles"] for f in frames], dtype=np.float32)
+    raw_dangles_mat = np.zeros_like(raw_angles_mat)
+    raw_dangles_mat[1:] = raw_angles_mat[1:] - raw_angles_mat[:-1]
+    raw_dangles_mat[0] = raw_dangles_mat[1] if n > 1 else 0.0
+
+    raw_normals_mat = np.array([f["normal"] for f in frames], dtype=np.float32)
+    raw_17d = np.column_stack(
+        [raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat, raw_dangles_mat]
+    ).astype(np.float32)
+
+    raw_ext, body_ok = compute_extended_columns(
+        [f["palm_len"] for f in frames],
+        [(f["x"], f["y"]) for f in frames],
+        [f["landmarks"] for f in frames],
+        [f["face_box"] for f in frames],
+    )
+    raw_24d = append_extended_columns(raw_17d, raw_ext)
+    shapes = [f["hand_shape"] for f in frames]
+
+    res_traj, res_shapes = resample_9d_gesture_sequence(raw_24d, shapes, k_target=k_target)
+
+    labels = [f.get("handedness") for f in frames if f.get("handedness")]
+    dominant = max(set(labels), key=labels.count) if labels else None
+    return res_traj, res_shapes, body_ok, dominant
+
+
+def extend_still_tail(
+    records: Sequence[Dict[str, Any]],
+    target_tail_sec: float,
+    v_stop: float = 0.040,
+    min_frames: int = 8,
+    replay_jitter: bool = False,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Kéo dài đoạn ĐỨNG YÊN ở đuôi một stroke cho đủ `target_tail_sec` giây, bằng cách nhân bản bản ghi khung cuối.
+
+    Vì sao cần (SPEC 08 Nhiệm vụ D): stroke chốt theo kiểu cũ chứa ~0,45 s đứng yên ở đuôi (9 khung khựng + grace), và
+    mọi mẫu trong bank đều mang đuôi đó. Khi rút ngắn thời gian chờ (chốt sớm), đuôi ngắn hơn => tỉ lệ thời gian của
+    quỹ đạo sau khi resample K=32 lệch khỏi bank. Đuôi vốn là đứng yên (v <= v_stop) nên nhân bản khung cuối cho đúng
+    độ dài cũ đưa truy vấn về gần như GIỐNG HỆT stroke chốt kiểu cũ, KHÔNG cần đổi bank.
+
+    records: danh sách dict, mỗi phần tử có x, y, palm_len, t (dấu thời gian), các khóa khác được giữ nguyên.
+    Đuôi hiện có = khoảng thời gian từ khung cuối còn chuyển động (v > v_stop, v = |Δcổ tay| / max(palm, 15)) tới khung cuối.
+    Thêm số khung n_add = round((target_tail_sec - đuôi hiện có) / dt) với dt = trung vị khoảng cách giữa các khung;
+    thêm nữa nếu tổng chưa đủ `min_frames` (resample cần >= 8 khung).
+    replay_jitter=True: khung thêm KHÔNG đứng bất động tuyệt đối mà lặp lại các bước nhiễu cổ tay của chính đuôi yên đã ghi
+    (luân phiên đổi dấu mỗi vòng để không trôi), giữ nguyên độ dài đường đi của đuôi như đuôi thật. Cần cho heuristic
+    "chuyển động chêm" (is_movement_epenthesis: đo độ THẲNG = độ dời / độ dài đường đi): nhiễu ở đuôi 0,45 s làm đường đi dài hơn
+    một chút nên các cử chỉ vốn rất thẳng (như THANK_YOU) nằm dưới ngưỡng 0.97; nếu đuôi bị rút ngắn và thay bằng khung
+    bất động thì độ thẳng nhích lên trên ngưỡng và từ bị loại nhầm. Mặc định False (chỉ nhân bản khung cuối).
+    Trả về (danh sách mới, số khung đã thêm). Không đổi danh sách gốc.
+    """
+    recs = list(records)
+    n = len(recs)
+    if n == 0:
+        return recs, 0
+    ts = np.array([float(r["t"]) for r in recs], dtype=np.float64)
+    dts = np.diff(ts)
+    dts = dts[dts > 1e-6]
+    dt = float(np.median(dts)) if dts.size else (1.0 / 30.0)
+    last_motion = 0
+    for i in range(1, n):
+        step = math.hypot(recs[i]["x"] - recs[i - 1]["x"], recs[i]["y"] - recs[i - 1]["y"])
+        if step / max(float(recs[i]["palm_len"]), 15.0) > v_stop:
+            last_motion = i
+    tail_dur = float(ts[-1] - ts[last_motion])
+    n_add = max(0, int(round((float(target_tail_sec) - tail_dur) / dt)))
+    n_add = max(n_add, int(min_frames) - n)
+    steps: List[Tuple[float, float]] = []
+    if replay_jitter:
+        steps = [(recs[i]["x"] - recs[i - 1]["x"], recs[i]["y"] - recs[i - 1]["y"]) for i in range(last_motion + 1, n)]
+    m = len(steps)
+    x_cur, y_cur = float(recs[-1]["x"]), float(recs[-1]["y"])
+    for k in range(1, n_add + 1):
+        r = dict(recs[-1])
+        r["t"] = float(ts[-1]) + k * dt
+        if m:
+            sign = 1.0 if ((k - 1) // m) % 2 == 0 else -1.0
+            x_cur += sign * steps[(k - 1) % m][0]
+            y_cur += sign * steps[(k - 1) % m][1]
+            r["x"], r["y"] = x_cur, y_cur
+        recs.append(r)
+    return recs, max(n_add, 0)
+
+
+def records_to_gesture_frames(records: Sequence[Dict[str, Any]]) -> List[Any]:
+    """Bản ghi khung (dict) -> danh sách GestureFrame, để dùng các hàm kiểm tra nhận GestureFrame (vd is_movement_epenthesis)."""
+    from dynamic_dtw_engine import GestureFrame
+    return [GestureFrame(x=float(r["x"]), y=float(r["y"]), palm_len=float(r["palm_len"]),
+                         hand_shape=r.get("hand_shape", "Unknown"), timestamp=float(r["t"])) for r in records]
 
 
 def finalize_stroke_features(

@@ -27,6 +27,10 @@ Phím điều khiển:
   [c] : Xóa trắng câu thoại làm lại từ đầu (Clear)
   [f] : Lật gương camera (Flip)
   [p] : Mở bảng cài đặt Camera (Auto Exposure / White Balance)
+  [l] : Đổi ngôn ngữ giao diện + giọng nói Anh <-> Việt
+  [u] : Chuyển giao diện demo <-> gỡ lỗi (debug)
+  [t] : Bật/tắt loa
+  [h] : Bật/tắt bảng trợ giúp
   [q] : Thoát chương trình
 """
 
@@ -63,6 +67,10 @@ from dynamic_features import (
     CachedFaceDetector,
     compute_extended_columns,
     append_extended_columns,
+    compute_palm_len,
+    build_segment_features,
+    extend_still_tail,
+    records_to_gesture_frames,
 )
 from dynamic_dtw_engine import (
     KineticState,
@@ -83,6 +91,11 @@ from dynamic_dtw_engine import (
     is_stroke_duration_valid,
     is_movement_epenthesis
 )
+# Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
+import speech_service
+from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
+from camera_health import CameraHealthMonitor
+from lead_trim import select_best_lead_trim
 
 # =============================================================================
 # 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
@@ -102,9 +115,12 @@ CONFIG = {
     "asllex_blend_alpha": 1.0,        # 1.0 = giữ hành vi hiện tại (dùng thẳng ASL-LEX). Đổi xuống 0.3-0.7 để bật Hybrid Blend thật sự.
     "asllex_max_deviation": None,     # None = không giới hạn (giữ hành vi hiện tại). Đặt vd 0.5 để giới hạn ASL-LEX lệch tối đa ±50% so với mặc định.
     
-    # --- Ngưỡng quyết định nhận diện ---
-    "default_threshold": 0.40,   # Ngưỡng chấp nhận chuẩn hóa SPEC 04A.1 (tạm thời 0.40 thay vì 1.25 cũ)
-    "uncertainty_ratio": 1.40,   # Vùng nghi vấn: từ threshold đến 1.4 * threshold
+    # --- Ngưỡng quyết định nhận diện & Chế độ độ khớp (SPEC 04B) ---
+    "threshold_mode": "scale_k",   # "scale_k" (ngưỡng theo độ rộng nội lớp) hoặc "legacy" (cố định)
+    "threshold_k": 1.75,           # Hệ số k cho ngưỡng chấp nhận (k * intra_width). Chốt 2026-09-20 sau khi quét k: 1.75 hơn 1.6 về chấp nhận-đúng (p=0.002), 0 nhận nhầm
+    "uncertainty_k": 2.35,         # Hệ số k cho ranh giới từ chối (= k + 0.6)
+    "default_threshold": 0.40,   # Ngưỡng chấp nhận chuẩn hóa SPEC 04A.1 (cho chế độ legacy)
+    "uncertainty_ratio": 1.40,   # Vùng nghi vấn: từ threshold đến 1.4 * threshold (legacy)
     "margin_threshold": 0.12,    # Độ chênh lệch an toàn giữa Top 1 và Top 2 (12%)
     
     # --- Phân đoạn động học (Kinetic Pause Segmenter) ---
@@ -127,6 +143,58 @@ CONFIG = {
     "w_s": 0.0,                          # độ xòe ngón (4 góc giữa các ngón liền kề)
     "w_r": 0.0,                          # số nhịp lặp (cộng 1 lần sau DTW)
     "face_detect_every_n_frames": 8,     # bộ dò mặt có cache: chỉ chạy mạng mỗi N frame
+
+    # --- Giao diện & ngôn ngữ (chỉ ảnh hưởng hiển thị / giọng nói, KHÔNG ảnh hưởng nhận dạng) ---
+    "ui_mode": "demo",                   # "demo" = giao diện sạch cho người dùng cuối | "debug" = bảng đặc trưng cũ
+    "ui_lang": "en",                     # "en" | "vi" (mặc định "en" vì máy chưa có giọng đọc tiếng Việt)
+
+    # --- SPEC 08 "KÝ NHANH": bỏ thời gian chờ thừa giữa hai từ. MẶC ĐỊNH TẮT (enabled=False => hành vi cũ, bit-giống hệt).
+    #     Bật bằng cờ --fast-chain, hoặc phím [j] lúc chạy. Mọi thời gian tính bằng GIÂY (quy đổi theo dấu thời gian thật). ---
+    "fast_chain": {
+        "enabled": False,
+        "chain_window_sec": 0.0,         # sau khi chốt một từ, trong ngần này giây tay coi như đã sẵn sàng: cử động là ghi ngay
+        "pause_sec": 0.12,               # tay khựng ngần này giây thì vào PENDING_COMMIT (cũ: 9 khung ~0.30 s). Chọn từ lưới mô phỏng SPEC 08
+        "grace_window_sec": 0.05,        # cửa sổ chờ gộp pha (cũ: 0.15 s)
+        "min_stroke_sec": 0.10,          # stroke tối thiểu (cũ: 8 khung); đuôi ngắn hơn nên không thể đòi 8 khung
+        "early_commit": True,            # chốt sớm ngay khi dự đoán tạm đủ chắc (không đợi hết grace)
+        "early_min_quality": 70,         # match_quality tối thiểu để chốt sớm (ngưỡng nhận diện KHÔNG đổi: vẫn phải ACCEPTED)
+        "early_min_margin": 0.25,        # chênh lệch tương đối top-1/top-2 tối thiểu để chốt sớm
+        "multi_phase_words": None,       # None = tự suy từ bank lúc khởi động; hoặc danh sách từ (không chốt sớm các từ này)
+        "tail_pad_sec": 0.45,            # kéo dài đuôi đứng yên của stroke về ~0.45 s (như bank) trước khi dựng đặc trưng; None = tắt
+        "ready_stable_sec": 0.1,
+        "transition_lockout_sec": 0.0,   # SPEC 08B: khoảng cấm sau chốt từ (0 = tắt)
+        "lead_trim": {                   # SPEC 08B: cắt phần dẫn đầu thích nghi
+            "enabled": False,
+            "max_sec": 0.45,
+            "max_variants": 6,
+            "good_r": 0.80,
+            "trim_penalty_per_sec": 0.30,
+            "min_gain": 0.10,
+            "min_gain_other_word": 0.25,
+            "min_after_trim_sec": 0.30,
+            "max_trim_fraction": 0.40,
+        },
+    },
+
+    
+
+    # --- Sức khỏe camera (camera_health.py): đo khung MỚI THẬT/giây + độ sáng, cảnh báo trên HUD. CHỈ đo/hiển thị. ---
+    "camera_health": {
+        "enabled": True,
+        "window_sec": 2.0,               # cửa sổ trượt tính khung mới thật/giây
+        "unique_fps_warn": 12.0,         # khung mới/giây (lúc tay chuyển động) dưới mức này -> "Camera đang chậm"
+        "unique_fps_bad": 8.0,           # dưới mức này -> cảnh báo đậm
+        "luma_low_warn": 95.0,           # độ sáng trung bình dưới mức này -> "Thiếu sáng"
+        "luma_low_bad": 70.0,            # dưới mức này -> cảnh báo đậm
+        "luma_high": 215.0,              # độ sáng trung bình trên mức này -> "Quá chói"
+        "sat_frac_high": 0.25,           # tỉ lệ điểm ảnh >= 250 trên mức này -> "Quá chói"
+        "persist_sec": 2.0,              # điều kiện phải liên tục ngần này giây mới bật cảnh báo
+        "show_min_sec": 3.0,             # cảnh báo đã bật hiện tối thiểu ngần này giây
+        "clear_sec": 2.0,                # phải bình thường liên tục ngần này giây mới tắt
+        "hysteresis": 0.10,              # ngưỡng thoát nới ~10% so với ngưỡng vào
+        "hand_moving_v": 0.03,           # v_norm >= mức này coi là tay đang chuyển động
+        "warn_on_video": False,          # chạy từ file video: tắt cảnh báo (khung trùng của video là bình thường)
+    },
 }
 
 # =============================================================================
@@ -290,6 +358,8 @@ from pipeline_common import (
     LKInertialFallback,
     make_wrist_smoother,
     make_segmenter,
+    find_multi_phase_words,
+    early_commit_ok,
     open_camera,
     MIN_COLLECT_FPS,
     SlidingFPSMeter,
@@ -508,6 +578,11 @@ def draw_prominent_hud_banner(
         stx = max(banner_x1 + 15, (w_f - stw) // 2)
         cv2.putText(frame, subtitle, (stx, banner_y1 + 54),
                     cv2.FONT_HERSHEY_SIMPLEX, sub_scale, (220, 220, 220), 1, lineType=cv2.LINE_AA)
+
+
+def _make_toast(kind: str, keys: List[str], quality: Optional[float], now: float, duration: float) -> HudToast:
+    """Tạo sự kiện phản hồi có cấu trúc cho giao diện demo (kind, khóa từ, độ khớp, thời gian bắt đầu/hết hạn)."""
+    return HudToast(kind=kind, keys=list(keys), quality=quality, t_start=now, t_expire=now + duration)
 
 
 def draw_feature_metrics_hud(
@@ -881,6 +956,38 @@ def compute_palm_normal_vector(landmarks_3d: np.ndarray, handedness: str = "Righ
 # 6. CHƯƠNG TRÌNH ĐIỀU PHỐI GHÉP CÂU HOÀN CHỈNH (MAIN PIPELINE RUNNER)
 # =============================================================================
 
+def _history_tail(history: List[Any], n: int, default_first: Any) -> List[Any]:
+    """
+    Lấy n phần tử CUỐI của một lịch sử theo khung; nếu lịch sử ngắn hơn n thì đệm ĐẦU bằng phần tử đầu tiên
+    của lịch sử (hoặc `default_first` khi lịch sử rỗng). Đúng hành vi đoạn code inline cũ (bit-giống hệt).
+    """
+    if len(history) >= n:
+        return history[-n:]
+    pad = n - len(history)
+    first = history[0] if history else default_first
+    return [first] * pad + history
+
+
+def _segment_records(stroke_frames: List[GestureFrame], angle_hist: List[Any], normal_hist: List[Any],
+                     ext_hist: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Ghép các khung của một đoạn (GestureFrame) với lịch sử góc / pháp tuyến / (landmark, hộp mặt) cùng độ dài
+    thành danh sách bản ghi cho `dynamic_features.build_segment_features`. Dùng chung cho nhánh chốt thật
+    và nhánh dự đoán tạm.
+    """
+    n = len(stroke_frames)
+    angs = _history_tail(angle_hist, n, np.zeros(5, dtype=np.float32))
+    norms = _history_tail(normal_hist, n, np.array([0, 0, -1], dtype=np.float32))
+    exts = _history_tail(ext_hist, n, (None, None))
+    return [
+        {
+            "x": f.x, "y": f.y, "palm_len": f.palm_len, "hand_shape": f.hand_shape, "t": f.timestamp,
+            "angles": angs[i], "normal": norms[i], "landmarks": exts[i][0], "face_box": exts[i][1],
+        }
+        for i, f in enumerate(stroke_frames)
+    ]
+
+
 def run_sentence_builder(
     camera_index: int = 0,
     headless: bool = False,
@@ -895,10 +1002,22 @@ def run_sentence_builder(
     detect_scale: Optional[float] = None,
     show_features: Optional[bool] = None,
     log_session_path: Optional[str] = None,
-    detector_workers: Optional[int] = None
+    detector_workers: Optional[int] = None,
+    threshold_mode: Optional[str] = None,
+    threshold_k: Optional[float] = None,
+    uncertainty_k: Optional[float] = None,
+    ui_mode: Optional[str] = None,
+    ui_lang: Optional[str] = None,
+    fast_chain: Optional[bool] = None,
+    transition_lockout: Optional[float] = None,
+    lead_trim: Optional[bool] = None
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
+    ui_mode: "demo" | "debug" (mặc định CONFIG["ui_mode"]); ui_lang: "en" | "vi" (mặc định CONFIG["ui_lang"]).
+    fast_chain: SPEC 08 chế độ "ký nhanh" (None = lấy CONFIG["fast_chain"]["enabled"], mặc định TẮT); phím [j] bật/tắt lúc chạy.
+    transition_lockout: SPEC 08B khoảng cấm sau chốt (giây). None = lấy từ cấu hình.
+    lead_trim: SPEC 08B cắt phần dẫn đầu thích nghi (None = lấy từ cấu hình); phím [k] bật/tắt lúc chạy.
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -906,6 +1025,16 @@ def run_sentence_builder(
 
     if detector_workers is None:
         detector_workers = CONFIG.get("detector_workers", None)
+
+    th_mode = threshold_mode if threshold_mode is not None else CONFIG.get("threshold_mode", "scale_k")
+    th_k = threshold_k if threshold_k is not None else float(CONFIG.get("threshold_k", 1.6))
+    unc_k = uncertainty_k if uncertainty_k is not None else float(CONFIG.get("uncertainty_k", 2.2))
+
+    if threshold_override is not None and th_mode == "scale_k":
+        raise ValueError(
+            "Không thể dùng đồng thời --thresh (khoảng cách tuyệt đối) và --threshold-mode scale_k. "
+            "Hãy dùng --threshold-k hoặc đổi sang --threshold-mode legacy."
+        )
 
     # Khởi tạo CSV session logger nếu có chỉ định log_session_path
     session_file = None
@@ -922,7 +1051,9 @@ def run_sentence_builder(
             session_writer.writerow([
                 "timestamp", "event", "predicted_word", "best_distance",
                 "second_word", "second_distance", "margin_pct",
-                "duration_sec", "num_frames", "body_anchor_valid", "fps"
+                "duration_sec", "num_frames", "body_anchor_valid", "fps",
+                "best_confidence", "match_quality", "r_ratio", "t_unix", "commit_mode", "t_start",
+                "lead_trim_sec", "lead_trim_tried"
             ])
             session_file.flush()
         print(f"✓ Đang ghi log phiên cử chỉ vào: '{log_session_path}'")
@@ -961,6 +1092,12 @@ def run_sentence_builder(
     # 3. Khởi tạo DTW Engine (Tầng 3) & Kinetic Segmenter (Tầng 2)
     templates_file = templates_path if templates_path is not None else CONFIG.get("templates_path", "dynamic_templates.json")
     sw_file = CONFIG.get("sign_weights_path") if sign_weights_path == "KEEP_DEFAULT" else sign_weights_path
+    if sw_file:
+        print(f"ℹ️ [DTW] Chế độ trọng số: ASL-LEX theo từ (Per-Sign Weights từ '{sw_file}').")
+    else:
+        print("ℹ️ [DTW] Chế độ trọng số: Toàn cục (Global Weights từ CONFIG).")
+
+    eff_thresh_override = None if th_mode == "scale_k" else (threshold_override if threshold_override is not None else CONFIG.get("default_threshold", 0.40))
     dtw_engine = GoldenTriadDTWMatcher(
         templates_path=templates_file,
         sign_weights_path=sw_file,
@@ -971,13 +1108,16 @@ def run_sentence_builder(
         lambda_shape=CONFIG["lambda_shape"],
         margin_threshold=margin_threshold if margin_threshold is not None else CONFIG["margin_threshold"],
         uncertainty_ratio=CONFIG["uncertainty_ratio"],
-        threshold_override=threshold_override if threshold_override is not None else CONFIG["default_threshold"],
+        threshold_override=eff_thresh_override,
         asllex_blend_alpha=CONFIG.get("asllex_blend_alpha", 1.0),
         asllex_max_deviation=CONFIG.get("asllex_max_deviation", None),
         w_z=CONFIG.get("w_z", 0.0),
         w_b=CONFIG.get("w_b", 0.0),
         w_s=CONFIG.get("w_s", 0.0),
-        w_r=CONFIG.get("w_r", 0.0)
+        w_r=CONFIG.get("w_r", 0.0),
+        threshold_mode=th_mode,
+        threshold_k=th_k,
+        uncertainty_k=unc_k
     )
 
     # SPEC 03: bộ dò mặt có cache — CHỈ tạo khi nhóm mốc cơ thể đang bật (w_b > 0), để không tốn CPU vô ích.
@@ -997,7 +1137,34 @@ def run_sentence_builder(
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
-    segmenter = make_segmenter(CONFIG)
+    # SPEC 08 / 08B: chế độ "ký nhanh" và cắt chuyển tiếp. Mặc định TẮT => make_segmenter(CONFIG) như cũ.
+    fc_cfg: Dict[str, Any] = dict(CONFIG.get("fast_chain", {}))
+    if transition_lockout is not None:
+        fc_cfg["transition_lockout_sec"] = float(transition_lockout)
+    lt_cfg: Dict[str, Any] = dict(fc_cfg.get("lead_trim", {}))
+    if lead_trim is not None:
+        lt_cfg["enabled"] = bool(lead_trim)
+    fc_cfg["lead_trim"] = lt_cfg
+
+    fast_on = bool(fast_chain) if fast_chain is not None else bool(fc_cfg.get("enabled", False))
+    lead_trim_on = bool(lt_cfg.get("enabled", False))
+
+    if fc_cfg.get("multi_phase_words") is not None:
+        multi_phase_words: List[str] = list(fc_cfg["multi_phase_words"])
+    else:
+        multi_phase_words = sorted(find_multi_phase_words(dtw_engine.vocabulary))
+    if fast_on:
+        print(f"⚡ [FastChain] BẬT: pause={fc_cfg.get('pause_sec')}s, grace={fc_cfg.get('grace_window_sec')}s, "
+              f"cửa sổ nối={fc_cfg.get('chain_window_sec')}s, lockout={fc_cfg.get('transition_lockout_sec', 0.0)}s, "
+              f"lead_trim={'BẬT' if lead_trim_on else 'TẮT'}, chốt sớm={fc_cfg.get('early_commit')} "
+              f"(chất lượng>={fc_cfg.get('early_min_quality')}, margin>={fc_cfg.get('early_min_margin')}), "
+              f"kéo đuôi={fc_cfg.get('tail_pad_sec')}s. Từ nhiều pha (không chốt sớm): {multi_phase_words or 'không có'}")
+    else:
+        print("ℹ️ [FastChain] TẮT (bật bằng --fast-chain hoặc phím [j]).")
+    segmenter = make_segmenter(CONFIG, fc_cfg if fast_on else None)
+    early_pre: Optional[Tuple[Any, Any, bool, Any, float, int]] = None   # (traj, shapes, body_ok, match, tau, n_tried) của dự đoán tạm khi chốt sớm
+    lead_trim_history: List[float] = []   # Lưu lại tau của các từ đã commit trong phiên để in thống kê lúc thoát
+    _commit_mode = "normal"
 
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
     wrist_smoother = make_wrist_smoother()
@@ -1014,6 +1181,8 @@ def run_sentence_builder(
 
     # 4. Quản lý Bộ đệm Câu thoại (Tầng 4)
     sentence_words: List[str] = []
+    # Danh sách khóa từ SONG SONG với sentence_words (luôn cùng độ dài) để hiển thị lại câu theo ngôn ngữ đang chọn.
+    sentence_keys: List[str] = []
     last_commit_time = 0.0
     last_committed_word: Optional[str] = None
     last_hand_seen_time = time.time()
@@ -1024,6 +1193,18 @@ def run_sentence_builder(
     banner_subtitle = ""
     banner_color = (0, 255, 0)
     banner_expire = 0.0
+
+    # Giao diện demo song ngữ: toast có cấu trúc, ngôn ngữ, loa, bảng trợ giúp
+    ui_mode = (ui_mode if ui_mode is not None else CONFIG.get("ui_mode", "demo"))
+    ui_mode = ui_mode if ui_mode in ("demo", "debug") else "demo"
+    ui_lang = (ui_lang if ui_lang is not None else CONFIG.get("ui_lang", "en"))
+    ui_lang = ui_lang if ui_lang in ("en", "vi") else "en"
+    hud_toast: Optional[HudToast] = None
+    show_help = False
+    demo_hud = DemoHUD(phrase_lookup=lambda k, lg: get_asl_phrase(k, lang=lg, default=""))
+    hud_warned = False
+    speech_service.set_en_speaker(speak_async)
+    speech_service.init_speech()  # dò giọng tiếng Việt ở luồng nền (không chặn)
 
     # Quản lý Vệt sáng chuyển động neon (R4 Motion Trail)
     # Lưu các điểm dạng tuple: (x, y, timestamp)
@@ -1073,12 +1254,25 @@ def run_sentence_builder(
     prev_time = time.time()
     fps = 0.0
 
+    # Giám sát sức khỏe camera: CHỈ đo (khung mới thật/giây, độ sáng) và cảnh báo trên HUD, không đổi nhận diện.
+    # Khung giả lập headless (cap None) không được đo; video file mặc định không cảnh báo (khung trùng là bình thường).
+    cam_cfg = dict(CONFIG.get("camera_health", {}))
+    cam_monitor: Optional[CameraHealthMonitor] = None
+    if cam_cfg.get("enabled", True) and cap is not None:
+        cam_monitor = CameraHealthMonitor(
+            cam_cfg, warnings_enabled=(video_path is None or bool(cam_cfg.get("warn_on_video", False))))
+    cam_hand_moving_v = float(cam_cfg.get("hand_moving_v", 0.03))
+    cam_last_v_norm = 0.0   # v_norm của khung xử lý gần nhất (kết quả dò tay chạy nền nên trễ vài khung)
+
     print("\n[HƯỚNG DẪN SỬ DỤNG]")
     print("  - Múa cử chỉ rõ ràng, khựng tay dừng dứt khoát 0.35s để chốt từ.")
     print("  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).")
     print("  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).")
     print("  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.")
-    print("  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát\n")
+    print("  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát")
+    print("  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp")
+    print("  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)\n")
+    print(f"  Giao diện: {ui_mode} | Ngôn ngữ: {ui_lang}\n")
 
     processed_frames = 0
     has_predicted_pending = False
@@ -1113,6 +1307,9 @@ def run_sentence_builder(
 
                 if ret and frame is not None:
                     capture_ts = time.time()
+                    if cam_monitor is not None:
+                        # Gọi MỖI lần đọc được khung (kể cả khung trùng), trước lật gương; tay chuyển động = v_norm khung trước
+                        cam_monitor.update(frame, capture_ts, cam_last_v_norm >= cam_hand_moving_v)
                     frame_counter += 1
                     if flip_cam:
                         frame = cv2.flip(frame, 1)
@@ -1162,6 +1359,7 @@ def run_sentence_builder(
             prev_time = curr_time
 
             display_frame = frame.copy()
+            cam_last_v_norm = 0.0   # cập nhật lại sau khi phân đoạn tính v_norm; mất tay -> 0 (không chuyển động)
 
             # SPEC 03: hộp mặt (cx, cy, w, h) theo pixel KHUNG GỐC; ảnh dò có thể đã thu nhỏ (detect_scale).
             if face_detector is not None:
@@ -1179,11 +1377,13 @@ def run_sentence_builder(
             valid_defects = cached_valid_defects
             seg_state = KineticState.IDLE
             completed_stroke: Optional[List[GestureFrame]] = None
+            early_pre = None    # SPEC 08: kết quả dự đoán tạm dùng lại khi chốt sớm (chỉ đặt trong nhánh 3.5)
             is_swipe = False
             v_norm = 0.0
             x1, y1, x2, y2 = cached_box
             current_angles: Optional[np.ndarray] = None
             current_normal: Optional[np.ndarray] = None
+            hand_center_px: Optional[Tuple[float, float]] = None   # tâm lòng bàn tay (px) cho vòng trạng thái ở giao diện demo
 
             if det_result.hand_landmarks and len(det_result.hand_landmarks) > 0:
                 hand_lost_frames = 0
@@ -1199,11 +1399,10 @@ def run_sentence_builder(
                 lm17 = landmarks[17]
                 raw_wrist_x = lm0.x * w_f
                 raw_wrist_y = lm0.y * h_f
-                
-                palm_2d = math.hypot((lm9.x - lm0.x) * w_f, (lm9.y - lm0.y) * h_f)
-                palm_3d = math.sqrt(((lm9.x - lm0.x) * w_f)**2 + ((lm9.y - lm0.y) * h_f)**2 + ((lm9.z - lm0.z) * w_f)**2)
-                knuckle_span = math.hypot((lm17.x - lm5.x) * w_f, (lm17.y - lm5.y) * h_f)
-                palm_len = max(palm_2d, palm_3d, knuckle_span * 0.85, 30.0)
+                hand_center_px = ((lm0.x + lm9.x) * 0.5 * w_f, (lm0.y + lm9.y) * 0.5 * h_f)
+
+                # Nguồn sự thật duy nhất của palm_len (dynamic_features.compute_palm_len), dùng chung với collector.
+                palm_len = compute_palm_len(lm0, lm5, lm9, lm17, w_f, h_f)
                 cached_palm_len = palm_len
 
                 # Áp dụng R3 Layer 1 Guard: 1€ Filter smoothing trên tọa độ cổ tay
@@ -1303,6 +1502,7 @@ def run_sentence_builder(
                     banner_subtitle = f"\"{final_sentence}\""
                     banner_color = (0, 255, 0)
                     banner_expire = curr_time + 2.0
+                    hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
                     print(f"[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: {final_sentence}")
 
             if hand_found:
@@ -1314,6 +1514,7 @@ def run_sentence_builder(
                     hand_shape=hand_shape,
                     timestamp=curr_time
                 )
+                cam_last_v_norm = v_norm
                 if seg_state == KineticState.RECORDING:
                     recording_streak += 1
                     has_predicted_pending = False
@@ -1326,65 +1527,69 @@ def run_sentence_builder(
                 if seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending:
                     has_predicted_pending = True
                     temp_stroke = segmenter.buffer
-                    if temp_stroke and len(temp_stroke) >= segmenter.min_stroke_frames:
-                        temp_duration = temp_stroke[-1].timestamp - temp_stroke[0].timestamp
-                        if is_stroke_duration_valid(temp_duration) and not is_movement_epenthesis(temp_stroke):
-                            n_ts = len(temp_stroke)
-                            if len(stroke_angles_history) >= n_ts:
-                                t_angs = stroke_angles_history[-n_ts:]
-                            else:
-                                pad_a = n_ts - len(stroke_angles_history)
-                                fa = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
-                                t_angs = [fa] * pad_a + stroke_angles_history
-                            if len(stroke_normals_history) >= n_ts:
-                                t_norms = stroke_normals_history[-n_ts:]
-                            else:
-                                pad_n = n_ts - len(stroke_normals_history)
-                                fn = stroke_normals_history[0] if stroke_normals_history else np.array([0,0,-1], dtype=np.float32)
-                                t_norms = [fn] * pad_n + stroke_normals_history
-                            if len(stroke_ext_history) >= n_ts:
-                                t_exts = stroke_ext_history[-n_ts:]
-                            else:
-                                t_exts = [stroke_ext_history[0] if stroke_ext_history else (None, None)] * (n_ts - len(stroke_ext_history)) + stroke_ext_history
-
-                            tx0, ty0 = temp_stroke[0].x, temp_stroke[0].y
-                            tref = max(temp_stroke[0].palm_len, 15.0)
-                            txs = np.array([(f.x - tx0) / tref for f in temp_stroke], dtype=np.float32)
-                            tys = np.array([(f.y - ty0) / tref for f in temp_stroke], dtype=np.float32)
-                            tdxs = np.zeros(n_ts, dtype=np.float32)
-                            tdys = np.zeros(n_ts, dtype=np.float32)
-                            tdxs[1:] = txs[1:] - txs[:-1]
-                            tdys[1:] = tys[1:] - tys[:-1]
-                            tdxs[0] = tdxs[1] if n_ts > 1 else 0.0
-                            tdys[0] = tdys[1] if n_ts > 1 else 0.0
-                            t_ang_mat = np.array(t_angs, dtype=np.float32)
-                            t_dang_mat = np.zeros_like(t_ang_mat)
-                            t_dang_mat[1:] = t_ang_mat[1:] - t_ang_mat[:-1]
-                            t_dang_mat[0] = t_dang_mat[1] if n_ts > 1 else 0.0
-                            t_norm_mat = np.array(t_norms, dtype=np.float32)
-                            t_17d = np.column_stack([txs, tys, tdxs, tdys, t_ang_mat, t_norm_mat, t_dang_mat]).astype(np.float32)
-                            # SPEC 03: nối 7 cột mới [z_norm, mốc cơ thể(2), độ xòe ngón(4)] => 24D
-                            t_ext, t_body_ok = compute_extended_columns(
-                                [f.palm_len for f in temp_stroke],
-                                [(f.x, f.y) for f in temp_stroke],
-                                [e[0] for e in t_exts],
-                                [e[1] for e in t_exts]
+                    if temp_stroke and len(temp_stroke) >= segmenter.effective_min_stroke_frames():
+                        temp_recs = _segment_records(temp_stroke, stroke_angles_history,
+                                                     stroke_normals_history, stroke_ext_history)
+                        if fast_on and lead_trim_on:
+                            # SPEC 08B: Cắt phần dẫn đầu thích nghi khi PENDING_COMMIT
+                            _lt_res = select_best_lead_trim(
+                                temp_recs, dtw_engine, cfg=lt_cfg, handedness=handedness_label,
+                                query_has_body=True, tail_pad_sec=fc_cfg.get("tail_pad_sec"),
+                                v_stop=segmenter.v_stop_ratio
                             )
-                            t_17d = append_extended_columns(t_17d, t_ext)
-                            t_shapes = [f.hand_shape for f in temp_stroke]
-                            rt_17d, rt_shapes = resample_9d_gesture_sequence(t_17d, t_shapes, k_target=32)
-                            if rt_17d is not None:
-                                if profile:
-                                    _t0_dtw = time.perf_counter()
-                                t_match = dtw_engine.match(rt_17d, rt_shapes, handedness=handedness_label, query_has_body=t_body_ok)
-                                if profile:
-                                    _t_dtw += time.perf_counter() - _t0_dtw
-                                if t_match.status == "ACCEPTED" and t_match.top_word:
-                                    t_phrase = get_asl_phrase(t_match.top_word, lang="en", default=t_match.top_display or t_match.top_word)
-                                    banner_title = f"? {t_phrase} (pending)"
-                                    banner_subtitle = f"Temporary prediction"
-                                    banner_color = (180, 180, 180) # màu xám nhạt
-                                    banner_expire = curr_time + 1.0
+                            t_match = _lt_res.match_result
+                            _tau_sel = float(_lt_res.trim_sec)
+                            _n_tried = int(_lt_res.n_tried)
+                            if fast_on and early_commit_ok(t_match, fc_cfg, multi_phase_words):
+                                _forced = segmenter.force_commit(curr_time)
+                                if _forced is not None:
+                                    completed_stroke = _forced
+                                    early_pre = (None, None, True, t_match, _tau_sel, _n_tried)
+                                    seg_state = segmenter.state
+                            if early_pre is None and t_match.status == "ACCEPTED" and t_match.top_word:
+                                t_phrase = get_asl_phrase(t_match.top_word, lang="en", default=t_match.top_display or t_match.top_word)
+                                banner_title = f"? {t_phrase} (pending)"
+                                banner_subtitle = f"Temporary prediction (tau={_tau_sel:.2f}s)"
+                                banner_color = (180, 180, 180) # màu xám nhạt
+                                banner_expire = curr_time + 1.0
+                                hud_toast = _make_toast("pending", [t_match.top_word], None, curr_time, 1.0)
+                        else:
+                            if fast_on and fc_cfg.get("tail_pad_sec"):
+                                # Chế độ ký nhanh: đuôi yên ngắn hơn bank => kéo về ~0.45 s (nhân bản khung cuối) để nhận dạng
+                                # không phụ thuộc thời gian chờ; thời lượng cho cổng [0.4, 2.5]s cũng tính theo bản đã kéo.
+                                temp_recs, _ = extend_still_tail(temp_recs, float(fc_cfg["tail_pad_sec"]), segmenter.v_stop_ratio,
+                                                                replay_jitter=True)
+                                temp_duration = temp_recs[-1]["t"] - temp_recs[0]["t"]
+                                temp_epi_frames = records_to_gesture_frames(temp_recs)   # độ thẳng tính trên bản đã kéo đuôi (có nhiễu)
+                            else:
+                                temp_duration = temp_stroke[-1].timestamp - temp_stroke[0].timestamp
+                                temp_epi_frames = temp_stroke
+                            if is_stroke_duration_valid(temp_duration) and not is_movement_epenthesis(temp_epi_frames):
+                                # Dựng đặc trưng bằng hàm dùng chung (dynamic_features.build_segment_features), bit-giống hệt
+                                # đoạn inline cũ; đệm lịch sử khi ngắn hơn stroke do _segment_records lo.
+                                rt_17d, rt_shapes, t_body_ok, _t_dom = build_segment_features(temp_recs)
+                                if rt_17d is not None:
+                                    if profile:
+                                        _t0_dtw = time.perf_counter()
+                                    t_match = dtw_engine.match(rt_17d, rt_shapes, handedness=handedness_label, query_has_body=t_body_ok)
+                                    if profile:
+                                        _t_dtw += time.perf_counter() - _t0_dtw
+                                    # SPEC 08 - CHỐT SỚM: dự đoán tạm đủ chắc (ACCEPTED, chất lượng, margin, không phải từ nhiều pha)
+                                    # thì chốt ngay, không đợi hết grace. Dùng lại kết quả match vừa tính (không gọi match() lần hai);
+                                    # force_commit() đưa FSM về IDLE nên stroke này KHÔNG thể được chốt lần thứ hai.
+                                    if fast_on and early_commit_ok(t_match, fc_cfg, multi_phase_words):
+                                        _forced = segmenter.force_commit(curr_time)
+                                        if _forced is not None:
+                                            completed_stroke = _forced
+                                            early_pre = (rt_17d, rt_shapes, t_body_ok, t_match, 0.0, 1)
+                                            seg_state = segmenter.state
+                                    if early_pre is None and t_match.status == "ACCEPTED" and t_match.top_word:
+                                        t_phrase = get_asl_phrase(t_match.top_word, lang="en", default=t_match.top_display or t_match.top_word)
+                                        banner_title = f"? {t_phrase} (pending)"
+                                        banner_subtitle = f"Temporary prediction"
+                                        banner_color = (180, 180, 180) # màu xám nhạt
+                                        banner_expire = curr_time + 1.0
+                                        hud_toast = _make_toast("pending", [t_match.top_word], None, curr_time, 1.0)
 
                 # 4. Quản lý vệt sáng chuyển động neon (Lưu tọa độ + nhãn thời gian)
                 trail_points.append((int(wrist_x), int(wrist_y), curr_time))
@@ -1393,6 +1598,8 @@ def run_sentence_builder(
                 if is_swipe:
                     if len(sentence_words) > 0:
                         removed = sentence_words.pop()
+                        removed_key = sentence_keys.pop() if sentence_keys else ""
+                        hud_toast = _make_toast("deleted", [removed_key] if removed_key else [], None, curr_time, 1.6)
                         sentence_finalized = False
                         banner_title = f"<- BACKSPACE: -{removed}"
                         banner_subtitle = "Action: Deleted last word"
@@ -1404,6 +1611,7 @@ def run_sentence_builder(
                         banner_subtitle = "Nothing to delete"
                         banner_color = (0, 200, 255)
                         banner_expire = curr_time + 1.2
+                        hud_toast = _make_toast("empty", [], None, curr_time, 1.2)
                     trail_points.clear()
                     stroke_angles_history.clear()
                     stroke_ext_history.clear()
@@ -1411,80 +1619,63 @@ def run_sentence_builder(
                 # 6. Xử lý CỬ CHỈ HOÀN THÀNH -> SO KHỚP GOLDEN TRIAD DTW (Tầng 3)
                 if completed_stroke is not None:
                     stroke_duration = completed_stroke[-1].timestamp - completed_stroke[0].timestamp
+                    _commit_mode = "early" if early_pre is not None else "normal"
+                    cur_lead_trim_sec = 0.0
+                    cur_lead_trim_tried = 1
+                    seg_records = None
+                    epi_frames = completed_stroke
+                    if fast_on and fc_cfg.get("tail_pad_sec"):
+                        # Chế độ ký nhanh: kéo đuôi yên về ~0.45 s như bank (xem nhánh 3.5); thời lượng cổng tính theo bản đã kéo.
+                        seg_records, _ = extend_still_tail(
+                            _segment_records(completed_stroke, stroke_angles_history, stroke_normals_history, stroke_ext_history),
+                            float(fc_cfg["tail_pad_sec"]), segmenter.v_stop_ratio, replay_jitter=True)
+                        stroke_duration = seg_records[-1]["t"] - seg_records[0]["t"]
+                        epi_frames = records_to_gesture_frames(seg_records)   # độ thẳng tính trên bản đã kéo đuôi (có nhiễu)
 
                     # Áp dụng R3 Layer 2 Guard: Cổng thời lượng cử chỉ [0.4s, 2.5s].
                     # Hai con số này lấy từ hằng số DÙNG CHUNG trong dynamic_dtw_engine.py
                     # (STROKE_DURATION_MIN_SEC / STROKE_DURATION_MAX_SEC) để cổng ở đây và
                     # cổng ở collect_dynamic_templates.py không bao giờ lệch nhau nữa.
                     if is_stroke_duration_valid(stroke_duration):
-                        if is_movement_epenthesis(completed_stroke):
+                        if is_movement_epenthesis(epi_frames):
                             print("[BO QUA: chuyen dong chuyen tiep]")
                         else:
                             n_stroke = len(completed_stroke)
-                            if len(stroke_angles_history) >= n_stroke:
-                                angles_for_stroke = stroke_angles_history[-n_stroke:]
-                            else:
-                                pad_count = n_stroke - len(stroke_angles_history)
-                                first_ang = stroke_angles_history[0] if stroke_angles_history else np.zeros(5, dtype=np.float32)
-                                angles_for_stroke = [first_ang] * pad_count + stroke_angles_history
-
-                            if len(stroke_normals_history) >= n_stroke:
-                                normals_for_stroke = stroke_normals_history[-n_stroke:]
-                            else:
-                                pad_norm = n_stroke - len(stroke_normals_history)
-                                first_norm = stroke_normals_history[0] if stroke_normals_history else np.array([0, 0, -1], dtype=np.float32)
-                                normals_for_stroke = [first_norm] * pad_norm + stroke_normals_history
-
-                            if len(stroke_ext_history) >= n_stroke:
-                                ext_for_stroke = stroke_ext_history[-n_stroke:]
-                            else:
-                                ext_for_stroke = [stroke_ext_history[0] if stroke_ext_history else (None, None)] * (n_stroke - len(stroke_ext_history)) + stroke_ext_history
-
+                            # Dựng đặc trưng bằng hàm dùng chung (dynamic_features.build_segment_features), bit-giống hệt
+                            # đoạn inline cũ (neo tại khung đầu, 17D + 7 cột mở rộng, resample K=32).
+                            raw_records = _segment_records(completed_stroke, stroke_angles_history,
+                                                           stroke_normals_history, stroke_ext_history)
                             stroke_angles_history.clear()
                             stroke_normals_history.clear()
                             stroke_ext_history.clear()
+                            match_result = None
+                            if early_pre is not None:
+                                # Chốt sớm: dùng lại đặc trưng + kết quả match của dự đoán tạm (không tính lại).
+                                _ep_traj, _ep_shp, _ep_body, match_result, cur_lead_trim_sec, cur_lead_trim_tried = early_pre
+                                body_ok = _ep_body
+                            elif fast_on and lead_trim_on:
+                                # SPEC 08B: Cắt phần dẫn đầu thích nghi ở nhánh chốt thường
+                                _lt_res = select_best_lead_trim(
+                                    raw_records, dtw_engine, cfg=lt_cfg, handedness=handedness_label,
+                                    query_has_body=True, tail_pad_sec=fc_cfg.get("tail_pad_sec"),
+                                    v_stop=segmenter.v_stop_ratio
+                                )
+                                match_result = _lt_res.match_result
+                                cur_lead_trim_sec = float(_lt_res.trim_sec)
+                                cur_lead_trim_tried = int(_lt_res.n_tried)
+                                body_ok = True
+                            else:
+                                if seg_records is None:
+                                    seg_records = raw_records
+                                res_traj_17d, res_shapes, body_ok, _seg_dom = build_segment_features(seg_records)
+                                if res_traj_17d is not None:
+                                    if profile:
+                                        _t0_dtw = time.perf_counter()
+                                    match_result = dtw_engine.match(res_traj_17d, res_shapes, handedness=handedness_label, query_has_body=body_ok)
+                                    if profile:
+                                        _t_dtw += time.perf_counter() - _t0_dtw
 
-                            # Neo gốc chuyển động tại frame đầu tiên của stroke
-                            x0, y0 = completed_stroke[0].x, completed_stroke[0].y
-                            ref_palm = max(completed_stroke[0].palm_len, 15.0)
-
-                            raw_xs = np.array([(f.x - x0) / ref_palm for f in completed_stroke], dtype=np.float32)
-                            raw_ys = np.array([(f.y - y0) / ref_palm for f in completed_stroke], dtype=np.float32)
-
-                            raw_dxs = np.zeros(n_stroke, dtype=np.float32)
-                            raw_dys = np.zeros(n_stroke, dtype=np.float32)
-                            raw_dxs[1:] = raw_xs[1:] - raw_xs[:-1]
-                            raw_dys[1:] = raw_ys[1:] - raw_ys[:-1]
-                            raw_dxs[0] = raw_dxs[1] if n_stroke > 1 else 0.0
-                            raw_dys[0] = raw_dys[1] if n_stroke > 1 else 0.0
-
-                            raw_angles_mat = np.array(angles_for_stroke, dtype=np.float32)
-                            raw_dangles_mat = np.zeros_like(raw_angles_mat)
-                            raw_dangles_mat[1:] = raw_angles_mat[1:] - raw_angles_mat[:-1]
-                            raw_dangles_mat[0] = raw_dangles_mat[1] if n_stroke > 1 else 0.0
-
-                            raw_normals_mat = np.array(normals_for_stroke, dtype=np.float32)
-                            raw_17d = np.column_stack([raw_xs, raw_ys, raw_dxs, raw_dys, raw_angles_mat, raw_normals_mat, raw_dangles_mat]).astype(np.float32)
-                            # SPEC 03: nối 7 cột mới [z_norm, mốc cơ thể(2), độ xòe ngón(4)] => 24D (cùng công thức với 3 đường còn lại)
-                            raw_ext, body_ok = compute_extended_columns(
-                                [f.palm_len for f in completed_stroke],
-                                [(f.x, f.y) for f in completed_stroke],
-                                [e[0] for e in ext_for_stroke],
-                                [e[1] for e in ext_for_stroke]
-                            )
-                            raw_17d = append_extended_columns(raw_17d, raw_ext)
-                            stroke_shapes = [f.hand_shape for f in completed_stroke]
-
-                            res_traj_17d, res_shapes = resample_9d_gesture_sequence(raw_17d, stroke_shapes, k_target=32)
-                            if res_traj_17d is not None:
-                                # Truyền nhãn tay thuận trực tiếp -> match() chuẩn hóa chirality
-                                # theo nhánh chính thống, không phải đoán bằng heuristic mean(nx).
-                                if profile:
-                                    _t0_dtw = time.perf_counter()
-                                match_result = dtw_engine.match(res_traj_17d, res_shapes, handedness=handedness_label, query_has_body=body_ok)
-                                if profile:
-                                    _t_dtw += time.perf_counter() - _t0_dtw
-
+                            if match_result is not None:
                                 # a) Chấp nhận từ vựng (ACCEPTED)
                                 if match_result.status == "ACCEPTED" and match_result.top_word:
                                     word_key = match_result.top_word
@@ -1495,23 +1686,36 @@ def run_sentence_builder(
                                     is_repeat = (en_phrase == last_committed_word and (curr_time - last_commit_time) < 0.8)
                                     if not is_repeat:
                                         sentence_words.append(en_phrase)
+                                        sentence_keys.append(word_key)
                                         last_commit_time = curr_time
                                         last_committed_word = en_phrase
                                         sentence_finalized = False
+                                        lead_trim_history.append(cur_lead_trim_sec)
 
-                                        # Điểm tin cậy quy đổi theo công thức yêu cầu
-                                        target_thresh = dtw_engine.vocabulary[word_key]["threshold"]
-                                        conf_pct = max(0.0, min(100.0, (1.0 - (match_result.best_distance / (target_thresh + 1e-6))) * 100.0))
+                                        # Điểm độ khớp (SPEC 04B: Do khop thay vì xác suất)
+                                        do_khop = match_result.match_quality
+                                        r_val = match_result.r_ratio
 
-                                        # Banner phản hồi trực quan cỡ lớn giữ trong 2.0s (R4)
-                                        banner_title = f"{en_phrase} ({conf_pct:.0f}%)"
-                                        banner_subtitle = f"ASL Match: {en_phrase} [{vi_phrase}] | Dist: {match_result.best_distance:.3f}"
+                                        # Banner phản hồi trực quan cỡ lớn giữ trong 2.0s (R4 & SPEC 04B)
+                                        banner_title = f"{en_phrase} (Do khop: {do_khop:.0f})"
+                                        banner_subtitle = f"ASL Match: {en_phrase} [{vi_phrase}] | Dist: {match_result.best_distance:.3f} (r={r_val:.2f})"
+                                        if cur_lead_trim_sec > 0.0:
+                                            banner_subtitle += f" [trim {cur_lead_trim_sec:.2f}s]"
                                         banner_color = (0, 255, 100)
                                         banner_expire = curr_time + 2.0
+                                        hud_toast = _make_toast("accepted", [word_key], float(do_khop), curr_time, 2.0)
 
-                                        # Phát âm tiếng Anh bất đồng bộ không chặn (R4 Non-blocking TTS)
-                                        speak_async(en_phrase)
-                                        print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' ({conf_pct:.0f}%) | Câu: {' '.join(sentence_words)}")
+                                        # Phát âm theo ngôn ngữ giao diện, bất đồng bộ không chặn (R4 Non-blocking TTS).
+                                        # Tôn trọng phím [t] (tắt loa); lỗi giọng nói không được làm sập vòng lặp.
+                                        try:
+                                            speech_service.speak_word(
+                                                word_key, ui_lang,
+                                                get_asl_phrase(word_key, lang=ui_lang, default=en_phrase)
+                                            )
+                                        except Exception as speech_err:
+                                            print(f"[Speech] Lỗi giọng nói ({speech_err}) — bỏ qua, tiếp tục chạy.")
+                                        trim_str = f" [trim: {cur_lead_trim_sec:.2f}s, {cur_lead_trim_tried} tried]" if cur_lead_trim_sec > 0.0 else ""
+                                        print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' (Do khop: {do_khop:.0f}){trim_str} | Câu: {' '.join(sentence_words)}")
 
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
@@ -1520,7 +1724,9 @@ def run_sentence_builder(
                                         m_val = round(((match_result.candidates[1].distance - match_result.best_distance) / max(match_result.best_distance, 1e-4)) * 100.0, 2) if len(match_result.candidates) >= 2 else 100.0
                                         session_writer.writerow([
                                             time.strftime("%Y-%m-%d %H:%M:%S"), "ACCEPTED", word_key, round(match_result.best_distance, 4),
-                                            c2_k, c2_d, m_val, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                            c2_k, c2_d, m_val, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1),
+                                            round(match_result.best_confidence, 4), round(match_result.match_quality, 2), round(match_result.r_ratio, 4), round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                            round(cur_lead_trim_sec, 3), cur_lead_trim_tried
                                         ])
                                         session_file.flush()
 
@@ -1531,35 +1737,41 @@ def run_sentence_builder(
                                     en2 = get_asl_phrase(c2.word_key, lang="en", default=c2.display_name)
                                     margin_pct = ((c2.distance - c1.distance) / max(c1.distance, 1e-4)) * 100.0
                                     banner_title = f"? UNCERTAIN: {en1} or {en2}"
-                                    banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Margin: {margin_pct:.1f}%"
+                                    banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Do khop: {match_result.match_quality:.0f} | Margin: {margin_pct:.1f}%"
                                     banner_color = (0, 200, 255)
                                     banner_expire = curr_time + 1.4
-                                    word_th = float(dtw_engine.vocabulary.get(c1.word_key, {}).get("threshold", 1.25))
-                                    reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= word_th else "Vượt ngưỡng chuẩn"
-                                    print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
+                                    hud_toast = _make_toast("uncertain", [c1.word_key, c2.word_key],
+                                                            float(match_result.match_quality), curr_time, 1.4)
+                                    reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= (c1.r_ratio * 1.6) else "Vượt ngưỡng chuẩn"
+                                    print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}, Do khop={c1.match_quality:.0f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
 
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
                                         session_writer.writerow([
                                             time.strftime("%Y-%m-%d %H:%M:%S"), "UNCERTAIN", c1.word_key, round(c1.distance, 4),
-                                            c2.word_key, round(c2.distance, 4), round(margin_pct, 2), round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                            c2.word_key, round(c2.distance, 4), round(margin_pct, 2), round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1),
+                                            round(match_result.best_confidence, 4), round(match_result.match_quality, 2), round(match_result.r_ratio, 4), round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                            round(cur_lead_trim_sec, 3), cur_lead_trim_tried
                                         ])
                                         session_file.flush()
 
                                 # c) Từ chối (REJECTED) - R3 Layer 3 Guard: Khoảng cách quá xa
                                 else:
                                     banner_title = "X UNKNOWN GESTURE"
-                                    banner_subtitle = f"DTW Distance: {match_result.best_distance:.2f} (Rejected)"
-                                    banner_color = (0, 0, 240)
+                                    banner_subtitle = f"DTW Distance: {match_result.best_distance:.2f} | Do khop: {match_result.match_quality:.0f} (Rejected)"
+                                    banner_color = (140, 140, 140)  # Xám per SPEC 04B
                                     banner_expire = curr_time + 1.0
-                                    print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f})")
+                                    hud_toast = _make_toast("rejected", [], float(match_result.match_quality), curr_time, 1.0)
+                                    print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f}, Do khop: {match_result.match_quality:.0f})")
 
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
                                         top_k = match_result.candidates[0].word_key if match_result.candidates else ""
                                         session_writer.writerow([
                                             time.strftime("%Y-%m-%d %H:%M:%S"), "REJECTED", top_k, round(match_result.best_distance, 4),
-                                            "", "", 0.0, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1)
+                                            "", "", 0.0, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1),
+                                            round(match_result.best_confidence, 4), round(match_result.match_quality, 2), round(match_result.r_ratio, 4), round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                            round(cur_lead_trim_sec, 3), cur_lead_trim_tried
                                         ])
                                         session_file.flush()
                     else:
@@ -1568,7 +1780,9 @@ def run_sentence_builder(
                         if session_writer is not None:
                             session_writer.writerow([
                                 time.strftime("%Y-%m-%d %H:%M:%S"), "OUT_OF_DURATION", "", 0.0,
-                                "", "", 0.0, round(stroke_duration, 3), len(completed_stroke), False, round(fps, 1)
+                                "", "", 0.0, round(stroke_duration, 3), len(completed_stroke), False, round(fps, 1),
+                                0.0, 0.0, 0.0, round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                0.0, 1
                             ])
                             session_file.flush()
 
@@ -1577,7 +1791,7 @@ def run_sentence_builder(
                 if profile:
                     _t0_draw_box = time.perf_counter()
                 # Vẽ Bounding Box & Trực quan hóa DIP (Convex Hull & Defects)
-                if cached_box is not None and len(cached_box) == 4 and cached_box[2] > cached_box[0] and cached_box[3] > cached_box[1]:
+                if ui_mode == "debug" and cached_box is not None and len(cached_box) == 4 and cached_box[2] > cached_box[0] and cached_box[3] > cached_box[1]:
                     x1, y1, x2, y2 = cached_box
                     box_col = (0, 255, 0) if seg_state in (KineticState.RECORDING, KineticState.PENDING_COMMIT) else (255, 255, 0)
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_col, 2)
@@ -1592,7 +1806,7 @@ def run_sentence_builder(
                             cv2.circle(display_frame, (int(f_p[0] + x1), int(f_p[1] + y1)), 4, (0, 0, 255), -1)
 
                 # Vẽ 3D Skeleton & Góc gập (Flexion) & Vector Pháp Tuyến trực tiếp lên bàn tay
-                if show_features:
+                if ui_mode == "debug" and show_features:
                     draw_hand_skeleton_features(display_frame, landmarks, current_angles, w_f, h_f, handedness=handedness_label)
                 if profile:
                     _t_draw += time.perf_counter() - _t0_draw_box
@@ -1606,104 +1820,181 @@ def run_sentence_builder(
             # HIỂN THỊ GIAO DIỆN ĐỒ HỌA HUD THÔNG MINH (TẦNG 4)
             # =================================================================
             # 0. Vẽ Bounding Box & Mốc cơ thể Khuôn mặt trực quan (Body Anchor)
-            draw_face_anchor_box(
-                display_frame,
-                face_box=current_face_box,
-                wrist_pt=(int(wrist_x), int(wrist_y)) if hand_found else None,
-                draw_vector=show_features
-            )
-
-            # 1. Vẽ vệt sáng chuyển động neon (Fading Neon Motion Trail)
-            draw_fading_neon_trail(display_frame, trail_points, curr_time, max_age_sec=MAX_TRAIL_AGE_SEC)
-
-            # 2. Thanh trạng thái phía trên (Top Status Bar)
-            cv2.rectangle(display_frame, (0, 0), (w_f, 44), (20, 20, 20), -1)
-            fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
-            cv2.putText(display_frame, f"FPS: {fps:.1f} [CAM {camera_index}]", (10, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.52, fps_color, 2, lineType=cv2.LINE_AA)
-
-            # Trạng thái mốc cơ thể (khuôn mặt)
-            if face_detector is None:
-                face_badge = "MAT: TAT"
-                face_col = (130, 130, 130)
-            elif current_face_box is not None:
-                face_badge = "MAT: OK"
-                face_col = (0, 255, 0)
-            else:
-                face_badge = "MAT: TIM..."
-                face_col = (0, 165, 255)
-            cv2.putText(display_frame, f"| {face_badge}", (195, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, face_col, 2, lineType=cv2.LINE_AA)
-
-            # Trạng thái phân đoạn động học
-            if seg_state == KineticState.RECORDING:
-                k_text = "DANG GHI"
-                k_color = (0, 255, 0)
-            elif seg_state == KineticState.READY:
-                k_text = "SAN SANG"
-                k_color = (0, 255, 0)
-            else:
-                k_text = "KHUNG TAY" if hand_found else "CHO TAY"
-                k_color = (180, 180, 180)
-            cv2.putText(display_frame, f"| {k_text}", (310, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, k_color, 2, lineType=cv2.LINE_AA)
-
-            # Thanh hiển thị vận tốc chuẩn hóa
-            v_bar = int(min(1.0, v_norm / 0.15) * 80)
-            cv2.putText(display_frame, f"v: {v_norm*100:.1f}%", (w_f - 160, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 1, lineType=cv2.LINE_AA)
-            cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 95 + v_bar, 28), (0, 255, 255), -1)
-            cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 15, 28), (100, 100, 100), 1)
-
-            # 3. Banner nhận diện nổi bật cỡ lớn (Prominent Banner for 2.0s)
-            if len(dtw_engine.vocabulary) == 0:
-                cv2.rectangle(display_frame, (10, 52), (w_f - 10, 92), (0, 0, 180), -1)
-                cv2.putText(display_frame, "CHUA CO TU DIEN! HAY CHAY collect_dynamic_templates.py",
-                            (18, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-            elif curr_time < banner_expire:
-                draw_prominent_hud_banner(display_frame, banner_title, banner_subtitle, banner_color, h_f, w_f)
-
-            # 4. Bảng biểu diễn trực quan đặc trưng 3D (Golden Triad Features HUD) khi bấm 'd'
-            if show_features and hand_found and current_angles is not None:
-                vel_vec = (raw_wrist_x - wrist_smoother.prev_x, raw_wrist_y - wrist_smoother.prev_y) if wrist_smoother.prev_x is not None else (0.0, 0.0)
-                draw_feature_metrics_hud(
+            if ui_mode == "debug":
+                draw_face_anchor_box(
                     display_frame,
-                    angles=current_angles,
-                    palm_len=palm_len,
-                    v_norm=v_norm,
-                    wrist_pt=(int(wrist_x), int(wrist_y)),
-                    vel_vector=vel_vec,
-                    palm_normal=current_normal,
-                    x_offset=15,
-                    y_offset=h_f - 265
+                    face_box=current_face_box,
+                    wrist_pt=(int(wrist_x), int(wrist_y)) if hand_found else None,
+                    draw_vector=show_features
                 )
 
-            # 5. Hộp phụ đề câu thoại hoàn chỉnh ở đáy màn hình (Bottom Subtitle Box)
-            cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), (12, 12, 12), -1)
-            border_box_col = (0, 255, 0) if sentence_finalized else (0, 200, 255)
-            cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), border_box_col, 2)
-
-            if len(sentence_words) > 0:
-                sentence_str = " ".join(sentence_words)
-                if sentence_finalized:
-                    sentence_str += " ."
-                sentence_display = f"ASL SENTENCE: \"{sentence_str}\""
+            # 1. Vẽ vệt sáng chuyển động neon (Fading Neon Motion Trail)
+            if ui_mode == "debug":
+                draw_fading_neon_trail(display_frame, trail_points, curr_time, max_age_sec=MAX_TRAIL_AGE_SEC)
             else:
-                sentence_display = "ASL SENTENCE: (Awaiting first gesture...)"
+                draw_soft_trail(display_frame, trail_points, curr_time, max_age_sec=MAX_TRAIL_AGE_SEC)
 
-            text_col = (0, 255, 0) if sentence_finalized else (255, 255, 255)
-            font_scale = 0.70
-            (t_w, _), _ = cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
-            max_allowed_w = w_f - 30
-            if t_w > max_allowed_w and t_w > 0:
-                font_scale = max(0.40, font_scale * (max_allowed_w / t_w))
-            cv2.putText(display_frame, sentence_display, (15, h_f - 42),
-                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_col, 2, lineType=cv2.LINE_AA)
+            if ui_mode == "debug":
+                # 2. Thanh trạng thái phía trên (Top Status Bar)
+                cv2.rectangle(display_frame, (0, 0), (w_f, 44), (20, 20, 20), -1)
+                fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
+                cv2.putText(display_frame, f"FPS: {fps:.1f} [CAM {camera_index}]", (10, 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, fps_color, 2, lineType=cv2.LINE_AA)
+                # Chẩn đoán camera: khung MỚI THẬT/s, trùng (giống hệt từng điểm ảnh), gần-trùng (ngưỡng cũ 0.5), độ sáng
+                if cam_monitor is not None:
+                    cv2.putText(display_frame,
+                                f"that:{cam_monitor.unique_fps:.0f}/s trung:{cam_monitor.dup_ratio*100:.0f}% "
+                                f"(gan-trung {cam_monitor.near_dup_ratio*100:.0f}%) sang:{cam_monitor.luma_mean:.0f}",
+                                (10, 41), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (200, 200, 120), 1, lineType=cv2.LINE_AA)
 
-            # 6. Hướng dẫn phím tắt chân trang
-            cv2.putText(display_frame,
-                        "[d]: Toggle Features HUD | [Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [q]: Quit",
-                        (10, h_f - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (190, 190, 190), 1, lineType=cv2.LINE_AA)
+                # Trạng thái mốc cơ thể (khuôn mặt)
+                if face_detector is None:
+                    face_badge = "MAT: TAT"
+                    face_col = (130, 130, 130)
+                elif current_face_box is not None:
+                    face_badge = "MAT: OK"
+                    face_col = (0, 255, 0)
+                else:
+                    face_badge = "MAT: TIM..."
+                    face_col = (0, 165, 255)
+                cv2.putText(display_frame, f"| {face_badge}", (195, 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, face_col, 2, lineType=cv2.LINE_AA)
+
+                # Trạng thái phân đoạn động học
+                if seg_state == KineticState.RECORDING:
+                    k_text = "DANG GHI"
+                    k_color = (0, 255, 0)
+                elif seg_state == KineticState.READY:
+                    k_text = "SAN SANG"
+                    k_color = (0, 255, 0)
+                else:
+                    k_text = "KHUNG TAY" if hand_found else "CHO TAY"
+                    k_color = (180, 180, 180)
+                cv2.putText(display_frame, f"| {k_text}", (310, 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, k_color, 2, lineType=cv2.LINE_AA)
+
+                # Thanh hiển thị vận tốc chuẩn hóa
+                v_bar = int(min(1.0, v_norm / 0.15) * 80)
+                cv2.putText(display_frame, f"v: {v_norm*100:.1f}%", (w_f - 160, 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 1, lineType=cv2.LINE_AA)
+                cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 95 + v_bar, 28), (0, 255, 255), -1)
+                cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 15, 28), (100, 100, 100), 1)
+
+                # 3. Banner nhận diện nổi bật cỡ lớn (Prominent Banner for 2.0s)
+                if len(dtw_engine.vocabulary) == 0:
+                    cv2.rectangle(display_frame, (10, 52), (w_f - 10, 92), (0, 0, 180), -1)
+                    cv2.putText(display_frame, "CHUA CO TU DIEN! HAY CHAY collect_dynamic_templates.py",
+                                (18, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2, lineType=cv2.LINE_AA)
+                elif curr_time < banner_expire:
+                    draw_prominent_hud_banner(display_frame, banner_title, banner_subtitle, banner_color, h_f, w_f)
+
+                # 4. Bảng biểu diễn trực quan đặc trưng 3D (Golden Triad Features HUD) khi bấm 'd'
+                if show_features and hand_found and current_angles is not None:
+                    vel_vec = (raw_wrist_x - wrist_smoother.prev_x, raw_wrist_y - wrist_smoother.prev_y) if wrist_smoother.prev_x is not None else (0.0, 0.0)
+                    draw_feature_metrics_hud(
+                        display_frame,
+                        angles=current_angles,
+                        palm_len=palm_len,
+                        v_norm=v_norm,
+                        wrist_pt=(int(wrist_x), int(wrist_y)),
+                        vel_vector=vel_vec,
+                        palm_normal=current_normal,
+                        x_offset=15,
+                        y_offset=h_f - 265
+                    )
+
+                # 5. Hộp phụ đề câu thoại hoàn chỉnh ở đáy màn hình (Bottom Subtitle Box)
+                cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), (12, 12, 12), -1)
+                border_box_col = (0, 255, 0) if sentence_finalized else (0, 200, 255)
+                cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), border_box_col, 2)
+
+                if len(sentence_words) > 0:
+                    sentence_str = " ".join(sentence_words)
+                    if sentence_finalized:
+                        sentence_str += " ."
+                    sentence_display = f"ASL SENTENCE: \"{sentence_str}\""
+                else:
+                    sentence_display = "ASL SENTENCE: (Awaiting first gesture...)"
+
+                text_col = (0, 255, 0) if sentence_finalized else (255, 255, 255)
+                font_scale = 0.70
+                (t_w, _), _ = cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
+                max_allowed_w = w_f - 30
+                if t_w > max_allowed_w and t_w > 0:
+                    font_scale = max(0.40, font_scale * (max_allowed_w / t_w))
+                cv2.putText(display_frame, sentence_display, (15, h_f - 42),
+                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_col, 2, lineType=cv2.LINE_AA)
+
+                # 6. Hướng dẫn phím tắt chân trang
+                cv2.putText(display_frame,
+                            "[d]: Toggle Features HUD | [Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [q]: Quit",
+                            (10, h_f - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (190, 190, 190), 1, lineType=cv2.LINE_AA)
+
+            else:
+                # ---------------- GIAO DIỆN DEMO SONG NGỮ (ui_render.DemoHUD) ----------------
+                # Không vẽ hộp bao / hull / defects / khung mặt / skeleton / thanh vận tốc / bảng 12D / khoảng cách DTW.
+                _seg_val = getattr(seg_state, "value", str(seg_state))
+                _settle: Optional[float] = None
+                if getattr(segmenter, "require_ready_pose", False):
+                    if seg_state == KineticState.READY:
+                        _settle = 1.0
+                    elif seg_state == KineticState.IDLE:
+                        _settle = min(1.0, segmenter.ready_counter / max(1, segmenter.effective_ready_stable_frames()))
+                _rec = 0.0
+                if seg_state in (KineticState.RECORDING, KineticState.PENDING_COMMIT):
+                    _rec = min(1.0, len(segmenter.buffer) / max(1, segmenter.effective_max_stroke_frames()))
+                # SPEC 08: cửa sổ nối đang mở => vòng quanh tay giữ trạng thái "sẵn sàng" (đầy, xanh), chip "Ký tiếp được rồi"
+                _chain_ready = bool(fast_on and hand_found and segmenter.chain_window_open(curr_time))
+                if not hand_found:
+                    _center = None
+                elif hand_center_px is not None:
+                    _center = hand_center_px
+                else:
+                    _center = (wrist_x, wrist_y)
+                if face_detector is None:
+                    _face_state = "off"
+                elif current_face_box is not None:
+                    _face_state = "ok"
+                else:
+                    _face_state = "searching"
+                _cam_hud_fields = {}
+                if cam_monitor is not None:
+                    _cam_status = cam_monitor.status()
+                    _cam_hud_fields = dict(
+                        unique_fps=cam_monitor.unique_fps, loop_fps=cam_monitor.loop_fps,
+                        camera_warning=_cam_status[0] if _cam_status else None,
+                        camera_warning_level=_cam_status[1] if _cam_status else "warn",
+                        dup_ratio=cam_monitor.dup_ratio, near_dup_ratio=cam_monitor.near_dup_ratio,
+                        luma_mean=cam_monitor.luma_mean,
+                    )
+                hud_state = HudState(
+                    lang=ui_lang,
+                    seg_state=_seg_val,
+                    hand_found=hand_found,
+                    hand_center=_center,
+                    palm_len=palm_len,
+                    v_norm=v_norm,
+                    settle_progress=_settle,
+                    record_progress=_rec,
+                    fps=fps,
+                    sentence_keys=list(sentence_keys),
+                    sentence_finalized=sentence_finalized,
+                    toast=hud_toast if (hud_toast is not None and curr_time <= hud_toast.t_expire) else None,
+                    vocabulary_empty=(len(dtw_engine.vocabulary) == 0),
+                    face_state=_face_state,
+                    speech_status=speech_service.get_speech_status(ui_lang),
+                    show_help=show_help,
+                    camera_index=camera_index,
+                    now=curr_time,
+                    chain_ready=_chain_ready,
+                    **_cam_hud_fields,
+                )
+                try:
+                    demo_hud.render(display_frame, hud_state)
+                except Exception as hud_err:
+                    if not hud_warned:
+                        hud_warned = True
+                        print(f"[HUD] Lỗi vẽ giao diện demo ({hud_err}) — bỏ qua khung hình này, vòng lặp vẫn chạy.")
 
             if profile:
                 _t_draw += time.perf_counter() - _t0_draw_hud
@@ -1747,6 +2038,8 @@ def run_sentence_builder(
                     print(f"[HUD] {'BẬT' if show_features else 'TẮT'} bảng hiển thị đặc trưng 3D.")
                 elif key in [ord('c'), ord('C')]:
                     sentence_words.clear()
+                    sentence_keys.clear()
+                    hud_toast = _make_toast("cleared", [], None, curr_time, 1.5)
                     sentence_finalized = False
                     trail_points.clear()
                     banner_title = "SENTENCE CLEARED"
@@ -1759,6 +2052,37 @@ def run_sentence_builder(
                 elif key in [ord('p'), ord('P')]:
                     if cap is not None:
                         cap.set(cv2.CAP_PROP_SETTINGS, 1)
+                elif key in [ord('l'), ord('L')]:
+                    ui_lang = "vi" if ui_lang == "en" else "en"
+                    print(f"[UI] Ngôn ngữ giao diện + giọng nói: {ui_lang.upper()}")
+                elif key in [ord('u'), ord('U')]:
+                    ui_mode = "debug" if ui_mode == "demo" else "demo"
+                    print(f"[UI] Chuyển sang giao diện: {ui_mode}")
+                elif key in [ord('t'), ord('T')]:
+                    _muted_now = speech_service.toggle_muted()
+                    print(f"[UI] Loa: {'TẮT' if _muted_now else 'BẬT'}")
+                elif key in [ord('h'), ord('H')]:
+                    show_help = not show_help
+                elif key in [ord('j'), ord('J')]:
+                    # SPEC 08: bật/tắt chế độ KÝ NHANH lúc chạy. Dựng lại bộ phân đoạn (tham số khác) và bỏ dở stroke đang ghi.
+                    fast_on = not fast_on
+                    segmenter = make_segmenter(CONFIG, fc_cfg if fast_on else None)
+                    has_predicted_pending = False
+                    stroke_angles_history.clear()
+                    stroke_normals_history.clear()
+                    stroke_ext_history.clear()
+                    print(f"[UI] Chế độ KÝ NHANH: {'BẬT' if fast_on else 'TẮT'}"
+                          + (f" | từ nhiều pha (không chốt sớm): {multi_phase_words or 'không có'}" if fast_on else ""))
+                elif key in [ord('k'), ord('K')]:
+                    # SPEC 08B: bật/tắt CẮT DẪN ĐẦU (lead-trim) lúc chạy.
+                    lead_trim_on = not lead_trim_on
+                    lt_cfg["enabled"] = lead_trim_on
+                    banner_title = f"LEAD TRIM: {'ON' if lead_trim_on else 'OFF'}"
+                    banner_subtitle = f"Adaptive lead trimming {'enabled' if lead_trim_on else 'disabled'}"
+                    banner_color = (0, 255, 200) if lead_trim_on else (150, 150, 150)
+                    banner_expire = curr_time + 1.5
+                    hud_toast = _make_toast("lead_trim", [], None, curr_time, 1.5)
+                    print(f"[UI] Cắt phần dẫn đầu (lead-trim): {'BẬT' if lead_trim_on else 'TẮT'}")
 
             if max_frames is not None and processed_frames >= max_frames:
                 if profile:
@@ -1809,7 +2133,13 @@ def run_sentence_builder(
             cap.release()
         if not headless:
             cv2.destroyAllWindows()
-        detector_pool.close()
+        if lead_trim_history:
+            taus = np.array(lead_trim_history)
+            tau_med = float(np.median(taus))
+            tau_p90 = float(np.percentile(taus, 90))
+            tau_pos_rate = float(np.mean(taus > 0.0)) * 100.0
+            print(f"\n[LeadTrim] Thống kê cắt dẫn đầu phiên ({len(taus)} từ đã chốt):")
+            print(f"  - Trung vị tau: {tau_med:.3f}s | p90 tau: {tau_p90:.3f}s | Tỉ lệ tau > 0: {tau_pos_rate:.1f}%")
         print("-> Đã đóng chương trình nhận diện ghép câu an toàn.")
 
     if profile and len(prof_total) > 0:
@@ -1848,8 +2178,22 @@ if __name__ == "__main__":
     parser.add_argument("--log-session", "-l", type=str, default=None, help="Đường dẫn file CSV lưu log kết quả từng cử chỉ live (phục vụ test Phiên 3)")
     parser.add_argument("--headless", action="store_true", default=False, help="Chạy không mở cửa sổ đồ họa OpenCV (dùng cho đo benchmark/test).")
     parser.add_argument("--max-frames", type=int, default=None, help="Dừng sau số khung hình nhất định (dùng cho benchmark/test).")
+    parser.add_argument("--threshold-mode", type=str, choices=["legacy", "scale_k"], default=None, help="Chế độ ngưỡng: 'scale_k' (ngưỡng theo độ rộng nội lớp) hoặc 'legacy' (cố định).")
+    parser.add_argument("--threshold-k", type=float, default=None, help="Hệ số k cho ngưỡng chấp nhận (k * độ_rộng, mặc định 1.6)")
+    parser.add_argument("--uncertainty-k", type=float, default=None, help="Hệ số k cho ranh giới từ chối (uncertainty_k * độ_rộng, mặc định 2.2)")
+    parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
+    parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
+    parser.add_argument("--fast-chain", action=argparse.BooleanOptionalAction, default=None,
+                        help="SPEC 08: bật/tắt chế độ KÝ NHANH (nghỉ ngắn ~0.2s là đủ, chốt sớm khi đủ chắc). "
+                             "Mặc định lấy CONFIG['fast_chain']['enabled'] (TẮT). Phím [j] đổi lúc chạy.")
+    parser.add_argument("--transition-lockout", type=float, default=None,
+                        help="SPEC 08B: Thời gian khóa chuyển tiếp (giây) sau khi chốt cử chỉ trong fast_chain. "
+                             "Mặc định None lấy từ CONFIG['fast_chain']['transition_lockout_sec'] (0.0).")
+    parser.add_argument("--lead-trim", action=argparse.BooleanOptionalAction, default=None,
+                        help="SPEC 08B: Bật/tắt cắt thích ứng phần dẫn đầu (adaptive lead trimming). "
+                             "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (TẮT). Phím [k] đổi lúc chạy.")
     args, _ = parser.parse_known_args()
-    
+
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
     selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
     sw_override = "" if args.global_weights else CONFIG.get("sign_weights_path", "")
@@ -1868,4 +2212,12 @@ if __name__ == "__main__":
         detect_scale=args.detect_scale,
         log_session_path=args.log_session,
         detector_workers=args.detector_workers,
+        threshold_mode=args.threshold_mode,
+        threshold_k=args.threshold_k,
+        uncertainty_k=args.uncertainty_k,
+        ui_mode=args.ui,
+        ui_lang=args.lang,
+        fast_chain=args.fast_chain,
+        transition_lockout=args.transition_lockout,
+        lead_trim=args.lead_trim,
     )

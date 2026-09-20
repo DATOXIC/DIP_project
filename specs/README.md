@@ -104,3 +104,16 @@ SPEC 06B  (TÙY CHỌN) DBA + bank mở rộng                        [AGENT, 3-
   rỗng**, không phải "làm cho test xanh".
 - 139 mẫu ASL Citizen là **hạ tầng đo lường**, không phải template production. Đừng
   trộn chúng vào bank khớp.
+
+## Giai đoạn trải nghiệm (2026-09-20)
+
+- **[ĐÃ XONG, không có file spec]** Giao diện demo + song ngữ (`ui_render.py`, `speech_service.py`) và
+  DTW nhanh (`_FastDTWBank`, hết cú khựng ~0,7 s mỗi từ).
+- **SPEC 09** `SPEC_09_noi_tu_lien_tuc.md`: nhận dạng nối từ (Boundary Detector + DTW quy hoạch động).
+  Chế độ THỬ NGHIỆM có cổng kiểm tra, mặc định tắt. Cần người thu 2 phiên câu nối (S1 chỉnh, S2 niêm phong).
+  Nhiệm vụ A, B, C song song được; D–E chạy được trước khi có dữ liệu thật nhờ dữ liệu tổng hợp.
+- **SPEC 08** `SPEC_08_ky_nhanh.md`: ký nhanh (Cấp 1) — cửa sổ nối sau khi chốt, chốt sớm có kiểm soát, tham số phân đoạn tính bằng giây.
+  Có cờ `--fast-chain`, mặc định TẮT; cổng bằng luồng mô phỏng + thử trực tiếp ~20 phút. Không cần dữ liệu mới.
+- **[ĐÃ XONG]** Sửa `palm_len` (collector nhân nhầm bề rộng cho trục y): `compute_palm_len` dùng chung, bank `webcam_templates.json` dựng lại
+  (97/107 mẫu; bản cũ `webcam_templates.backup_before_palmfix_20260920_091000.json`).
+- **SPEC 08B** `SPEC_08B_cat_chuyen_tiep.md`: loại phần chuyển tiếp giữa hai từ trong `--fast-chain` (khoảng cấm cố định `--transition-lockout` và cắt dẫn đầu thích nghi `--lead-trim`, phím `k`). Không cần dữ liệu mới; đo bằng mô phỏng chuyển tiếp thực tế + thử trực tiếp. Là bản nhỏ của SPEC 09.

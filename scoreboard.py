@@ -59,6 +59,7 @@ ALLOWED_WEIGHT_KEYS = {
 ALLOWED_MATCHER_KEYS = {
     "margin_threshold",
     "uncertainty_ratio",
+    "uncertainty_k",
     "lambda_shape",
     "lambda_shape_global",
 }
@@ -177,11 +178,18 @@ def validate_and_hash_config(config_path: str) -> Tuple[Dict[str, Any], str]:
                     raise ValueError
             except Exception:
                 raise ValueError(f"Định dạng thresholds cố định không hợp lệ: '{thresh}'. Ví dụ: 'fixed:1.25'")
+        elif isinstance(thresh, str) and thresh.startswith("scale_k:"):
+            try:
+                val = float(thresh.split(":", 1)[1])
+                if val <= 0.0:
+                    raise ValueError
+            except Exception:
+                raise ValueError(f"Định dạng thresholds scale_k không hợp lệ: '{thresh}'. Ví dụ: 'scale_k:1.6'")
         elif isinstance(thresh, str) and os.path.exists(thresh):
             # File thresholds hợp lệ
             pass
         else:
-            raise ValueError(f"thresholds không hợp lệ: '{thresh}'. Chấp nhận 'from_bank', 'fixed:<x>', hoặc đường dẫn file.")
+            raise ValueError(f"thresholds không hợp lệ: '{thresh}'. Chấp nhận 'from_bank', 'fixed:<x>', 'scale_k:<k>', hoặc đường dẫn file.")
 
     cfg_hash = compute_config_hash(cfg)
     return cfg, cfg_hash
@@ -492,10 +500,17 @@ def build_matcher_from_config(config: Dict[str, Any], ref_bank: Dict[str, Any]) 
     thresh_cfg = config.get("thresholds", "from_bank")
     threshold_override = None
     threshold_dict = None
+    threshold_mode = "legacy"
+    threshold_k = 1.6
+    uncertainty_k = 2.2
 
     if isinstance(thresh_cfg, str):
         if thresh_cfg.startswith("fixed:"):
             threshold_override = float(thresh_cfg.split(":", 1)[1])
+        elif thresh_cfg.startswith("scale_k:"):
+            threshold_mode = "scale_k"
+            threshold_k = float(thresh_cfg.split(":", 1)[1])
+            uncertainty_k = float(m.get("uncertainty_k", threshold_k + 0.6))
         elif thresh_cfg != "from_bank" and os.path.exists(thresh_cfg):
             with open(thresh_cfg, "r", encoding="utf-8") as f:
                 threshold_dict = json.load(f)
@@ -521,6 +536,9 @@ def build_matcher_from_config(config: Dict[str, Any], ref_bank: Dict[str, Any]) 
         asllex_mapping=config.get("asllex_mapping", "legacy"),
         flip_body_x=config.get("flip_body_x", True),
         threshold_dict=threshold_dict,
+        threshold_mode=threshold_mode,
+        threshold_k=threshold_k,
+        uncertainty_k=uncertainty_k,
     )
     return matcher
 

@@ -25,6 +25,7 @@ import sys
 import time
 import json
 import math
+import hashlib
 from enum import Enum
 from collections import deque
 from dataclasses import dataclass, field, asdict
@@ -304,6 +305,8 @@ class MatchCandidate:
     display_name: str
     distance: float
     confidence: float            # Điểm tin cậy quy đổi [0.0, 1.0]
+    match_quality: float = 0.0   # SPEC 04B: Điểm độ khớp [0, 100]
+    r_ratio: float = 0.0         # SPEC 04B: Tỉ lệ chuẩn hóa d / độ_rộng
 
 
 @dataclass
@@ -316,6 +319,8 @@ class MatchResult:
     best_distance: float
     best_confidence: float
     candidates: List[MatchCandidate] = field(default_factory=list)
+    match_quality: float = 0.0   # SPEC 04B: Điểm độ khớp [0, 100]
+    r_ratio: float = 0.0         # SPEC 04B: Tỉ lệ chuẩn hóa d1 / độ_rộng[top1]
 
 
 # =============================================================================
@@ -354,6 +359,19 @@ class KineticPauseSegmenter:
         require_ready_pose: bool = False,     # Mac dinh False = giu nguyen FSM cu cho tests
         ready_stable_frames: int = 8,         # Tay phai dung yen 8 frame (~0.25s @30fps) moi coi la san sang
         max_phase_merges: int = 999,   # Mac dinh 999 = gan nhu vo han = giu hanh vi cu
+        # ---- SPEC 08 (KÝ NHANH): các tham số MỚI, đều thêm ở CUỐI và mặc định = hành vi cũ (bit-giống hệt) ----
+        # Các ngưỡng tính bằng GIÂY (None = dùng số khung cũ). Quy đổi sang số khung bằng dt ước lượng từ
+        # dấu thời gian thật của các khung (xem _dt_estimate) => không phụ thuộc camera 30 hay 8 khung mới/giây.
+        pause_sec: Optional[float] = None,
+        ready_stable_sec: Optional[float] = None,
+        min_stroke_sec: Optional[float] = None,
+        max_stroke_sec: Optional[float] = None,
+        # Cửa sổ nối từ (giây, 0 = tắt): sau khi CHỐT một từ, trong chừng ấy giây tay còn trong khung thì coi như
+        # đã READY, chuyển động >= v_start_ratio bắt đầu RECORDING ngay (không cần đứng yên đủ ready_stable).
+        chain_window_sec: float = 0.0,
+        # SPEC 08B (LOẠI PHẦN CHUYỂN TIẾP): khoảng cấm sau chốt (giây, 0 = tắt).
+        # Sau mỗi lần chốt một stroke (hết grace hoặc force_commit), trong T giây mọi chuyển động bị bỏ qua.
+        transition_lockout_sec: float = 0.0,
     ):
         self.v_start_ratio = v_start_ratio
         self.v_stop_ratio = v_stop_ratio
@@ -379,6 +397,96 @@ class KineticPauseSegmenter:
         self.ready_counter = 0
         self.merge_count = 0
 
+        # SPEC 08: trạng thái phụ (chỉ đọc/ghi khi các tham số mới được bật; không ảnh hưởng hành vi cũ)
+        self.pause_sec = pause_sec
+        self.ready_stable_sec = ready_stable_sec
+        self.min_stroke_sec = min_stroke_sec
+        self.max_stroke_sec = max_stroke_sec
+        self.chain_window_sec = float(chain_window_sec)
+        self._dt_ema: Optional[float] = None          # khoảng cách trung bình giữa hai lần update (giây)
+        self._last_update_ts: Optional[float] = None
+        self._chain_until: float = -1.0               # hết hạn cửa sổ nối (dấu thời gian); < 0 = không mở
+
+        # SPEC 08B: khoảng cấm chuyển tiếp
+        self.transition_lockout_sec = float(transition_lockout_sec)
+        self._lockout_until: float = -1.0             # hết hạn khoảng cấm (dấu thời gian); < 0 = không khóa
+
+    # ------------------------------------------------------------------
+    # SPEC 08: quy đổi giây -> số khung theo dấu thời gian thật
+    # ------------------------------------------------------------------
+    def _track_dt(self, timestamp: float) -> None:
+        """
+        Cập nhật EMA khoảng cách giữa hai lần update() có dấu thời gian TĂNG. LƯU Ý: update() chỉ được gọi cho
+        khung ĐÃ XỬ LÝ (có tay), nên dt ở đây là khoảng cách giữa hai khung xử lý chứ không phải chu kỳ camera
+        gốc; đó chính là đơn vị mà các bộ đếm khung (pause_counter, ready_counter) đang đếm.
+        """
+        last = self._last_update_ts
+        if last is not None and timestamp > last and (timestamp - last) <= 0.25:
+            # Khoảng cách > 0.25 s là mất tay / treo hình, không đại diện cho nhịp khung => bỏ qua, không đưa vào EMA.
+            d = min(max(timestamp - last, 1.0 / 60.0), 1.0 / 8.0)
+            self._dt_ema = d if self._dt_ema is None else (0.85 * self._dt_ema + 0.15 * d)
+        if last is None or timestamp > last:
+            self._last_update_ts = timestamp
+
+    def _dt_estimate(self) -> float:
+        """dt ước lượng (giây/khung xử lý), kẹp trong [1/60, 1/8]; chưa có dữ liệu thì giả định 30 khung/giây."""
+        d = self._dt_ema if self._dt_ema is not None else (1.0 / 30.0)
+        return min(max(d, 1.0 / 60.0), 1.0 / 8.0)
+
+    def _sec_to_frames(self, sec: float) -> int:
+        return max(1, int(round(float(sec) / self._dt_estimate())))
+
+    def effective_pause_frames(self) -> int:
+        return self.pause_frames if self.pause_sec is None else self._sec_to_frames(self.pause_sec)
+
+    def effective_ready_stable_frames(self) -> int:
+        return self.ready_stable_frames if self.ready_stable_sec is None else self._sec_to_frames(self.ready_stable_sec)
+
+    def effective_min_stroke_frames(self) -> int:
+        return self.min_stroke_frames if self.min_stroke_sec is None else self._sec_to_frames(self.min_stroke_sec)
+
+    def effective_max_stroke_frames(self) -> int:
+        return self.max_stroke_frames if self.max_stroke_sec is None else self._sec_to_frames(self.max_stroke_sec)
+
+    def in_lockout(self, timestamp: float) -> bool:
+        """True nếu đang trong khoảng cấm sau chốt từ (chỉ khi transition_lockout_sec > 0)."""
+        return self.transition_lockout_sec > 0.0 and self._lockout_until >= 0.0 and timestamp < self._lockout_until
+
+    def chain_window_open(self, timestamp: float) -> bool:
+        """True nếu cửa sổ nối đang mở tại `timestamp` (chỉ khi chain_window_sec > 0 và đã có từ vừa chốt)."""
+        if self._lockout_until >= 0.0 and timestamp < self._lockout_until:
+            return False
+        return self.chain_window_sec > 0.0 and self._chain_until >= 0.0 and timestamp <= self._chain_until
+
+    def _open_chain_window(self, timestamp: float) -> None:
+        """Gọi mỗi khi CHỐT một từ: thiết lập khoảng cấm lockout (nếu có) và mở cửa sổ nối (nếu có)."""
+        if self.transition_lockout_sec > 0.0:
+            self._lockout_until = timestamp + self.transition_lockout_sec
+        if self.chain_window_sec > 0.0:
+            base_t = (timestamp + self.transition_lockout_sec) if self.transition_lockout_sec > 0.0 else timestamp
+            self._chain_until = base_t + self.chain_window_sec
+            if self.transition_lockout_sec <= 0.0:
+                self.ready_counter = max(self.ready_counter, self.effective_ready_stable_frames())
+
+    def force_commit(self, timestamp: float) -> Optional[List[GestureFrame]]:
+        """
+        CHỐT SỚM (speculative commit): chỉ hợp lệ khi đang PENDING_COMMIT và số khung buffer nằm trong
+        [min_stroke, max_stroke]. Trả về stroke như thể grace window đã hết, đưa FSM về IDLE (áp dụng cửa sổ nối
+        như một lần chốt bình thường). Ngoài điều kiện đó trả None và KHÔNG đổi trạng thái.
+        """
+        if self.state != KineticState.PENDING_COMMIT:
+            return None
+        n = len(self.buffer)
+        if not (self.effective_min_stroke_frames() <= n <= self.effective_max_stroke_frames()):
+            return None
+        stroke = list(self.buffer)
+        self.buffer.clear()
+        self.pause_counter = 0
+        self.state = KineticState.IDLE
+        self.merge_count = 0
+        self._open_chain_window(timestamp)
+        return stroke
+
     def update(
         self,
         wrist_x: float,
@@ -398,6 +506,7 @@ class KineticPauseSegmenter:
         """
         if timestamp is None:
             timestamp = time.time()
+        self._track_dt(timestamp)   # SPEC 08: chỉ ghi nhận dt, không ảnh hưởng luồng cũ
 
         safe_palm = max(palm_len, 15.0)
         curr_frame = GestureFrame(
@@ -453,6 +562,28 @@ class KineticPauseSegmenter:
         # 3. MÁY TRẠNG THÁI HỮU HẠN (FSM) CHO CỬ CHỈ TỪ VỰNG
         completed_stroke: Optional[List[GestureFrame]] = None
 
+        # SPEC 08B: Xử lý khoảng cấm lockout sau chốt từ
+        if self._lockout_until >= 0.0:
+            if timestamp < self._lockout_until:
+                # Trong lockout: update không bắt đầu RECORDING dù v_norm >= v_start,
+                # và không cấp READY (giữ IDLE bên ngoài; cờ nội bộ _lockout_until).
+                self.state = KineticState.IDLE
+                self.ready_counter = 0
+                self.pause_counter = 0
+                self.buffer.clear()
+                return self.state, None, is_swipe_left, v_norm
+            else:
+                # Hết lockout theo dấu thời gian thật: cấp READY ngay (không đòi đứng yên thêm);
+                # nếu lúc đó v_norm >= v_start_ratio thì bắt đầu ghi ngay ở khung đó.
+                self._lockout_until = -1.0
+                self.ready_counter = max(self.ready_counter, self.effective_ready_stable_frames())
+                self.state = KineticState.READY
+                if v_norm >= self.v_start_ratio:
+                    self.state = KineticState.RECORDING
+                    self.buffer = [curr_frame]
+                    self.pause_counter = 0
+                return self.state, None, is_swipe_left, v_norm
+
         if self.state == KineticState.IDLE:
             if not self.require_ready_pose:
                 if v_norm >= self.v_start_ratio:
@@ -462,8 +593,15 @@ class KineticPauseSegmenter:
             else:
                 if v_norm <= self.v_stop_ratio:
                     self.ready_counter += 1
-                    if self.ready_counter >= self.ready_stable_frames:
+                    if self.ready_counter >= self.effective_ready_stable_frames():
                         self.state = KineticState.READY
+                elif self.chain_window_open(timestamp):
+                    # SPEC 08: cửa sổ nối đang mở -> coi như đã READY. Chuyển động rõ rệt bắt đầu từ mới ngay,
+                    # chuyển động nhẹ (giữa v_stop và v_start) KHÔNG làm mất trạng thái sẵn sàng.
+                    if v_norm >= self.v_start_ratio:
+                        self.state = KineticState.RECORDING
+                        self.buffer = [curr_frame]
+                        self.pause_counter = 0
                 else:
                     self.ready_counter = 0
 
@@ -481,14 +619,14 @@ class KineticPauseSegmenter:
             else:
                 self.pause_counter = 0
 
-            if self.pause_counter >= self.pause_frames:
+            if self.pause_counter >= self.effective_pause_frames():
                 # R7 FIX: Vừa khựng đủ lâu — KHÔNG chốt ngay. Chuyển sang chờ
                 # xác nhận (grace window) để tránh cắt đôi cử chỉ đa pha (VD:
                 # "Thank You" chạm cằm rồi dừng nhẹ trước khi đẩy tay ra).
                 self.state = KineticState.PENDING_COMMIT
                 self._pending_deadline = timestamp + self.grace_window_sec
                 self.pause_counter = 0
-            elif len(self.buffer) > self.max_stroke_frames:
+            elif len(self.buffer) > self.effective_max_stroke_frames():
                 self.reset()
 
         elif self.state == KineticState.PENDING_COMMIT:
@@ -504,7 +642,7 @@ class KineticPauseSegmenter:
                     self.merge_count += 1
                 else:
                     total_n = len(self.buffer)
-                    if self.min_stroke_frames <= total_n <= self.max_stroke_frames:
+                    if self.effective_min_stroke_frames() <= total_n <= self.effective_max_stroke_frames():
                         completed_stroke = list(self.buffer)
                     self.buffer.clear()
                     self.pause_counter = 0
@@ -513,17 +651,18 @@ class KineticPauseSegmenter:
             elif timestamp >= self._pending_deadline:
                 # Hết thời gian chờ, tay vẫn đứng yên -> CHỐT CỬ CHỈ THẬT SỰ
                 total_n = len(self.buffer)
-                if self.min_stroke_frames <= total_n <= self.max_stroke_frames:
+                if self.effective_min_stroke_frames() <= total_n <= self.effective_max_stroke_frames():
                     completed_stroke = list(self.buffer)
                 self.buffer.clear()
                 self.pause_counter = 0
                 self.state = KineticState.IDLE
                 self.merge_count = 0
-            elif len(self.buffer) > self.max_stroke_frames:
+            elif len(self.buffer) > self.effective_max_stroke_frames():
                 self.reset()
 
         if completed_stroke is not None:
             self.merge_count = 0
+            self._open_chain_window(timestamp)   # SPEC 08: mặc định chain_window_sec = 0 => không làm gì
 
         return self.state, completed_stroke, is_swipe_left, v_norm
 
@@ -537,6 +676,9 @@ class KineticPauseSegmenter:
         self.prev_wrist = None
         self.ready_counter = 0
         self.merge_count = 0
+        self._chain_until = -1.0        # SPEC 08: đóng cửa sổ nối
+        self._last_update_ts = None     # SPEC 08: khoảng trống sau reset (mất tay) không được tính vào dt
+        self._lockout_until = -1.0      # SPEC 08B: xóa khoảng cấm chuyển tiếp
 
 
 # =============================================================================
@@ -1111,6 +1253,172 @@ def compute_golden_triad_dtw_distance(
     return base_distance
 
 
+# =============================================================================
+# ĐƯỜNG DTW NHANH (vector hóa trên trục template) — dùng bởi GoldenTriadDTWMatcher.match
+# =============================================================================
+# Hàm compute_golden_triad_dtw_distance chạy DTW Python thuần cho TỪNG template (~3.4 ms/template,
+# ~365 ms/lần match với 107 template) làm vòng lặp webcam đứng hình ~0,7 s mỗi từ. Đường nhanh dưới đây
+# dựng MỘT LẦN khối (K, dải, D, N_template) rồi tính chi phí cục bộ + quy hoạch động theo hàng cho TẤT CẢ
+# template cùng lúc (~2-3 ms). Sai khác tuyệt đối so với hàm gốc < 1e-6 (chỉ do thứ tự cộng float32);
+# hàm gốc KHÔNG bị đổi và vẫn là chuẩn tham chiếu (fallback + chế độ verify).
+_FAST_K = 32                 # độ dài chuỗi đã resample (cố định của pipeline)
+_FAST_R = 4                  # bán kính Sakoe-Chiba mặc định của hàm gốc (match() không truyền giá trị khác)
+_FAST_D = 24                 # số chiều đặc trưng được hỗ trợ
+_FAST_SQRT2 = np.float32(1.41421356)
+_FAST_SQRT5 = np.float32(2.23606798)
+
+
+class _FastDTWBank:
+    """Khối template + trọng số riêng từng template, dựng lười từ vocabulary của matcher."""
+
+    def __init__(self, matcher: "GoldenTriadDTWMatcher"):
+        K, R = _FAST_K, _FAST_R
+        NB = 2 * R + 1
+        self.words: List[str] = []
+        self.slices: List[Tuple[int, int]] = []
+        rows: List[np.ndarray] = []
+        W: List[List[float]] = []
+        body: List[bool] = []
+        self.supported = True
+        self.reason = ""
+        if matcher.lambda_shape != 0.0 or matcher.lambda_shape_global != 0.0:
+            self.supported, self.reason = False, "lambda_shape/lambda_shape_global khác 0"
+        n = 0
+        for wk, wd in matcher.vocabulary.items():
+            samples = wd.get("samples", [])
+            if not samples:
+                continue
+            eff = matcher._get_effective_weights(wk)
+            if eff["w_z"] != 0.0 or eff["w_s"] != 0.0 or eff["w_r"] != 0.0:
+                self.supported, self.reason = False, f"trọng số w_z/w_s/w_r khác 0 ở từ {wk}"
+            n0 = n
+            for s in samples:
+                raw = s.get("traj_features_9d")
+                if raw is None:
+                    raw = s.get("traj_features", [])
+                t = np.array(raw, dtype=np.float32)
+                if len(t) != K:          # giống hàm gốc: bỏ qua template sai độ dài
+                    continue
+                if t.ndim != 2 or t.shape[1] != _FAST_D:
+                    self.supported, self.reason = False, f"template có số chiều khác {_FAST_D}"
+                    continue
+                rows.append(t)
+                body.append(bool(s.get("body_anchor_valid", True)))
+                W.append([eff["w_p"], eff["w_a"], eff["w_m"], eff["w_n"], eff["w_b"]])
+                n += 1
+            if n > n0:
+                self.words.append(wk)
+                self.slices.append((n0, n))
+        self.N = len(rows)
+        if self.N == 0:
+            self.supported, self.reason = False, "không có template hợp lệ"
+        if not self.supported:
+            return
+        T = np.stack(rows).astype(np.float32)                    # (N, K, D)
+        self.W = np.array(W, dtype=np.float32)                   # (N, 5)
+        self.body = np.array(body, dtype=bool)
+        # Chỉ số dải: hàng i (0-based), offset o -> j = i - R + o; hợp lệ nếu 0 <= j < K.
+        ii = np.arange(K)[:, None]
+        oo = np.arange(NB)[None, :]
+        jj = ii - R + oo
+        valid = (jj >= 0) & (jj < K)
+        jc = np.clip(jj, 0, K - 1)
+        Tb = np.ascontiguousarray(T[:, jc, :].transpose(1, 2, 3, 0))   # (K, NB, D, N)
+        self.pos = np.ascontiguousarray(Tb[:, :, 0:2])
+        self.dirv = np.ascontiguousarray(Tb[:, :, 2:4])
+        self.ang = np.ascontiguousarray(Tb[:, :, 4:9])
+        self.nrm = np.ascontiguousarray(Tb[:, :, 9:12])
+        self.dang = np.ascontiguousarray(Tb[:, :, 12:17])
+        self.bod = np.ascontiguousarray(Tb[:, :, 18:20])
+        self.penalty = np.where(valid, 0.0, np.inf).astype(np.float32)[:, :, None]   # (K, NB, 1)
+
+    def distances(self, q: np.ndarray, query_has_body: bool) -> np.ndarray:
+        """Khoảng cách DTW (đã chia K) từ query (K, 24) tới TẤT CẢ template; 999.0 nếu không tới được đích."""
+        K, R = _FAST_K, _FAST_R
+        NB = 2 * R + 1
+        N = self.N
+        q = np.asarray(q, dtype=np.float32)
+        wp, wa, wm, wn, wb = (self.W[:, c] for c in range(5))
+        wb = np.where(self.body & bool(query_has_body), wb, np.float32(0.0)).astype(np.float32)
+        dpos = np.hypot(q[:, None, 0, None] - self.pos[:, :, 0], q[:, None, 1, None] - self.pos[:, :, 1]) / _FAST_SQRT2
+        ddir = np.hypot(q[:, None, 2, None] - self.dirv[:, :, 0], q[:, None, 3, None] - self.dirv[:, :, 1]) / _FAST_SQRT2
+        da = np.sqrt(np.square(q[:, None, 4:9, None] - self.ang).sum(2))
+        dd = np.sqrt(np.square(q[:, None, 12:17, None] - self.dang).sum(2))
+        dang = (da + dd) * (np.float32(0.5) / _FAST_SQRT5)
+        cos = np.clip(np.einsum('ic,ijcn->ijn', q[:, 9:12], self.nrm), -1.0, 1.0)
+        dn = (np.float32(1.0) - cos) * np.float32(0.5)
+        dbody = np.hypot(q[:, None, 18, None] - self.bod[:, :, 0], q[:, None, 19, None] - self.bod[:, :, 1]) / _FAST_SQRT2
+        C = wp * dpos + wm * ddir + wa * dang + wn * dn + wb * dbody + self.penalty   # (K, NB, N)
+
+        # Quy hoạch động theo hàng trong dải. Dprev[o] = D[i-1, j = i-1-R+o]; ô thứ NB luôn là inf.
+        Dprev = np.full((NB + 1, N), np.inf, dtype=np.float32)
+        D = np.empty((NB + 1, N), dtype=np.float32)
+        inf_row = np.full(N, np.inf, dtype=np.float32)
+        for i in range(K):
+            if i == 0:
+                A = np.full((NB, N), np.inf, dtype=np.float32)
+                A[R] = 0.0                                   # D[0,0] = 0 (điểm xuất phát)
+            else:
+                A = np.minimum(Dprev[1:NB + 1], Dprev[:NB])  # min(D[i-1,j], D[i-1,j-1])
+            Ci = C[i]
+            prev = inf_row
+            for o in range(NB):
+                v = Ci[o] + np.minimum(A[o], prev)           # prev = D[i, j-1]
+                D[o] = v
+                prev = v
+            D[NB] = np.inf
+            Dprev, D = D, Dprev
+        tot = Dprev[R]                                       # i = K-1, j = K-1 -> offset R
+        return np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+
+    def distances_many(self, qs: np.ndarray, has_body: List[bool], chunk: int = 32) -> np.ndarray:
+        """
+        SPEC 09 Nhiệm vụ B: như distances() nhưng cho NHIỀU query một lượt. qs (Q, K, 24); has_body (Q,).
+        Trả (Q, N). Thêm một trục query đứng đầu để chi phí cố định của numpy (vòng lặp quy hoạch động K x NB bước, mỗi bước
+        một vài lệnh numpy nhỏ) được chia đều cho các query. Mỗi phần tử số học GIỐNG HỆT distances() (cùng thứ tự phép tính).
+        chunk: số query tối đa mỗi lượt (giới hạn bộ nhớ của mảng tạm (chunk, K, NB, N)).
+        """
+        qs = np.asarray(qs, dtype=np.float32)
+        hb = np.asarray([bool(b) for b in has_body], dtype=bool)
+        if qs.shape[0] > chunk:
+            return np.concatenate([self.distances_many(qs[a:a + chunk], hb[a:a + chunk], chunk) for a in range(0, qs.shape[0], chunk)], axis=0)
+        K, R = _FAST_K, _FAST_R
+        NB = 2 * R + 1
+        N = self.N
+        Q = qs.shape[0]
+        wp, wa, wm, wn, wb0 = (self.W[:, c] for c in range(5))
+        wb = np.where(self.body[None, :] & hb[:, None], wb0[None, :], np.float32(0.0)).astype(np.float32)    # (Q, N)
+        dpos = np.hypot(qs[:, :, None, 0, None] - self.pos[:, :, 0], qs[:, :, None, 1, None] - self.pos[:, :, 1]) / _FAST_SQRT2
+        ddir = np.hypot(qs[:, :, None, 2, None] - self.dirv[:, :, 0], qs[:, :, None, 3, None] - self.dirv[:, :, 1]) / _FAST_SQRT2
+        da = np.sqrt(np.square(qs[:, :, None, 4:9, None] - self.ang).sum(3))
+        dd = np.sqrt(np.square(qs[:, :, None, 12:17, None] - self.dang).sum(3))
+        dang = (da + dd) * (np.float32(0.5) / _FAST_SQRT5)
+        cos = np.clip(np.einsum('qic,ijcn->qijn', qs[:, :, 9:12], self.nrm), -1.0, 1.0)
+        dn = (np.float32(1.0) - cos) * np.float32(0.5)
+        dbody = np.hypot(qs[:, :, None, 18, None] - self.bod[:, :, 0], qs[:, :, None, 19, None] - self.bod[:, :, 1]) / _FAST_SQRT2
+        C = wp * dpos + wm * ddir + wa * dang + wn * dn + wb[:, None, None, :] * dbody + self.penalty     # (Q, K, NB, N)
+
+        Dprev = np.full((Q, NB + 1, N), np.inf, dtype=np.float32)
+        D = np.empty((Q, NB + 1, N), dtype=np.float32)
+        inf_row = np.full((Q, N), np.inf, dtype=np.float32)
+        for i in range(K):
+            if i == 0:
+                A = np.full((Q, NB, N), np.inf, dtype=np.float32)
+                A[:, R] = 0.0
+            else:
+                A = np.minimum(Dprev[:, 1:NB + 1], Dprev[:, :NB])
+            Ci = C[:, i]
+            prev = inf_row
+            for o in range(NB):
+                v = Ci[:, o] + np.minimum(A[:, o], prev)
+                D[:, o] = v
+                prev = v
+            D[:, NB] = np.inf
+            Dprev, D = D, Dprev
+        tot = Dprev[:, R]                                    # (Q, N)
+        return np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+
+
 class GoldenTriadDTWMatcher:
     """
     Bộ não so khớp cử chỉ v5.1 tích hợp Golden Triad [P + A + JM].
@@ -1142,9 +1450,21 @@ class GoldenTriadDTWMatcher:
         asllex_lambda: float = 0.0,
         asllex_mapping: str = "legacy",
         flip_body_x: bool = True,
-        threshold_dict: Optional[Dict[str, float]] = None
+        threshold_dict: Optional[Dict[str, float]] = None,
+        threshold_mode: str = "legacy",
+        threshold_k: float = 1.6,
+        uncertainty_k: float = 2.2,
+        cache_dir: str = ".cache",
+        # Đường DTW nhanh (vector hóa numpy). Đây là NGOẠI LỆ CÓ CHỦ ĐÍCH cho quy tắc "mặc định giữ hành vi cũ":
+        # mặc định True vì kết quả GIỐNG hệt hàm gốc về số học (sai khác < 1e-6) mà nhanh gấp ~100 lần
+        # (hết cú khựng ~0,7 s mỗi từ). Tắt bằng use_fast_dtw=False hoặc biến môi trường DIP_FAST_DTW=0.
+        use_fast_dtw: bool = True
     ):
         self.templates_path = templates_path
+        self.use_fast_dtw = bool(use_fast_dtw)
+        self._fast_bank: Optional[_FastDTWBank] = None      # khối template dựng LƯỜI ở lần match đầu
+        self._fast_sig: Any = None                          # chữ ký bank+trọng số lúc dựng khối
+        self._fast_warned: bool = False
         self.sign_weights_path = sign_weights_path if sign_weights_path is not None else DEFAULT_SIGN_WEIGHTS_PATH
         self.w_p = w_p
         self.w_a = w_a
@@ -1185,6 +1505,14 @@ class GoldenTriadDTWMatcher:
         self.flip_body_x = bool(flip_body_x)
         self.threshold_dict = threshold_dict
 
+        # SPEC 04B: Chế độ ngưỡng theo thang từng từ
+        self.threshold_mode = str(threshold_mode).lower()
+        self.threshold_k = float(threshold_k)
+        self.uncertainty_k = float(uncertainty_k)
+        self.cache_dir = cache_dir
+        self.intra_widths: Dict[str, float] = {}
+        self.r_typical: float = 1.0
+
         self.load_sign_weights()
         if self.templates_dict is not None:
             self.set_vocabulary(
@@ -1195,11 +1523,139 @@ class GoldenTriadDTWMatcher:
             self.load_templates()
         self.validate_weights_against_vocabulary()
 
+    def compute_intra_widths(self) -> Dict[str, float]:
+        """
+        SPEC 04B (Nhiệm vụ 1):
+        Tính độ rộng nội lớp cho từng từ vựng:
+          độ_rộng[W] = trung bình, trên các mẫu s của W, của khoảng cách nhỏ nhất từ s tới các mẫu còn lại của W
+                       (leave-one-out, dưới CHÍNH bộ trọng số hiệu dụng của W đang dùng).
+        ngưỡng[W] = k * độ_rộng[W].
+        Đồng thời tính r_typical = trung vị(r) trên tập mẫu đúng nội bộ.
+        Có cơ chế lưu file cache nếu tốn thời gian tính toán.
+        """
+        if not self.vocabulary:
+            self.intra_widths = {}
+            self.r_typical = 1.0
+            return self.intra_widths
+
+        vocab_keys = sorted(self.vocabulary.keys())
+        cache_components = []
+        for vk in vocab_keys:
+            w_data = self.vocabulary[vk]
+            samples = w_data.get("samples", [])
+            eff_w = self._get_effective_weights(vk)
+            sample_lens = [len(s.get("traj_features_9d") or s.get("traj_features") or []) for s in samples]
+            cache_components.append({
+                "word": vk,
+                "n_samples": len(samples),
+                "lens": sample_lens,
+                "eff_w": eff_w
+            })
+
+        cache_str = json.dumps(cache_components, sort_keys=True)
+        cache_hash = hashlib.sha256(cache_str.encode("utf-8")).hexdigest()
+        cache_file = os.path.join(self.cache_dir, f"intra_widths_{cache_hash[:16]}.json")
+
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                self.intra_widths = cached_data.get("intra_widths", {})
+                self.r_typical = float(cached_data.get("r_typical", 1.0))
+                return self.intra_widths
+            except Exception:
+                pass
+
+        t0 = time.perf_counter()
+        intra_widths: Dict[str, float] = {}
+        all_d_mins: List[Tuple[str, float]] = []
+        words_needing_fallback: List[str] = []
+
+        for word_key in vocab_keys:
+            word_data = self.vocabulary[word_key]
+            samples = word_data.get("samples", [])
+            valid_samples = []
+            for s in samples:
+                raw = s.get("traj_features_9d") or s.get("traj_features")
+                if raw is not None and len(raw) == 32:
+                    valid_samples.append((
+                        np.array(raw, dtype=np.float32),
+                        s.get("hand_shapes", ["Unknown"] * 32),
+                        s.get("body_anchor_valid", True),
+                        s.get("rep_count")
+                    ))
+
+            N = len(valid_samples)
+            if N < 3:
+                words_needing_fallback.append(word_key)
+                continue
+
+            eff = self._get_effective_weights(word_key)
+            wp, wa, wm, wn = eff["w_p"], eff["w_a"], eff["w_m"], eff["w_n"]
+            wb, ws, wz, wr = eff["w_b"], eff["w_s"], eff["w_z"], eff["w_r"]
+
+            dist_mat = np.zeros((N, N), dtype=np.float32)
+            for i in range(N):
+                qi, qi_sh, qi_b, qi_r = valid_samples[i]
+                for j in range(i + 1, N):
+                    tj, tj_sh, tj_b, tj_r = valid_samples[j]
+                    wb_eff = wb if (qi_b and tj_b) else 0.0
+                    d = compute_golden_triad_dtw_distance(
+                        q_traj=qi, q_shapes=qi_sh, t_traj=tj, t_shapes=tj_sh,
+                        w_p=wp, w_a=wa, w_m=wm, w_n=wn,
+                        lambda_shape=self.lambda_shape, lambda_shape_global=self.lambda_shape_global,
+                        w_z=wz, w_b=wb_eff, w_s=ws, w_r=wr,
+                        q_rep_count=qi_r, t_rep_count=tj_r
+                    )
+                    dist_mat[i, j] = d
+                    dist_mat[j, i] = d
+
+            d_mins = []
+            for i in range(N):
+                row = [dist_mat[i, j] for j in range(N) if j != i]
+                d_min = min(row) if row else 0.25
+                d_mins.append(d_min)
+                all_d_mins.append((word_key, d_min))
+
+            intra_widths[word_key] = float(np.mean(d_mins))
+
+        if words_needing_fallback:
+            if intra_widths:
+                median_w = float(np.median(list(intra_widths.values())))
+            else:
+                median_w = 0.25
+            for wf in words_needing_fallback:
+                print(f"[!] CẢNH BÁO: Từ '{wf}' có < 3 mẫu hợp lệ -> sử dụng trung vị độ rộng ({median_w:.4f}).")
+                intra_widths[wf] = median_w
+
+        all_r = []
+        for wk, dm in all_d_mins:
+            w_val = intra_widths.get(wk, 0.25)
+            all_r.append(dm / max(w_val, 1e-6))
+
+        self.intra_widths = intra_widths
+        self.r_typical = float(np.median(all_r)) if all_r else 1.0
+        elapsed_s = time.perf_counter() - t0
+
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "intra_widths": self.intra_widths,
+                    "r_typical": self.r_typical,
+                    "compute_time_sec": elapsed_s
+                }, f, indent=2)
+        except Exception:
+            pass
+
+        return self.intra_widths
+
     def load_sign_weights(self) -> None:
         """
         Nạp trọng số Per-Sign DTW từ file JSON tạo bởi ASL-LEX 2.0.
         Nếu sign_weights_path là None, tự động kích hoạt chế độ Global Weights (1 công thức chung từ CONFIG).
         """
+        self.invalidate_fast_bank()   # trọng số có thể đổi -> khối template nhanh phải dựng lại
         if not self.sign_weights_path:
             self.sign_weights = {}
             print(f"ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu "
@@ -1416,7 +1872,100 @@ class GoldenTriadDTWMatcher:
         eff = self._get_effective_weights(word_key)
         return float(eff["w_p"]), float(eff["w_a"]), float(eff["w_m"]), float(eff["w_n"])
 
+    def invalidate_fast_bank(self) -> None:
+        """Vô hiệu khối template của đường DTW nhanh (gọi khi bank hoặc trọng số thay đổi)."""
+        self._fast_bank = None
+        self._fast_sig = None
+
+    def _fast_signature(self) -> Any:
+        """
+        Chữ ký rẻ (~vài chục µs) của bank + trọng số + lambda. Nếu ai đó sửa vocabulary/trọng số TRỰC TIẾP
+        (không qua load_templates/set_vocabulary) thì chữ ký đổi và khối nhanh tự dựng lại — lưới an toàn
+        bên cạnh các lời gọi invalidate_fast_bank() tường minh.
+        """
+        parts: List[Any] = [id(self.vocabulary), self.lambda_shape, self.lambda_shape_global]
+        for wk, wd in self.vocabulary.items():
+            samples = wd.get("samples", [])
+            eff = self._get_effective_weights(wk)
+            sig_s = []
+            for s in samples:
+                raw = s.get("traj_features_9d")
+                if raw is None:
+                    raw = s.get("traj_features")
+                sig_s.append((id(s), id(raw), bool(s.get("body_anchor_valid", True))))
+            parts.append((wk, id(samples), tuple(sig_s), tuple(sorted(eff.items()))))
+        return tuple(parts)
+
+    def _fast_min_distances(self, query_traj_9d: Any, query_has_body: bool) -> Optional[Dict[str, float]]:
+        """
+        Trả {word_key: min_dist} tính bằng đường nhanh, hoặc None nếu phải dùng đường gốc
+        (tắt bằng cờ/biến môi trường, cấu hình ngoài phạm vi hỗ trợ, hoặc lỗi trong đường nhanh).
+        Biến môi trường DIP_FAST_DTW: "0" tắt; "strict" không nuốt lỗi; "verify" do match() tự so với đường gốc.
+        """
+        mode = os.environ.get("DIP_FAST_DTW", "").strip().lower()
+        if mode in ("0", "off", "false") or not self.use_fast_dtw:
+            return None
+        try:
+            q = np.asarray(query_traj_9d, dtype=np.float32) if query_traj_9d is not None else None
+            if q is None or q.ndim != 2 or q.shape != (_FAST_K, _FAST_D):
+                return None
+            sig = self._fast_signature()
+            if self._fast_bank is None or sig != self._fast_sig:
+                self._fast_bank = _FastDTWBank(self)
+                self._fast_sig = sig
+            bank = self._fast_bank
+            if not bank.supported:
+                return None
+            d = bank.distances(q, query_has_body)
+            return {wk: float(np.min(d[a:b])) for wk, (a, b) in zip(bank.words, bank.slices)}
+        except Exception as e:
+            if mode == "strict":
+                raise
+            self.invalidate_fast_bank()
+            if not self._fast_warned:
+                self._fast_warned = True
+                print(f"[!] Đường DTW nhanh gặp lỗi ({type(e).__name__}: {e}) -> quay về đường DTW gốc (chậm hơn).")
+            return None
+
+    def _fast_min_distances_many(self, queries_9d: List[Any], has_body: List[bool]) -> Optional[List[Dict[str, float]]]:
+        """
+        SPEC 09 Nhiệm vụ B: như _fast_min_distances nhưng cho nhiều query (đã canonical) một lượt.
+        Trả danh sách {word_key: min_dist} theo thứ tự query, hoặc None nếu phải dùng đường gốc (cùng điều kiện như bản đơn lẻ:
+        tắt bằng cờ/biến môi trường, sai kích thước, ngoài phạm vi hỗ trợ, hoặc lỗi trong đường nhanh).
+        Lớp con (vd LooMatcher của chain_replay) có thể ghi đè để loại template.
+        """
+        mode = os.environ.get("DIP_FAST_DTW", "").strip().lower()
+        if mode in ("0", "off", "false") or not self.use_fast_dtw:
+            return None
+        try:
+            qs = []
+            for q in queries_9d:
+                qa = np.asarray(q, dtype=np.float32) if q is not None else None
+                if qa is None or qa.ndim != 2 or qa.shape != (_FAST_K, _FAST_D):
+                    return None
+                qs.append(qa)
+            if not qs:
+                return []
+            sig = self._fast_signature()
+            if self._fast_bank is None or sig != self._fast_sig:
+                self._fast_bank = _FastDTWBank(self)
+                self._fast_sig = sig
+            bank = self._fast_bank
+            if not bank.supported:
+                return None
+            d = bank.distances_many(np.stack(qs), has_body)
+            return [{wk: float(np.min(d[i, a:b])) for wk, (a, b) in zip(bank.words, bank.slices)} for i in range(d.shape[0])]
+        except Exception as e:
+            if mode == "strict":
+                raise
+            self.invalidate_fast_bank()
+            if not self._fast_warned:
+                self._fast_warned = True
+                print(f"[!] Đường DTW nhanh (nhiều query) gặp lỗi ({type(e).__name__}: {e}) -> quay về đường DTW gốc (chậm hơn).")
+            return None
+
     def load_templates(self) -> None:
+        self.invalidate_fast_bank()
         if not os.path.exists(self.templates_path):
             return
         try:
@@ -1432,6 +1981,8 @@ class GoldenTriadDTWMatcher:
                 print("    -> Để có độ chính xác cao nhất, hãy chạy 'collect_dynamic_templates.py' để ghi mẫu 9D.")
 
             self._canonicalize_loaded_templates()
+            if getattr(self, "threshold_mode", "legacy") == "scale_k":
+                self.compute_intra_widths()
         except Exception as e:
             print(f"[!] Lỗi đọc {self.templates_path}: {e}")
 
@@ -1441,12 +1992,15 @@ class GoldenTriadDTWMatcher:
         Không cần ghi và đọc lại file JSON. Tự động chuẩn hóa chirality một lần cho toàn bộ mẫu.
         """
         import copy
+        self.invalidate_fast_bank()
         self.vocabulary = copy.deepcopy(vocabulary)
         meta = metadata or {}
         self.feature_dim = meta.get("feature_dim", 24 if self.vocabulary else 4)
         self.is_legacy_4d = (self.feature_dim < 9)
         self._canonicalize_loaded_templates()
         self.validate_weights_against_vocabulary()
+        if getattr(self, "threshold_mode", "legacy") == "scale_k":
+            self.compute_intra_widths()
 
     def _canonicalize_loaded_templates(self) -> None:
         """
@@ -1457,6 +2011,7 @@ class GoldenTriadDTWMatcher:
         - Mẫu có trường "handedness"                -> dùng nhánh chính thống.
         - Mẫu cũ không có gì                        -> dùng nhánh heuristic max|nx|.
         """
+        self.invalidate_fast_bank()   # template có thể bị lật tại chỗ
         n_total = 0
         n_flipped = 0
         n_skipped = 0
@@ -1503,7 +2058,8 @@ class GoldenTriadDTWMatcher:
         query_shapes: List[str],
         handedness: Optional[str] = None,
         query_has_body: bool = True,
-        query_rep_count: Optional[int] = None
+        query_rep_count: Optional[int] = None,
+        _precomputed_fast_min: Optional[Dict[str, float]] = None
     ) -> MatchResult:
         """
         So khớp cử chỉ đầu vào với toàn bộ từ vựng.
@@ -1533,6 +2089,11 @@ class GoldenTriadDTWMatcher:
 
         all_candidates: List[MatchCandidate] = []
 
+        # Đường nhanh: min khoảng cách theo từ cho TẤT CẢ template một lượt (None => dùng đường gốc bên dưới).
+        # _precomputed_fast_min (nội bộ, SPEC 09 match_many): min khoảng cách theo từ đã tính sẵn bằng đường nhanh gộp query.
+        fast_min = _precomputed_fast_min if _precomputed_fast_min is not None else self._fast_min_distances(query_traj_9d, query_has_body)
+        verify_fast = (os.environ.get("DIP_FAST_DTW", "").strip().lower() == "verify")
+
         for word_key, word_data in self.vocabulary.items():
             display_name = word_data.get("display_name", word_key)
             if self.threshold_override is not None:
@@ -1558,7 +2119,8 @@ class GoldenTriadDTWMatcher:
             wr = eff["w_r"]
 
             sample_distances = []
-            for s in samples:
+            use_fast_for_word = (fast_min is not None and word_key in fast_min)
+            for s in ([] if (use_fast_for_word and not verify_fast) else samples):
                 t_traj_raw = s.get("traj_features_9d")
                 if t_traj_raw is None:
                     t_traj_raw = s.get("traj_features", [])
@@ -1592,27 +2154,83 @@ class GoldenTriadDTWMatcher:
                 )
                 sample_distances.append(dist)
 
+            if use_fast_for_word:
+                if verify_fast:
+                    ref = min(sample_distances)
+                    assert abs(ref - fast_min[word_key]) < 1e-5, (
+                        f"[DIP_FAST_DTW=verify] Lệch đường nhanh/gốc ở từ {word_key}: "
+                        f"gốc={ref:.7f} nhanh={fast_min[word_key]:.7f}")
+                sample_distances = [fast_min[word_key]] if not verify_fast else sample_distances
+                if verify_fast:
+                    sample_distances = [ref]   # dùng giá trị gốc để kết quả verify = kết quả gốc
+
             if sample_distances:
                 min_dist = min(sample_distances)
                 conf = max(0.0, min(1.0, 1.0 - (min_dist / (threshold + 1e-6))))
-                all_candidates.append(MatchCandidate(word_key=word_key, display_name=display_name, distance=min_dist, confidence=conf))
+                if self.threshold_mode == "scale_k":
+                    intra_w_cand = self.intra_widths.get(word_key, 0.25)
+                    r_cand = float(min_dist / max(intra_w_cand, 1e-6))
+                    denom_cand = max(self.uncertainty_k - self.r_typical, 1e-4)
+                    mq_cand = 100.0 * float(np.clip((self.uncertainty_k - r_cand) / denom_cand, 0.0, 1.0))
+                else:
+                    r_cand = float(min_dist / max(threshold, 1e-6))
+                    mq_cand = float(conf * 100.0)
+
+                all_candidates.append(MatchCandidate(
+                    word_key=word_key,
+                    display_name=display_name,
+                    distance=min_dist,
+                    confidence=conf,
+                    match_quality=mq_cand,
+                    r_ratio=r_cand
+                ))
 
         if not all_candidates:
-            return MatchResult(status="REJECTED", top_word=None, top_display=None, best_distance=999.0, best_confidence=0.0, candidates=[])
+            return MatchResult(
+                status="REJECTED",
+                top_word=None,
+                top_display=None,
+                best_distance=999.0,
+                best_confidence=0.0,
+                candidates=[],
+                match_quality=0.0,
+                r_ratio=0.0
+            )
 
         all_candidates.sort(key=lambda c: c.distance)
         top1 = all_candidates[0]
-        base_thresh = float(self.vocabulary.get(top1.word_key, {}).get("threshold", 1.25))
-        if self.threshold_override is not None:
-            word_thresh = self.threshold_override
-        elif self.threshold_dict is not None and top1.word_key in self.threshold_dict:
-            word_thresh = float(self.threshold_dict[top1.word_key])
+
+        if self.threshold_mode == "scale_k":
+            intra_w = self.intra_widths.get(top1.word_key, 0.25)
+            word_thresh = self.threshold_k * intra_w
+            unc_thresh = self.uncertainty_k * intra_w
+            r = float(top1.distance / max(intra_w, 1e-6))
+            denom = max(self.uncertainty_k - self.r_typical, 1e-4)
+            match_quality = 100.0 * float(np.clip((self.uncertainty_k - r) / denom, 0.0, 1.0))
         else:
-            word_thresh = base_thresh
+            base_thresh = float(self.vocabulary.get(top1.word_key, {}).get("threshold", 1.25))
+            if self.threshold_override is not None:
+                word_thresh = self.threshold_override
+            elif self.threshold_dict is not None and top1.word_key in self.threshold_dict:
+                word_thresh = float(self.threshold_dict[top1.word_key])
+            else:
+                word_thresh = base_thresh
+            unc_thresh = word_thresh * self.uncertainty_ratio
+            r = float(top1.distance / max(word_thresh, 1e-6))
+            match_quality = float(top1.confidence * 100.0)
 
         # 1. Kiểm tra ngưỡng tuyệt đối (vượt ngưỡng nghi vấn -> REJECTED)
-        if top1.distance > (word_thresh * self.uncertainty_ratio):
-            return MatchResult(status="REJECTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+        if top1.distance > unc_thresh:
+            return MatchResult(
+                status="REJECTED",
+                top_word=top1.word_key,
+                top_display=top1.display_name,
+                best_distance=top1.distance,
+                best_confidence=top1.confidence,
+                candidates=all_candidates,
+                match_quality=match_quality,
+                r_ratio=r
+            )
 
         # 2. Kiểm tra Adaptive Margin Guard nếu có ít nhất 2 ứng viên
         effective_margin = 0.08 if (self.is_legacy_4d and self.margin_threshold >= 0.12) else self.margin_threshold
@@ -1627,13 +2245,67 @@ class GoldenTriadDTWMatcher:
 
             if margin_ratio < req_margin:
                 # Quá sít sao -> Nghi vấn (UNCERTAIN)
-                return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+                return MatchResult(
+                    status="UNCERTAIN",
+                    top_word=top1.word_key,
+                    top_display=top1.display_name,
+                    best_distance=top1.distance,
+                    best_confidence=top1.confidence,
+                    candidates=all_candidates,
+                    match_quality=match_quality,
+                    r_ratio=r
+                )
 
         # 3. Chấp nhận (ACCEPTED) hoặc UNCERTAIN theo ngưỡng từ
         if top1.distance <= word_thresh:
-            return MatchResult(status="ACCEPTED", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+            return MatchResult(
+                status="ACCEPTED",
+                top_word=top1.word_key,
+                top_display=top1.display_name,
+                best_distance=top1.distance,
+                best_confidence=top1.confidence,
+                candidates=all_candidates,
+                match_quality=match_quality,
+                r_ratio=r
+            )
         else:
-            return MatchResult(status="UNCERTAIN", top_word=top1.word_key, top_display=top1.display_name, best_distance=top1.distance, best_confidence=top1.confidence, candidates=all_candidates)
+            return MatchResult(
+                status="UNCERTAIN",
+                top_word=top1.word_key,
+                top_display=top1.display_name,
+                best_distance=top1.distance,
+                best_confidence=top1.confidence,
+                candidates=all_candidates,
+                match_quality=match_quality,
+                r_ratio=r
+            )
+
+
+    def match_many(self, queries: List[Tuple[np.ndarray, List[str], Optional[str], bool]]) -> List[MatchResult]:
+        """
+        SPEC 09 Nhiệm vụ B: chấm NHIỀU query một lượt. Mỗi phần tử: (query_traj_9d, query_shapes, handedness, query_has_body).
+        Kết quả phần tử i GIỐNG HỆT self.match(*queries[i]): cùng canonical chirality, cùng min-khoảng-cách theo từ (đường nhanh
+        gộp thêm trục query, sai khác số học < 1e-5), cùng bước quyết định (vì MatchResult vẫn do chính match() dựng, chỉ nhận
+        min-khoảng-cách tính sẵn). Ngoài phạm vi đường nhanh (tắt cờ, sai kích thước, lambda_shape != 0, ...) thì quay về vòng lặp match().
+        """
+        if not queries:
+            return []
+        try:
+            canon = []
+            for q, _shapes, hand, _hb in queries:
+                if q is None:
+                    canon.append(None)
+                else:
+                    c, _ = canonicalize_chirality(q, handedness=hand, flip_body_x=getattr(self, "flip_body_x", True))
+                    canon.append(c)
+            fast = None
+            if self.vocabulary and all(c is not None for c in canon):
+                fast = self._fast_min_distances_many(canon, [bool(qq[3]) for qq in queries])
+        except Exception:
+            fast = None
+        if fast is None or len(fast) != len(queries):
+            return [self.match(q, sh, hand, hb) for q, sh, hand, hb in queries]
+        return [self.match(q, sh, hand, hb, _precomputed_fast_min=fm) for (q, sh, hand, hb), fm in zip(queries, fast)]
 
 
 # =============================================================================

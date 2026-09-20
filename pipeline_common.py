@@ -414,13 +414,18 @@ def make_wrist_smoother(
     )
 
 
-def make_segmenter(config: Optional[Dict[str, Any]] = None) -> KineticPauseSegmenter:
+def make_segmenter(config: Optional[Dict[str, Any]] = None, fast_chain: Optional[Dict[str, Any]] = None) -> KineticPauseSegmenter:
     """
     Hàm tạo KineticPauseSegmenter duy nhất dùng chung cho cả Collector và Predict.
     Các ngưỡng lấy từ config (hoặc mặc định chuẩn của CONFIG).
+
+    fast_chain (SPEC 08, mặc định None = KHÔNG ĐỔI GÌ so với trước): dict cấu hình chế độ "ký nhanh" (CONFIG["fast_chain"]).
+    Khi truyền vào, các tham số tính bằng GIÂY được bật: pause_sec, grace_window_sec, chain_window_sec và (tùy chọn)
+    ready_stable_sec / min_stroke_sec / max_stroke_sec; khóa nào vắng hoặc None thì giữ giá trị mặc định cũ.
+    Collector không truyền tham số này nên hoàn toàn không bị ảnh hưởng.
     """
     cfg = config or SHARED_CONFIG
-    return KineticPauseSegmenter(
+    kwargs: Dict[str, Any] = dict(
         v_start_ratio=cfg.get("v_start_ratio", 0.08),
         v_stop_ratio=cfg.get("v_stop_ratio", 0.040),
         pause_frames=cfg.get("pause_frames", 9),
@@ -433,6 +438,93 @@ def make_segmenter(config: Optional[Dict[str, Any]] = None) -> KineticPauseSegme
         max_phase_merges=1,
         grace_window_sec=0.15
     )
+    if fast_chain:
+        if fast_chain.get("grace_window_sec") is not None:
+            kwargs["grace_window_sec"] = float(fast_chain["grace_window_sec"])
+        for key in ("pause_sec", "ready_stable_sec", "min_stroke_sec", "max_stroke_sec"):
+            if fast_chain.get(key) is not None:
+                kwargs[key] = float(fast_chain[key])
+        kwargs["chain_window_sec"] = float(fast_chain.get("chain_window_sec", 0.0) or 0.0)
+        if fast_chain.get("transition_lockout_sec") is not None:
+            kwargs["transition_lockout_sec"] = float(fast_chain["transition_lockout_sec"])
+    return KineticPauseSegmenter(**kwargs)
+
+
+# =============================================================================
+# SPEC 08: CHỐT SỚM (speculative commit) - các hàm thuần, dùng chung cho predict và chain_replay
+# =============================================================================
+
+def find_multi_phase_words(
+    vocabulary: Dict[str, Any],
+    still_speed: float = 0.040,
+    min_run: int = 4,
+    window: Tuple[float, float] = (0.20, 0.85),
+) -> Dict[str, int]:
+    """
+    Tự suy ra tập TỪ NHIỀU PHA (có nhịp dừng bên TRONG từ, như THANK_YOU chạm cằm rồi dừng nhẹ trước khi đẩy tay ra)
+    từ chính bank. Từ nào có ít nhất một template thỏa: trong đoạn giữa (khung 20%-85% của K=32) tồn tại một đoạn
+    liên tục >= min_run bước nội suy mà tốc độ quỹ đạo (|Δ(x,y)| theo đơn vị palm) <= still_speed, VÀ đoạn dừng đó
+    KẾT THÚC TRƯỚC bước chuyển động cuối cùng (loại đuôi đứng yên cuối stroke: MỌI template đều có đuôi ~0,45 s
+    đứng yên nên nếu không loại thì mọi từ đều bị coi là nhiều pha).
+    Trả về {từ: số template có nhịp dừng bên trong}. Đây chỉ là ƯỚC LƯỢNG từ bank; CONFIG["fast_chain"]["multi_phase_words"]
+    (nếu không phải None) ghi đè hoàn toàn.
+    """
+    out: Dict[str, int] = {}
+    for word, wd in (vocabulary or {}).items():
+        count = 0
+        for s in wd.get("samples", []):
+            raw = s.get("traj_features_9d")
+            if raw is None:
+                raw = s.get("traj_features")
+            if raw is None:
+                continue
+            t = np.asarray(raw, dtype=np.float32)
+            if t.ndim != 2 or t.shape[0] < 8 or t.shape[1] < 2:
+                continue
+            k = t.shape[0]
+            step = np.hypot(np.diff(t[:, 0]), np.diff(t[:, 1]))          # (k-1,) bước giữa khung i và i+1
+            moving = np.where(step > still_speed)[0]
+            last_motion = int(moving[-1]) if moving.size else 0
+            lo, hi = int(window[0] * k), int(window[1] * k)
+            run_start = None
+            found = False
+            for i in range(len(step) + 1):
+                is_still = (i < len(step)) and (step[i] <= still_speed)
+                if is_still and run_start is None:
+                    run_start = i
+                if (not is_still) and run_start is not None:
+                    run_end = i - 1
+                    if (run_end - run_start + 1) >= min_run and run_start >= lo and (run_end + 1) <= hi and run_end < last_motion:
+                        found = True
+                    run_start = None
+            if found:
+                count += 1
+        if count > 0:
+            out[word] = count
+    return out
+
+
+def early_commit_ok(match_result: Any, fast_chain: Dict[str, Any], multi_phase_words: Any) -> bool:
+    """
+    Điều kiện CHỐT SỚM khi đang PENDING_COMMIT (SPEC 08 Nhiệm vụ C): kết quả dự đoán tạm phải ACCEPTED,
+    match_quality >= early_min_quality, chênh lệch top-1/top-2 (GoldenTriadDTWMatcher.compute_margin_ratio)
+    >= early_min_margin, và từ dự đoán KHÔNG thuộc tập từ nhiều pha. Không tự đổi ngưỡng nhận diện.
+    """
+    if not fast_chain or not fast_chain.get("early_commit", False):
+        return False
+    if match_result is None or getattr(match_result, "status", None) != "ACCEPTED" or not getattr(match_result, "top_word", None):
+        return False
+    if match_result.top_word in (multi_phase_words or ()):
+        return False
+    if float(match_result.match_quality) < float(fast_chain.get("early_min_quality", 80.0)):
+        return False
+    cands = match_result.candidates
+    if len(cands) >= 2:
+        from dynamic_dtw_engine import GoldenTriadDTWMatcher
+        margin = GoldenTriadDTWMatcher.compute_margin_ratio(cands[0].distance, cands[1].distance)
+        if margin < float(fast_chain.get("early_min_margin", 0.25)):
+            return False
+    return True
 
 
 class LKInertialFallback:
