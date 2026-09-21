@@ -93,6 +93,7 @@ from dynamic_dtw_engine import (
 )
 # Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
 import speech_service
+from tts_queue import QueuedSpeaker
 from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
@@ -148,10 +149,13 @@ CONFIG = {
     "ui_mode": "demo",                   # "demo" = giao diện sạch cho người dùng cuối | "debug" = bảng đặc trưng cũ
     "ui_lang": "en",                     # "en" | "vi" (mặc định "en" vì máy chưa có giọng đọc tiếng Việt)
 
-    # --- SPEC 08 "KÝ NHANH": bỏ thời gian chờ thừa giữa hai từ. MẶC ĐỊNH TẮT (enabled=False => hành vi cũ, bit-giống hệt).
-    #     Bật bằng cờ --fast-chain, hoặc phím [j] lúc chạy. Mọi thời gian tính bằng GIÂY (quy đổi theo dấu thời gian thật). ---
+    # --- SPEC 08 "KÝ NHANH" + SPEC 08B "CẮT CHUYỂN TIẾP": bỏ thời gian chờ thừa giữa hai từ và loại phần tay di chuyển sang từ kế tiếp.
+    #     MẶC ĐỊNH BẬT (bản chuẩn từ 2026-09-21, sau khi thử trực tiếp: chuyển tiếp không còn bị ghi thành cử chỉ lạ).
+    #     Quay về hành vi cũ (phải dừng ~0.55 s giữa hai từ): --no-fast-chain, hoặc phím [j] lúc chạy. Tắt riêng cắt dẫn đầu: --no-lead-trim / phím [k].
+    #     Giá trị chain_window_sec=0.0 và ready_stable_sec=0.1 là cấu hình ĐÃ ĐƯỢC THỬ TRỰC TIẾP; đừng đổi khi chưa thử lại.
+    #     Mọi thời gian tính bằng GIÂY (quy đổi theo dấu thời gian thật). ---
     "fast_chain": {
-        "enabled": False,
+        "enabled": True,
         "chain_window_sec": 0.0,         # sau khi chốt một từ, trong ngần này giây tay coi như đã sẵn sàng: cử động là ghi ngay
         "pause_sec": 0.12,               # tay khựng ngần này giây thì vào PENDING_COMMIT (cũ: 9 khung ~0.30 s). Chọn từ lưới mô phỏng SPEC 08
         "grace_window_sec": 0.05,        # cửa sổ chờ gộp pha (cũ: 0.15 s)
@@ -163,8 +167,8 @@ CONFIG = {
         "tail_pad_sec": 0.45,            # kéo dài đuôi đứng yên của stroke về ~0.45 s (như bank) trước khi dựng đặc trưng; None = tắt
         "ready_stable_sec": 0.1,
         "transition_lockout_sec": 0.0,   # SPEC 08B: khoảng cấm sau chốt từ (0 = tắt)
-        "lead_trim": {                   # SPEC 08B: cắt phần dẫn đầu thích nghi
-            "enabled": False,
+        "lead_trim": {                   # SPEC 08B: cắt phần dẫn đầu thích nghi (mặc định BẬT cùng chế độ ký nhanh)
+            "enabled": True,
             "max_sec": 0.45,
             "max_variants": 6,
             "good_r": 0.80,
@@ -1015,7 +1019,7 @@ def run_sentence_builder(
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
     ui_mode: "demo" | "debug" (mặc định CONFIG["ui_mode"]); ui_lang: "en" | "vi" (mặc định CONFIG["ui_lang"]).
-    fast_chain: SPEC 08 chế độ "ký nhanh" (None = lấy CONFIG["fast_chain"]["enabled"], mặc định TẮT); phím [j] bật/tắt lúc chạy.
+    fast_chain: SPEC 08 chế độ "ký nhanh" (None = lấy CONFIG["fast_chain"]["enabled"], mặc định BẬT); phím [j] bật/tắt lúc chạy.
     transition_lockout: SPEC 08B khoảng cấm sau chốt (giây). None = lấy từ cấu hình.
     lead_trim: SPEC 08B cắt phần dẫn đầu thích nghi (None = lấy từ cấu hình); phím [k] bật/tắt lúc chạy.
     """
@@ -1137,7 +1141,7 @@ def run_sentence_builder(
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
-    # SPEC 08 / 08B: chế độ "ký nhanh" và cắt chuyển tiếp. Mặc định TẮT => make_segmenter(CONFIG) như cũ.
+    # SPEC 08 / 08B: chế độ "ký nhanh" và cắt chuyển tiếp. Mặc định BẬT (CONFIG["fast_chain"]); --no-fast-chain => make_segmenter(CONFIG) như cũ.
     fc_cfg: Dict[str, Any] = dict(CONFIG.get("fast_chain", {}))
     if transition_lockout is not None:
         fc_cfg["transition_lockout_sec"] = float(transition_lockout)
@@ -1203,7 +1207,8 @@ def run_sentence_builder(
     show_help = False
     demo_hud = DemoHUD(phrase_lookup=lambda k, lg: get_asl_phrase(k, lang=lg, default=""))
     hud_warned = False
-    speech_service.set_en_speaker(speak_async)
+    queued_speaker = QueuedSpeaker(rate=175, max_queue=4)
+    speech_service.set_en_speaker(queued_speaker.speak)
     speech_service.init_speech()  # dò giọng tiếng Việt ở luồng nền (không chặn)
 
     # Quản lý Vệt sáng chuyển động neon (R4 Motion Trail)
@@ -1265,7 +1270,7 @@ def run_sentence_builder(
     cam_last_v_norm = 0.0   # v_norm của khung xử lý gần nhất (kết quả dò tay chạy nền nên trễ vài khung)
 
     print("\n[HƯỚNG DẪN SỬ DỤNG]")
-    print("  - Múa cử chỉ rõ ràng, khựng tay dừng dứt khoát 0.35s để chốt từ.")
+    print("  - Múa cử chỉ rõ ràng, nghỉ nhẹ ~0.2s giữa hai từ (chế độ KÝ NHANH mặc định). Nếu tắt bằng [j], phải dừng ~0.55s.")
     print("  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).")
     print("  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).")
     print("  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.")
@@ -2123,6 +2128,7 @@ def run_sentence_builder(
                     print(f"  total:     {avg_tot:6.2f} ms")
 
     finally:
+        queued_speaker.close(wait=True, timeout=3.0)
         if session_file is not None:
             try:
                 session_file.close()
@@ -2185,13 +2191,13 @@ if __name__ == "__main__":
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
     parser.add_argument("--fast-chain", action=argparse.BooleanOptionalAction, default=None,
                         help="SPEC 08: bật/tắt chế độ KÝ NHANH (nghỉ ngắn ~0.2s là đủ, chốt sớm khi đủ chắc). "
-                             "Mặc định lấy CONFIG['fast_chain']['enabled'] (TẮT). Phím [j] đổi lúc chạy.")
+                             "Mặc định lấy CONFIG['fast_chain']['enabled'] (BẬT). Dùng --no-fast-chain để về chế độ cũ. Phím [j] đổi lúc chạy.")
     parser.add_argument("--transition-lockout", type=float, default=None,
                         help="SPEC 08B: Thời gian khóa chuyển tiếp (giây) sau khi chốt cử chỉ trong fast_chain. "
                              "Mặc định None lấy từ CONFIG['fast_chain']['transition_lockout_sec'] (0.0).")
     parser.add_argument("--lead-trim", action=argparse.BooleanOptionalAction, default=None,
                         help="SPEC 08B: Bật/tắt cắt thích ứng phần dẫn đầu (adaptive lead trimming). "
-                             "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (TẮT). Phím [k] đổi lúc chạy.")
+                             "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (BẬT). Dùng --no-lead-trim để tắt. Phím [k] đổi lúc chạy.")
     args, _ = parser.parse_known_args()
 
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)

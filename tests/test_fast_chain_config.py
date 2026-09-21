@@ -36,10 +36,13 @@ class TestMakeSegmenter:
         assert seg.ready_stable_sec is None and seg.max_stroke_sec is None
         assert seg.pause_frames == 9            # số khung cũ vẫn còn đó, chỉ bị pause_sec che khi quy đổi
 
-    def test_config_predict_mac_dinh_tat(self):
+    def test_config_predict_mac_dinh_bat(self):
+        """Từ 2026-09-21 chế độ ký nhanh + cắt dẫn đầu là bản chuẩn (BẬT mặc định); --no-fast-chain quay về hành vi cũ."""
         import predict_sentence_webcam as psw
         fc = psw.CONFIG["fast_chain"]
-        assert fc["enabled"] is False
+        assert fc["enabled"] is True
+        assert fc["lead_trim"]["enabled"] is True
+        assert fc["transition_lockout_sec"] == 0.0     # khoảng cấm cố định vẫn TẮT (chưa được thử trực tiếp)
         for k in ("chain_window_sec", "pause_sec", "grace_window_sec", "early_commit", "early_min_quality", "early_min_margin",
                   "multi_phase_words", "tail_pad_sec", "min_stroke_sec"):
             assert k in fc

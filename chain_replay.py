@@ -752,6 +752,8 @@ def fast_cfg_from_args(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         return None
     cfg = dict(CONFIG["fast_chain"])
     cfg["enabled"] = True
+    # CONFIG mặc định đã BẬT lead_trim; mô phỏng chỉ bật khi có --lead-trim (giữ nguyên nghĩa các mốc S0/S1 cũ), và không sửa dict dùng chung
+    cfg["lead_trim"] = dict(cfg.get("lead_trim") or DEFAULT_LEAD_TRIM_CONFIG, enabled=False)
     if args.pause_sec is not None:
         cfg["pause_sec"] = args.pause_sec
     if args.grace is not None:
@@ -1063,6 +1065,7 @@ def _grid_task(job: Dict[str, Any]) -> Dict[str, Any]:
 def run_grid(args: argparse.Namespace, matcher: LooMatcher, words: List[WordStroke], meta: Dict[str, Any], out_dir: str) -> None:
     base = dict(CONFIG["fast_chain"])
     base["enabled"] = True
+    base["lead_trim"] = dict(base.get("lead_trim") or DEFAULT_LEAD_TRIM_CONFIG, enabled=False)   # lưới SPEC 08 gốc: không cắt dẫn đầu
     jobs = []
     for pause, grace, chain, q in itertools.product([0.30, 0.25, 0.20, 0.15, 0.12], [0.15, 0.10, 0.05], [0.0, 0.8, 1.2, 2.0], [70, 80, 90]):
         cfg = dict(base, pause_sec=pause, grace_window_sec=grace, chain_window_sec=chain, early_min_quality=q)

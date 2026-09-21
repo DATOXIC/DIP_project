@@ -19,6 +19,8 @@ import re
 import threading
 from typing import Callable, Optional
 
+from tts_queue import QueuedSpeaker
+
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_CACHE_DIR = os.path.join(_BASE_DIR, "audio_cache")
 
@@ -30,7 +32,9 @@ _discovery_started = False
 _vi_wav_any: Optional[bool] = None
 _state_lock = threading.Lock()
 _warned = set()
-_worker_lock = threading.Lock()
+_vi_speaker: Optional[QueuedSpeaker] = None
+_en_fallback_speaker: Optional[QueuedSpeaker] = None
+_wav_speaker: Optional[QueuedSpeaker] = None
 
 
 def _warn_once(tag: str, msg: str) -> None:
@@ -154,58 +158,27 @@ def get_speech_status(lang: str) -> str:
 
 # ---- phát âm ---------------------------------------------------------------
 
-def _voice_worker(text: str, voice_id: Optional[str]) -> None:
-    engine = None
-    com_ok = False
-    try:
-        try:
-            import pythoncom
-            pythoncom.CoInitialize()
-            com_ok = True
-        except Exception:
-            pass
-        import pyttsx3
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 175)
-        if voice_id:
-            engine.setProperty("voice", voice_id)
-        engine.say(text)
-        engine.runAndWait()
-    except Exception as err:
-        _warn_once("speak", f"Lỗi phát giọng nói ({err}).")
-    finally:
-        if engine is not None:
-            try:
-                if hasattr(engine, "_inLoop") and engine._inLoop:
-                    engine._inLoop = False
-                engine.stop()
-            except Exception:
-                pass
-            try:
-                import pyttsx3
-                if hasattr(pyttsx3, "_activeEngines"):
-                    pyttsx3._activeEngines.clear()
-            except Exception:
-                pass
-        if com_ok:
-            try:
-                import pythoncom
-                pythoncom.CoUninitialize()
-            except Exception:
-                pass
-        _worker_lock.release()
-
-
 def _speak_thread(text: str, voice_id: Optional[str]) -> bool:
-    """Nói bằng worker nội bộ; nếu đang bận thì bỏ qua (không xếp hàng, không chặn)."""
-    if not _worker_lock.acquire(blocking=False):
-        return False
-    try:
-        threading.Thread(target=_voice_worker, args=(text, voice_id), daemon=True).start()
-        return True
-    except Exception:
-        _worker_lock.release()
-        return False
+    """Xếp lời đọc nội bộ theo thứ tự mà không chặn luồng gọi."""
+    global _vi_speaker
+    if _vi_speaker is None:
+        _vi_speaker = QueuedSpeaker(rate=175)
+    return _vi_speaker.speak(text, voice_id=voice_id)
+
+
+def _en_fallback_thread(text: str) -> bool:
+    """Xếp lời đọc tiếng Anh nội bộ khi không có callback bên ngoài."""
+    global _en_fallback_speaker
+    if _en_fallback_speaker is None:
+        _en_fallback_speaker = QueuedSpeaker(rate=175)
+    return _en_fallback_speaker.speak(text)
+
+
+def _wav_queue() -> QueuedSpeaker:
+    global _wav_speaker
+    if _wav_speaker is None:
+        _wav_speaker = QueuedSpeaker()
+    return _wav_speaker
 
 
 def speak_word(key: str, lang: str, text: str) -> str:
@@ -223,9 +196,7 @@ def speak_word(key: str, lang: str, text: str) -> str:
         wav = _has_wav(key, lang)
         if wav is not None:
             try:
-                import winsound
-                winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                return "wav"
+                return "wav" if _wav_queue().play_wav(wav) else "busy"
             except Exception as err:
                 _warn_once("wav", f"Không phát được file âm thanh '{wav}' ({err}); chuyển sang đọc bằng TTS.")
 
@@ -241,7 +212,7 @@ def speak_word(key: str, lang: str, text: str) -> str:
 
         if _en_speaker is not None:
             return "tts" if _en_speaker(str(text)) else "busy"
-        return "tts" if _speak_thread(str(text), None) else "busy"
+        return "tts" if _en_fallback_thread(str(text)) else "busy"
     except Exception as err:
         _warn_once("speak_word", f"Lỗi giọng nói ({err}); tiếp tục chạy không có tiếng.")
         return "error"
