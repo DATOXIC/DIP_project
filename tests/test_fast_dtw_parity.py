@@ -115,7 +115,7 @@ def test_fallback_khi_ngoai_pham_vi():
     for traj, shapes, hand, has_body in _queries(slow)[:20]:
         _assert_same_result(slow.match(traj, shapes, handedness=hand, query_has_body=has_body),
                             fast.match(traj, shapes, handedness=hand, query_has_body=has_body))
-    assert fast._fast_bank is not None and not fast._fast_bank.supported   # đã nhận diện ngoài phạm vi
+    assert fast._fast_bank is not None and fast._fast_bank.supported is True   # SPEC 11 đã hỗ trợ w_z/w_s/w_r trên đường nhanh
     # lambda_shape khác 0 cũng phải quay về đường gốc
     s2, f2 = _make(False, lambda_shape=0.3), _make(True, lambda_shape=0.3)
     traj, shapes, hand, hb = _queries(s2)[7]

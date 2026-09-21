@@ -1279,6 +1279,8 @@ class _FastDTWBank:
         rows: List[np.ndarray] = []
         W: List[List[float]] = []
         body: List[bool] = []
+        repetitions: List[Optional[int]] = []
+        self.w_r = float(matcher.w_r)
         self.supported = True
         self.reason = ""
         if matcher.lambda_shape != 0.0 or matcher.lambda_shape_global != 0.0:
@@ -1289,8 +1291,6 @@ class _FastDTWBank:
             if not samples:
                 continue
             eff = matcher._get_effective_weights(wk)
-            if eff["w_z"] != 0.0 or eff["w_s"] != 0.0 or eff["w_r"] != 0.0:
-                self.supported, self.reason = False, f"trọng số w_z/w_s/w_r khác 0 ở từ {wk}"
             n0 = n
             for s in samples:
                 raw = s.get("traj_features_9d")
@@ -1304,7 +1304,8 @@ class _FastDTWBank:
                     continue
                 rows.append(t)
                 body.append(bool(s.get("body_anchor_valid", True)))
-                W.append([eff["w_p"], eff["w_a"], eff["w_m"], eff["w_n"], eff["w_b"]])
+                W.append([eff["w_p"], eff["w_a"], eff["w_m"], eff["w_n"], eff["w_b"], eff["w_z"], eff["w_s"]])
+                repetitions.append(s.get("rep_count"))
                 n += 1
             if n > n0:
                 self.words.append(wk)
@@ -1315,8 +1316,10 @@ class _FastDTWBank:
         if not self.supported:
             return
         T = np.stack(rows).astype(np.float32)                    # (N, K, D)
-        self.W = np.array(W, dtype=np.float32)                   # (N, 5)
+        self.W = np.array(W, dtype=np.float32)                   # (N, 7)
         self.body = np.array(body, dtype=bool)
+        self.rep = np.array([int(value) if value is not None else 0 for value in repetitions], dtype=np.int32)
+        self.rep_valid = np.array([value is not None for value in repetitions], dtype=bool)
         # Chỉ số dải: hàng i (0-based), offset o -> j = i - R + o; hợp lệ nếu 0 <= j < K.
         ii = np.arange(K)[:, None]
         oo = np.arange(NB)[None, :]
@@ -1329,16 +1332,18 @@ class _FastDTWBank:
         self.ang = np.ascontiguousarray(Tb[:, :, 4:9])
         self.nrm = np.ascontiguousarray(Tb[:, :, 9:12])
         self.dang = np.ascontiguousarray(Tb[:, :, 12:17])
+        self.z = np.ascontiguousarray(Tb[:, :, 17])
         self.bod = np.ascontiguousarray(Tb[:, :, 18:20])
+        self.abd = np.ascontiguousarray(Tb[:, :, 20:24])
         self.penalty = np.where(valid, 0.0, np.inf).astype(np.float32)[:, :, None]   # (K, NB, 1)
 
-    def distances(self, q: np.ndarray, query_has_body: bool) -> np.ndarray:
+    def distances(self, q: np.ndarray, query_has_body: bool, q_rep: Optional[int] = None) -> np.ndarray:
         """Khoảng cách DTW (đã chia K) từ query (K, 24) tới TẤT CẢ template; 999.0 nếu không tới được đích."""
         K, R = _FAST_K, _FAST_R
         NB = 2 * R + 1
         N = self.N
         q = np.asarray(q, dtype=np.float32)
-        wp, wa, wm, wn, wb = (self.W[:, c] for c in range(5))
+        wp, wa, wm, wn, wb, wz, ws = (self.W[:, c] for c in range(7))
         wb = np.where(self.body & bool(query_has_body), wb, np.float32(0.0)).astype(np.float32)
         dpos = np.hypot(q[:, None, 0, None] - self.pos[:, :, 0], q[:, None, 1, None] - self.pos[:, :, 1]) / _FAST_SQRT2
         ddir = np.hypot(q[:, None, 2, None] - self.dirv[:, :, 0], q[:, None, 3, None] - self.dirv[:, :, 1]) / _FAST_SQRT2
@@ -1349,6 +1354,10 @@ class _FastDTWBank:
         dn = (np.float32(1.0) - cos) * np.float32(0.5)
         dbody = np.hypot(q[:, None, 18, None] - self.bod[:, :, 0], q[:, None, 19, None] - self.bod[:, :, 1]) / _FAST_SQRT2
         C = wp * dpos + wm * ddir + wa * dang + wn * dn + wb * dbody + self.penalty   # (K, NB, N)
+        if np.any(wz != 0.0):
+            C = C + wz * np.abs(q[:, None, 17, None] - self.z)
+        if np.any(ws != 0.0):
+            C = C + ws * (np.sqrt(np.square(q[:, None, 20:24, None] - self.abd).sum(2)) / np.float32(2.0))
 
         # Quy hoạch động theo hàng trong dải. Dprev[o] = D[i-1, j = i-1-R+o]; ô thứ NB luôn là inf.
         Dprev = np.full((NB + 1, N), np.inf, dtype=np.float32)
@@ -1369,9 +1378,16 @@ class _FastDTWBank:
             D[NB] = np.inf
             Dprev, D = D, Dprev
         tot = Dprev[R]                                       # i = K-1, j = K-1 -> offset R
-        return np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+        result = np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+        wr = self._repetition_weight()
+        if wr != 0.0 and q_rep is not None:
+            result = result + np.where(self.rep_valid, np.float32(wr * np.abs(int(q_rep) - self.rep)), np.float32(0.0))
+        return result
 
-    def distances_many(self, qs: np.ndarray, has_body: List[bool], chunk: int = 32) -> np.ndarray:
+    def _repetition_weight(self) -> float:
+        return self.w_r
+
+    def distances_many(self, qs: np.ndarray, has_body: List[bool], chunk: int = 32, q_reps: Optional[List[Optional[int]]] = None) -> np.ndarray:
         """
         SPEC 09 Nhiệm vụ B: như distances() nhưng cho NHIỀU query một lượt. qs (Q, K, 24); has_body (Q,).
         Trả (Q, N). Thêm một trục query đứng đầu để chi phí cố định của numpy (vòng lặp quy hoạch động K x NB bước, mỗi bước
@@ -1381,12 +1397,12 @@ class _FastDTWBank:
         qs = np.asarray(qs, dtype=np.float32)
         hb = np.asarray([bool(b) for b in has_body], dtype=bool)
         if qs.shape[0] > chunk:
-            return np.concatenate([self.distances_many(qs[a:a + chunk], hb[a:a + chunk], chunk) for a in range(0, qs.shape[0], chunk)], axis=0)
+            return np.concatenate([self.distances_many(qs[a:a + chunk], hb[a:a + chunk], chunk, None if q_reps is None else q_reps[a:a + chunk]) for a in range(0, qs.shape[0], chunk)], axis=0)
         K, R = _FAST_K, _FAST_R
         NB = 2 * R + 1
         N = self.N
         Q = qs.shape[0]
-        wp, wa, wm, wn, wb0 = (self.W[:, c] for c in range(5))
+        wp, wa, wm, wn, wb0, wz, ws = (self.W[:, c] for c in range(7))
         wb = np.where(self.body[None, :] & hb[:, None], wb0[None, :], np.float32(0.0)).astype(np.float32)    # (Q, N)
         dpos = np.hypot(qs[:, :, None, 0, None] - self.pos[:, :, 0], qs[:, :, None, 1, None] - self.pos[:, :, 1]) / _FAST_SQRT2
         ddir = np.hypot(qs[:, :, None, 2, None] - self.dirv[:, :, 0], qs[:, :, None, 3, None] - self.dirv[:, :, 1]) / _FAST_SQRT2
@@ -1397,6 +1413,10 @@ class _FastDTWBank:
         dn = (np.float32(1.0) - cos) * np.float32(0.5)
         dbody = np.hypot(qs[:, :, None, 18, None] - self.bod[:, :, 0], qs[:, :, None, 19, None] - self.bod[:, :, 1]) / _FAST_SQRT2
         C = wp * dpos + wm * ddir + wa * dang + wn * dn + wb[:, None, None, :] * dbody + self.penalty     # (Q, K, NB, N)
+        if np.any(wz != 0.0):
+            C = C + wz[None, None, None, :] * np.abs(qs[:, :, None, 17, None] - self.z[None, :, :, :])
+        if np.any(ws != 0.0):
+            C = C + ws[None, None, None, :] * (np.sqrt(np.square(qs[:, :, None, 20:24, None] - self.abd[None, :, :, :, :]).sum(3)) / np.float32(2.0))
 
         Dprev = np.full((Q, NB + 1, N), np.inf, dtype=np.float32)
         D = np.empty((Q, NB + 1, N), dtype=np.float32)
@@ -1416,7 +1436,15 @@ class _FastDTWBank:
             D[:, NB] = np.inf
             Dprev, D = D, Dprev
         tot = Dprev[:, R]                                    # (Q, N)
-        return np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+        result = np.where(np.isinf(tot), np.float32(999.0), tot / np.float32(K))
+        wr = self._repetition_weight()
+        if wr != 0.0 and q_reps is not None:
+            rep_values = np.array([int(value) if value is not None else 0 for value in q_reps], dtype=np.int32)
+            rep_delta = np.abs(rep_values[:, None] - self.rep[None, :]).astype(np.float32)
+            rep_delta = np.where(self.rep_valid[None, :], rep_delta, np.float32(0.0))
+            rep_present = np.array([value is not None for value in q_reps], dtype=bool)
+            result = result + np.where(rep_present[:, None], np.float32(wr) * rep_delta, np.float32(0.0))
+        return result
 
 
 class GoldenTriadDTWMatcher:
@@ -1896,7 +1924,7 @@ class GoldenTriadDTWMatcher:
             parts.append((wk, id(samples), tuple(sig_s), tuple(sorted(eff.items()))))
         return tuple(parts)
 
-    def _fast_min_distances(self, query_traj_9d: Any, query_has_body: bool) -> Optional[Dict[str, float]]:
+    def _fast_min_distances(self, query_traj_9d: Any, query_has_body: bool, query_rep_count: Optional[int] = None) -> Optional[Dict[str, float]]:
         """
         Trả {word_key: min_dist} tính bằng đường nhanh, hoặc None nếu phải dùng đường gốc
         (tắt bằng cờ/biến môi trường, cấu hình ngoài phạm vi hỗ trợ, hoặc lỗi trong đường nhanh).
@@ -1916,7 +1944,7 @@ class GoldenTriadDTWMatcher:
             bank = self._fast_bank
             if not bank.supported:
                 return None
-            d = bank.distances(q, query_has_body)
+            d = bank.distances(q, query_has_body, query_rep_count)
             return {wk: float(np.min(d[a:b])) for wk, (a, b) in zip(bank.words, bank.slices)}
         except Exception as e:
             if mode == "strict":
@@ -1927,7 +1955,7 @@ class GoldenTriadDTWMatcher:
                 print(f"[!] Đường DTW nhanh gặp lỗi ({type(e).__name__}: {e}) -> quay về đường DTW gốc (chậm hơn).")
             return None
 
-    def _fast_min_distances_many(self, queries_9d: List[Any], has_body: List[bool]) -> Optional[List[Dict[str, float]]]:
+    def _fast_min_distances_many(self, queries_9d: List[Any], has_body: List[bool], query_rep_counts: Optional[List[Optional[int]]] = None) -> Optional[List[Dict[str, float]]]:
         """
         SPEC 09 Nhiệm vụ B: như _fast_min_distances nhưng cho nhiều query (đã canonical) một lượt.
         Trả danh sách {word_key: min_dist} theo thứ tự query, hoặc None nếu phải dùng đường gốc (cùng điều kiện như bản đơn lẻ:
@@ -1953,7 +1981,7 @@ class GoldenTriadDTWMatcher:
             bank = self._fast_bank
             if not bank.supported:
                 return None
-            d = bank.distances_many(np.stack(qs), has_body)
+            d = bank.distances_many(np.stack(qs), has_body, q_reps=query_rep_counts)
             return [{wk: float(np.min(d[i, a:b])) for wk, (a, b) in zip(bank.words, bank.slices)} for i in range(d.shape[0])]
         except Exception as e:
             if mode == "strict":
@@ -2091,7 +2119,7 @@ class GoldenTriadDTWMatcher:
 
         # Đường nhanh: min khoảng cách theo từ cho TẤT CẢ template một lượt (None => dùng đường gốc bên dưới).
         # _precomputed_fast_min (nội bộ, SPEC 09 match_many): min khoảng cách theo từ đã tính sẵn bằng đường nhanh gộp query.
-        fast_min = _precomputed_fast_min if _precomputed_fast_min is not None else self._fast_min_distances(query_traj_9d, query_has_body)
+        fast_min = _precomputed_fast_min if _precomputed_fast_min is not None else self._fast_min_distances(query_traj_9d, query_has_body, q_rep)
         verify_fast = (os.environ.get("DIP_FAST_DTW", "").strip().lower() == "verify")
 
         for word_key, word_data in self.vocabulary.items():
@@ -2300,7 +2328,10 @@ class GoldenTriadDTWMatcher:
                     canon.append(c)
             fast = None
             if self.vocabulary and all(c is not None for c in canon):
-                fast = self._fast_min_distances_many(canon, [bool(qq[3]) for qq in queries])
+                reps = None
+                if self.w_r > 0.0:
+                    reps = [compute_repetition_count(c[:, 0], c[:, 1]) for c in canon]
+                fast = self._fast_min_distances_many(canon, [bool(qq[3]) for qq in queries], reps)
         except Exception:
             fast = None
         if fast is None or len(fast) != len(queries):
