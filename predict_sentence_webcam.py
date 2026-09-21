@@ -93,7 +93,6 @@ from dynamic_dtw_engine import (
 )
 # Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
 import speech_service
-from tts_queue import QueuedSpeaker
 from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
@@ -1207,8 +1206,6 @@ def run_sentence_builder(
     show_help = False
     demo_hud = DemoHUD(phrase_lookup=lambda k, lg: get_asl_phrase(k, lang=lg, default=""))
     hud_warned = False
-    queued_speaker = QueuedSpeaker(rate=175, max_queue=4)
-    speech_service.set_en_speaker(queued_speaker.speak)
     speech_service.init_speech()  # dò giọng tiếng Việt ở luồng nền (không chặn)
 
     # Quản lý Vệt sáng chuyển động neon (R4 Motion Trail)
@@ -2128,7 +2125,7 @@ def run_sentence_builder(
                     print(f"  total:     {avg_tot:6.2f} ms")
 
     finally:
-        queued_speaker.close(wait=True, timeout=3.0)
+        speech_service.shutdown()
         if session_file is not None:
             try:
                 session_file.close()

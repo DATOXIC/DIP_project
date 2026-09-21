@@ -32,6 +32,8 @@ _discovery_started = False
 _vi_wav_any: Optional[bool] = None
 _state_lock = threading.Lock()
 _warned = set()
+_speaker: Optional[QueuedSpeaker] = None
+# Tên tương thích với test/caller cũ; đường chạy mặc định không khởi tạo các speaker này.
 _vi_speaker: Optional[QueuedSpeaker] = None
 _en_fallback_speaker: Optional[QueuedSpeaker] = None
 _wav_speaker: Optional[QueuedSpeaker] = None
@@ -89,7 +91,6 @@ def _is_vi_voice(voice) -> bool:
 def _discover_vi_voice() -> None:
     """Chạy trong luồng nền: liệt kê giọng SAPI và ghi nhớ giọng Việt (nếu có)."""
     global _vi_voice_id, _vi_checked
-    engine = None
     com_ok = False
     try:
         try:
@@ -98,26 +99,18 @@ def _discover_vi_voice() -> None:
             com_ok = True
         except Exception:
             pass
-        import pyttsx3
-        engine = pyttsx3.init()
-        for v in engine.getProperty("voices"):
-            if _is_vi_voice(v):
-                _vi_voice_id = v.id
+        import win32com.client
+        voice = win32com.client.Dispatch("SAPI.SpVoice")
+        for token in voice.GetVoices():
+            token_id = str(getattr(token, "Id", ""))
+            token_name = str(getattr(token, "GetDescription", lambda: "")())
+            language = str(getattr(token, "Language", ""))
+            if "42a" in language.lower() or "vietnam" in token_name.lower() or "vietnam" in token_id.lower():
+                _vi_voice_id = token_id
                 break
     except Exception as err:
         _warn_once("discover", f"Không liệt kê được giọng nói hệ thống ({err}).")
     finally:
-        if engine is not None:
-            try:
-                engine.stop()
-            except Exception:
-                pass
-            try:
-                import pyttsx3
-                if hasattr(pyttsx3, "_activeEngines"):
-                    pyttsx3._activeEngines.clear()
-            except Exception:
-                pass
         if com_ok:
             try:
                 import pythoncom
@@ -142,6 +135,15 @@ def _has_wav(key: str, lang: str) -> Optional[str]:
     return path if os.path.isfile(path) else None
 
 
+def get_speaker() -> QueuedSpeaker:
+    """Trả về hàng đợi âm thanh chung, tạo lười khi cần."""
+    global _speaker
+    with _state_lock:
+        if _speaker is None:
+            _speaker = QueuedSpeaker(rate=175, max_queue=4)
+        return _speaker
+
+
 def get_speech_status(lang: str) -> str:
     """'muted' | 'no_vi_voice' | 'on' — dùng cho nhãn loa trên HUD."""
     if _muted:
@@ -160,25 +162,28 @@ def get_speech_status(lang: str) -> str:
 
 def _speak_thread(text: str, voice_id: Optional[str]) -> bool:
     """Xếp lời đọc nội bộ theo thứ tự mà không chặn luồng gọi."""
-    global _vi_speaker
-    if _vi_speaker is None:
-        _vi_speaker = QueuedSpeaker(rate=175)
-    return _vi_speaker.speak(text, voice_id=voice_id)
+    speaker = _vi_speaker if _vi_speaker is not None else get_speaker()
+    return speaker.speak(text, voice_id=voice_id)
 
 
 def _en_fallback_thread(text: str) -> bool:
     """Xếp lời đọc tiếng Anh nội bộ khi không có callback bên ngoài."""
-    global _en_fallback_speaker
-    if _en_fallback_speaker is None:
-        _en_fallback_speaker = QueuedSpeaker(rate=175)
-    return _en_fallback_speaker.speak(text)
+    speaker = _en_fallback_speaker if _en_fallback_speaker is not None else get_speaker()
+    return speaker.speak(text)
 
 
 def _wav_queue() -> QueuedSpeaker:
-    global _wav_speaker
-    if _wav_speaker is None:
-        _wav_speaker = QueuedSpeaker()
-    return _wav_speaker
+    return _wav_speaker if _wav_speaker is not None else get_speaker()
+
+
+def shutdown() -> None:
+    """Đóng hàng đợi âm thanh chung khi kết thúc phiên."""
+    global _speaker
+    with _state_lock:
+        speaker = _speaker
+        _speaker = None
+    if speaker is not None:
+        speaker.close(wait=True, timeout=3.0)
 
 
 def speak_word(key: str, lang: str, text: str) -> str:
@@ -192,6 +197,9 @@ def speak_word(key: str, lang: str, text: str) -> str:
             return "muted"
         if not text or not str(text).strip():
             return "empty"
+
+        if lang == "en" and _en_speaker is not None:
+            return "tts" if _en_speaker(str(text)) else "busy"
 
         wav = _has_wav(key, lang)
         if wav is not None:
@@ -210,8 +218,6 @@ def speak_word(key: str, lang: str, text: str) -> str:
                 return "no_vi_voice"
             return "tts" if _speak_thread(str(text), _vi_voice_id) else "busy"
 
-        if _en_speaker is not None:
-            return "tts" if _en_speaker(str(text)) else "busy"
         return "tts" if _en_fallback_thread(str(text)) else "busy"
     except Exception as err:
         _warn_once("speak_word", f"Lỗi giọng nói ({err}); tiếp tục chạy không có tiếng.")

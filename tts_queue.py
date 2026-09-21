@@ -1,7 +1,11 @@
 """Bộ đọc âm thanh tuần tự, không chặn luồng chính."""
 
 import queue
+import io
+import math
+import os
 import threading
+import time
 from typing import Callable, Optional, Tuple
 
 
@@ -24,7 +28,9 @@ class QueuedSpeaker:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._closed = False
-        self._engine = None
+        self._voice = None
+        self._stats = {"enqueued": 0, "played": 0, "dropped": 0, "errors": 0}
+        self._debug_started = time.perf_counter()
 
     def speak(self, text: str, voice_id: Optional[str] = None) -> bool:
         if not isinstance(text, str):
@@ -53,8 +59,12 @@ class QueuedSpeaker:
                     break
                 if old_item is None:
                     continue
+                self._stats["dropped"] += 1
+                self._debug("bỏ từ cũ do hàng đầy", f"con_lai={self._q.qsize()}")
             self._q.put(item)
+            self._stats["enqueued"] += 1
             self._ensure_thread_locked()
+            self._debug("xếp hàng", f"dài={self._q.qsize()}")
         return True
 
     def _ensure_thread_locked(self) -> None:
@@ -64,42 +74,41 @@ class QueuedSpeaker:
 
     def _speak_one(self, text: str, voice_id: Optional[str]) -> None:
         try:
-            import pyttsx3
+            import win32com.client
 
-            if self._engine is None:
-                self._engine = pyttsx3.init()
-                self._engine.setProperty("rate", self.rate)
+            if self._voice is None:
+                self._voice = win32com.client.Dispatch("SAPI.SpVoice")
+            self._voice.Rate = int(math.log(max(1, self.rate) / 200.0, 1.1))
+            if "DIP_TTS_VOLUME" in os.environ:
+                self._voice.Volume = max(0, min(100, int(os.environ["DIP_TTS_VOLUME"])))
             if voice_id:
-                self._engine.setProperty("voice", voice_id)
-            self._engine.say(text)
-            self._engine.runAndWait()
+                for token in self._voice.GetVoices():
+                    if str(getattr(token, "Id", "")) == voice_id:
+                        self._voice.Voice = token
+                        break
+            self._voice.Speak(text, 0)
         except Exception:
-            self._reset_engine()
+            self._voice = None
             raise
 
     def _reset_engine(self) -> None:
-        engine = self._engine
-        self._engine = None
-        if engine is not None:
-            try:
-                if hasattr(engine, "_inLoop") and engine._inLoop:
-                    engine._inLoop = False
-                engine.stop()
-            except Exception:
-                pass
-        try:
-            import pyttsx3
-
-            if hasattr(pyttsx3, "_activeEngines"):
-                pyttsx3._activeEngines.clear()
-        except Exception:
-            pass
+        self._voice = None
 
     @staticmethod
     def _play_wav(path: str) -> None:
         import winsound
 
-        winsound.PlaySound(path, winsound.SND_FILENAME)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_NODEFAULT)
+
+    def stats(self) -> dict:
+        with self._lock:
+            return dict(self._stats)
+
+    def _debug(self, event: str, detail: str = "") -> None:
+        if os.environ.get("DIP_TTS_DEBUG") == "1":
+            elapsed = time.perf_counter() - self._debug_started
+            suffix = f" {detail}" if detail else ""
+            print(f"[TTS-dbg] t={elapsed:.3f} {event}{suffix}")
 
     def _worker(self) -> None:
         com_ok = False
@@ -116,6 +125,8 @@ class QueuedSpeaker:
                 if item is None:
                     break
                 kind, value, voice_id = item
+                started = time.perf_counter()
+                self._debug("bắt đầu phát", f"loại={kind} giá trị={value}")
                 try:
                     if kind == "wav":
                         self._play_wav(value)
@@ -123,7 +134,13 @@ class QueuedSpeaker:
                         self._speak_fn(value)
                     else:
                         self._speak_one(value, voice_id)
+                    with self._lock:
+                        self._stats["played"] += 1
+                    self._debug("phát xong", f"thời_lượng={time.perf_counter() - started:.3f}")
                 except Exception as err:
+                    with self._lock:
+                        self._stats["errors"] += 1
+                    self._debug("lỗi", str(err))
                     print(f"[TTS] Lỗi phát âm '{value}': {err}")
         finally:
             self._reset_engine()

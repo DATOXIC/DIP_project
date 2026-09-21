@@ -189,3 +189,4 @@ cython_debug/
 /specs
 /specs
 .aider*
+/audio_cache
