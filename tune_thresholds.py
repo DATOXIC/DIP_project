@@ -46,6 +46,7 @@ if sys.platform == "win32":
 
 import numpy as np
 
+from backup_utils import backup_path_for
 from dynamic_dtw_engine import GoldenTriadDTWMatcher, compute_golden_triad_dtw_distance, canonicalize_chirality
 
 try:
@@ -237,8 +238,7 @@ def main() -> None:
     # Sao lưu file gốc trước khi ghi đè (theo quy ước đặt tên đã dùng trong repo,
     # VD: dynamic_templates.backup_v51.json)
     # ------------------------------------------------------------------
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_path = f"dynamic_templates.backup_{timestamp}.json"
+    backup_path = backup_path_for(templates_path, "backup", stem="dynamic_templates")
     shutil.copy2(templates_path, backup_path)
     print(f"\n[Backup] Đã sao lưu file gốc sang: {backup_path}")
 

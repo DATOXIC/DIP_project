@@ -111,10 +111,11 @@ def write_raw_stroke_archive(
     display_name: str,
     frame_records: List[Dict[str, Any]],
     meta: Dict[str, Any],
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    raw_dir: Optional[str] = None
 ) -> Optional[str]:
     """
-    Ghi TOÀN BỘ dữ liệu THÔ của một stroke ra raw_strokes/<WORD>/<timestamp>.json.
+    Ghi TOÀN BỘ dữ liệu THÔ của một stroke ra raw_strokes/<WORD>/<timestamp>.json (hoặc thư mục chỉ định qua raw_dir).
 
     VÌ SAO CẦN LỚP LƯU TRỮ NÀY?
     ---------------------------
@@ -131,7 +132,8 @@ def write_raw_stroke_archive(
     """
     try:
         safe_word = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(word_key)).upper()
-        out_dir = os.path.join(RAW_STROKES_DIR, safe_word)
+        target_raw_dir = raw_dir or RAW_STROKES_DIR
+        out_dir = os.path.join(target_raw_dir, safe_word)
         os.makedirs(out_dir, exist_ok=True)
 
         now = time.time()
@@ -165,7 +167,8 @@ class BackgroundRawArchiveWriter:
     Luồng ghi nền bất đồng bộ cho kho dữ liệu thô (SPEC 05B Nhiệm vụ 3b.4).
     Đảm bảo I/O ghi đĩa JSON không làm chậm vòng lặp nhận diện/thu thập.
     """
-    def __init__(self):
+    def __init__(self, raw_dir: Optional[str] = None):
+        self.raw_dir = raw_dir
         self.q = queue.Queue()
         self.worker = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker.start()
@@ -178,7 +181,7 @@ class BackgroundRawArchiveWriter:
                 break
             try:
                 word_key, display_name, frame_records, meta, session_id = item
-                write_raw_stroke_archive(word_key, display_name, frame_records, meta, session_id)
+                write_raw_stroke_archive(word_key, display_name, frame_records, meta, session_id, raw_dir=self.raw_dir)
             except Exception as e:
                 print(f"[BackgroundRawArchiveWriter] Loi luu file tho: {e}")
             finally:
@@ -323,6 +326,9 @@ def load_negative_strokes(file_path: str = "negative_strokes.json") -> List[Dict
 def save_negative_strokes(file_path: str, samples: List[Dict[str, Any]]) -> bool:
     """Lưu danh sách mẫu âm vào negative_strokes.json với schema 24D chuẩn."""
     try:
+        parent_dir = os.path.dirname(os.path.abspath(file_path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         created_at = time.strftime("%Y-%m-%d %H:%M:%S")
         if os.path.exists(file_path):
             try:
@@ -385,11 +391,19 @@ def run_dynamic_collector(
     detect_scale: Optional[float] = None,
     max_frames: Optional[int] = None,
     headless: bool = False,
-    detector_workers: Optional[int] = None
+    detector_workers: Optional[int] = None,
+    raw_dir: str = "raw_strokes"
 ):
+    global RAW_STROKES_DIR
+    RAW_STROKES_DIR = raw_dir
+    os.makedirs(raw_dir, exist_ok=True)
+
     if not session_id:
         session_id = time.strftime("%Y%m%d_%H%M%S")
     negative_file = negative_path or "negative_strokes.json"
+    neg_parent = os.path.dirname(os.path.abspath(negative_file))
+    if neg_parent:
+        os.makedirs(neg_parent, exist_ok=True)
     negative_samples = load_negative_strokes(negative_file)
     is_collecting_negative = False
     session_sample_count = 0
@@ -407,6 +421,7 @@ def run_dynamic_collector(
     print("=" * 75)
     print("  CONG CU THU MAU CU CHI DONG THU NGU VSL (DYNAMIC COLLECTOR v1.3)")
     print(f"  Session ID    : {session_id}")
+    print(f"  Raw Dir       : {raw_dir}")
     print(f"  Profile       : {profile}")
     print(f"  Dry Run       : {dry_run}")
     print(f"  Detect Scale  : {detect_scale}")
@@ -452,6 +467,9 @@ def run_dynamic_collector(
 
     # 3. Khởi tạo DTW Engine, Segmenter, Smoother, LK Fallback dùng chung
     templates_file = templates_path if templates_path is not None else CONFIG.get("templates_path", "dynamic_templates.json")
+    tpl_parent = os.path.dirname(os.path.abspath(templates_file))
+    if tpl_parent:
+        os.makedirs(tpl_parent, exist_ok=True)
     if not os.path.exists(templates_file) and not dry_run:
         empty_payload = {
             "schema_version": "1.0",
@@ -474,7 +492,10 @@ def run_dynamic_collector(
     segmenter = make_segmenter(CONFIG)
     wrist_smoother = make_wrist_smoother()
     lk_fallback = LKInertialFallback()
-    bg_archive_writer = BackgroundRawArchiveWriter()
+    try:
+        bg_archive_writer = BackgroundRawArchiveWriter(raw_dir=raw_dir)
+    except TypeError:
+        bg_archive_writer = BackgroundRawArchiveWriter()
     sliding_fps_meter = SlidingFPSMeter(window_sec=1.0)
 
     # SPEC 03: bộ dò mặt có cache (mỗi 8 frame mới chạy mạng)
@@ -1556,6 +1577,7 @@ if __name__ == "__main__":
     parser.add_argument("--detect-scale", type=float, default=None, help="Hệ số thu nhỏ frame trước khi đưa vào MediaPipe (0.5 hoặc 1.0). Mặc định đọc từ CONFIG (1.0).")
     parser.add_argument("--detector-workers", type=int, default=None, help="Số luồng làm việc song song cho MediaPipe (mặc định None = tự chọn min(3, max(1, CPU//4))).")
     parser.add_argument("--max-frames", type=int, default=None, help="Dừng sau số khung hình nhất định (dùng cho benchmark/test).")
+    parser.add_argument("--raw-dir", type=str, default="raw_strokes", help="Thư mục lưu trữ nét thô (mặc định: raw_strokes).")
     parser.add_argument("--headless", action="store_true", default=False, help="Chạy không mở cửa sổ đồ họa OpenCV (dùng cho đo benchmark).")
     args, _ = parser.parse_known_args()
     
@@ -1574,4 +1596,5 @@ if __name__ == "__main__":
         max_frames=args.max_frames,
         headless=args.headless,
         detector_workers=args.detector_workers,
+        raw_dir=args.raw_dir,
     )

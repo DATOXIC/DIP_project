@@ -185,8 +185,16 @@ cython_debug/
 /results/self_test_temp
 /results
 /raw_strokes
-/raw_strokes.backup_14fps_20260919_112500
+/archive/backups/raw_strokes.backup_*
 /specs
 /specs
 .aider*
 /audio_cache
+/raw_volunteers
+/profiles/V*
+/profiles/C_*
+/profiles/DAT_cond*
+/profiles/notes.csv
+
+# Microsoft Office lock files
+~$*

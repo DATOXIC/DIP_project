@@ -47,6 +47,8 @@ if sys.platform == "win32":
 
 import numpy as np
 
+from backup_utils import backup_path_for
+
 # ---------------------------------------------------------------------------
 # HẰNG SỐ
 # ---------------------------------------------------------------------------
@@ -388,8 +390,7 @@ def write_plan(plan: Dict[str, Any], path: str) -> Optional[str]:
         if strip(old) == strip(plan):
             print(f"[Plan] {path} đã đúng nội dung (cùng seed/từ vựng) — không ghi lại.")
             return None
-        base = path[:-5] if path.endswith(".json") else path
-        backup = f"{base}.backup_replan_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        backup = backup_path_for(path, "backup_replan")
         os.replace(path, backup)
         print(f"[Plan] Đã sao lưu kế hoạch cũ -> {backup}")
     with open(path, "w", encoding="utf-8") as f:

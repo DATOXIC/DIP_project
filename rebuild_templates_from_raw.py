@@ -66,6 +66,7 @@ if sys.platform == "win32":
 
 import numpy as np
 
+from backup_utils import backup_path_for
 from predict_sentence_webcam import (
     compute_joint_flexion_angles,
     compute_palm_normal_vector,
@@ -103,6 +104,8 @@ def parse_args() -> argparse.Namespace:
                    help="Khong loai stroke nam ngoai cong thoi luong [0.40s, 2.50s].")
     p.add_argument("--verify-against", type=str, default=None,
                    help="Doi chieu vector tai tao voi mot file template da co (do sai so round-trip).")
+    p.add_argument("--exclude-session-prefix", action="append", default=[],
+                   help="Bo stroke tho thuoc phien co tien to nay (lap duoc, vi du --exclude-session-prefix V).")
     p.add_argument("--tolerance", type=float, default=1e-4,
                    help="Nguong sai so round-trip coi la DAT (mac dinh 1e-4).")
     return p.parse_args()
@@ -246,9 +249,7 @@ def backup_existing(path: str) -> Optional[str]:
     """Sao luu file se bi ghi de, theo dung quy uoc ten cua project."""
     if not os.path.exists(path):
         return None
-    stem = os.path.splitext(os.path.basename(path))[0]
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    bak = os.path.join(os.path.dirname(path) or ".", f"{stem}.backup_before_rebuild_{stamp}.json")
+    bak = backup_path_for(path, "backup_before_rebuild")
     shutil.copy2(path, bak)
     print(f"[Backup] Da sao luu file cu -> {bak}")
     return bak
@@ -273,6 +274,8 @@ def main() -> None:
     print(f"  Thu muc tho        : {args.raw_dir}  ({len(raw_files)} stroke)")
     print(f"  Nguon goc/phap tuyen: {'DA LUU trong file tho' if args.use_stored_features else 'TINH LAI tu 21 moc ban tay'}")
     print(f"  Cong thoi luong    : {'TAT' if args.no_duration_gate else f'[{STROKE_DURATION_MIN_SEC}, {STROKE_DURATION_MAX_SEC}] s'}")
+    if args.exclude_session_prefix:
+        print(f"  Loai tien to phien : {args.exclude_session_prefix}")
 
     vocab: Dict[str, Dict[str, Any]] = {}
     n_ok = n_skip_dur = n_skip_err = 0
@@ -288,6 +291,10 @@ def main() -> None:
 
         word_key = raw.get("word_key")
         if not word_key or word_key == "__NEG__":
+            continue
+
+        session_id = str(raw.get("session_id", ""))
+        if any(session_id.startswith(pfx) for pfx in args.exclude_session_prefix if pfx):
             continue
 
         dur = float(raw.get("stroke_duration_sec") or 0.0)

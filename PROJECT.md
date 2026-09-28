@@ -84,5 +84,5 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 - Test Files (Owned by M_TEST & M_FINAL Workers):
   - `c:\DIP\DIP_project\tests\`
   - `c:\DIP\DIP_project\run_e2e_tests.py`
-  - `c:\DIP\DIP_project\TEST_INFRA.md`
-  - `c:\DIP\DIP_project\TEST_READY.md`
+  - `c:\DIP\DIP_project\docs\TEST_INFRA.md`
+  - `c:\DIP\DIP_project\docs\TEST_READY.md`

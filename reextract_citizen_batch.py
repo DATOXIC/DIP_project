@@ -29,7 +29,7 @@ script vẫn ghi file nhưng thoát với mã 3 và in cảnh báo DỪNG (đừ
 
 CÁCH DÙNG
 ---------
-    py reextract_citizen_batch.py --src asl_citizen_templates.backup_before_bye_delete_20260918_183236.json
+    py reextract_citizen_batch.py --src archive/backups/asl_citizen_templates.backup_before_bye_delete_20260918_183236.json
     py reextract_citizen_batch.py --limit 5            # thử nhanh 5 mẫu đầu, ghi ra file tạm
 """
 
@@ -50,6 +50,7 @@ if sys.platform == "win32":
 
 import numpy as np
 
+from backup_utils import backup_path_for
 from inspect_and_trim_asl_citizen import ASLCitizenTrimmer
 
 PAD_FRAMES = 4                 # đệm quanh trim_range cho cơ chế nội suy 1-3 frame
@@ -203,8 +204,7 @@ def main() -> None:
         "vocabulary": out_vocab,
     }
     if os.path.exists(args.out):
-        stem = os.path.splitext(args.out)[0]
-        bak = f"{stem}.backup_before_reextract_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        bak = backup_path_for(args.out, "backup_before_reextract")
         shutil.copy2(args.out, bak)
         print(f"[Backup] {args.out} -> {bak}")
     with open(args.out, "w", encoding="utf-8") as f:
