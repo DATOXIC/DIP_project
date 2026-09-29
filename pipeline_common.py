@@ -447,6 +447,17 @@ def make_segmenter(config: Optional[Dict[str, Any]] = None, fast_chain: Optional
         kwargs["chain_window_sec"] = float(fast_chain.get("chain_window_sec", 0.0) or 0.0)
         if fast_chain.get("transition_lockout_sec") is not None:
             kwargs["transition_lockout_sec"] = float(fast_chain["transition_lockout_sec"])
+    # Chuẩn hóa theo thời gian (tùy chọn): cfg["time_norm"] = {"enabled": bool, "ref_fps", "max_stroke_sec", "swipe_window_sec", ...}.
+    # Vắng khóa hoặc enabled=False => hoàn toàn không đổi gì (collector dùng SHARED_CONFIG không có khóa này).
+    tn = cfg.get("time_norm")
+    if tn and tn.get("enabled"):
+        kwargs["time_normalized"] = True
+        kwargs["ref_fps"] = float(tn.get("ref_fps", 30.0))
+        for key in ("swipe_window_sec", "swipe_max_buffer_sec", "swipe_min_span_sec", "v_scale_min"):
+            if tn.get(key) is not None:
+                kwargs[key] = float(tn[key])
+        if tn.get("max_stroke_sec") is not None and "max_stroke_sec" not in kwargs:
+            kwargs["max_stroke_sec"] = float(tn["max_stroke_sec"])
     return KineticPauseSegmenter(**kwargs)
 
 

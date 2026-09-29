@@ -372,6 +372,17 @@ class KineticPauseSegmenter:
         # SPEC 08B (LOẠI PHẦN CHUYỂN TIẾP): khoảng cấm sau chốt (giây, 0 = tắt).
         # Sau mỗi lần chốt một stroke (hết grace hoặc force_commit), trong T giây mọi chuyển động bị bỏ qua.
         transition_lockout_sec: float = 0.0,
+        # ---- CHUẨN HÓA THEO THỜI GIAN (tùy chọn, mặc định TẮT = bit-giống hệt hành vi cũ) ----
+        # Ngưỡng vận tốc (v_start/v_stop) và bộ dò Swipe-Left vốn tính THEO KHUNG (v = độ dời / khung). Khi camera chỉ có
+        # 6-14 khung MỚI/giây (thiếu sáng) hoặc 60 khung/giây, cùng một chuyển động vật lý cho v khác hẳn nên ngưỡng lệch:
+        # không vào được RECORDING ở 60 fps, và Swipe nhầm ở tần số thấp. time_normalized=True quy vận tốc về "mỗi khung ở
+        # ref_fps" bằng dt ước lượng từ dấu thời gian thật, và dò Swipe trong cửa sổ THỜI GIAN (giây) với ngưỡng vận tốc tính theo giây.
+        time_normalized: bool = False,
+        ref_fps: float = 30.0,
+        swipe_window_sec: float = 0.17,          # ~5 khoảng khung ở 30 fps (cũ: 6 mẫu gần nhất)
+        swipe_max_buffer_sec: Optional[float] = None,   # None = swipe_max_buffer_frames / ref_fps
+        swipe_min_span_sec: float = 0.08,        # tính vận tốc đỉnh trên khoảng >= chừng này giây (chống khung trùng làm vận tốc bùng nổ)
+        v_scale_min: float = 0.0,                # cận dưới của hệ số quy đổi vận tốc; 1.0 = chỉ bù khi fps CAO hơn ref_fps (không hạ v khi fps thấp)
     ):
         self.v_start_ratio = v_start_ratio
         self.v_stop_ratio = v_stop_ratio
@@ -392,7 +403,14 @@ class KineticPauseSegmenter:
         self.pause_counter = 0
         self.prev_wrist: Optional[Tuple[float, float]] = None
         self.last_swipe_time = -999.0
-        self.recent_wrists = deque(maxlen=6)   # Cửa sổ trượt 6 frames phát hiện Swipe
+        self.time_normalized = bool(time_normalized)
+        self.ref_fps = float(ref_fps)
+        self.swipe_window_sec = float(swipe_window_sec)
+        self.swipe_max_buffer_sec = swipe_max_buffer_sec
+        self.swipe_min_span_sec = float(swipe_min_span_sec)
+        self.v_scale_min = float(v_scale_min)
+        # Cửa sổ trượt 6 frames phát hiện Swipe (chế độ theo thời gian cần chứa được ~0.17 s ở 60 fps trở lên => 90 mẫu)
+        self.recent_wrists = deque(maxlen=90 if self.time_normalized else 6)
         self._pending_deadline: float = 0.0
         self.ready_counter = 0
         self.merge_count = 0
@@ -526,6 +544,10 @@ class KineticPauseSegmenter:
             v_norm = 0.0
             dx, dy = 0.0, 0.0
 
+        if self.time_normalized:
+            # Quy về "mỗi khung ở ref_fps": v_mỗi_giây / ref_fps = v_mỗi_khung * (1/ref_fps) / dt_ước_lượng.
+            v_norm *= max(self.v_scale_min, (1.0 / self.ref_fps) / self._dt_estimate())
+
         self.prev_wrist = (wrist_x, wrist_y)
         self.recent_wrists.append((wrist_x, wrist_y, dx, dy, safe_palm, timestamp))
 
@@ -541,8 +563,14 @@ class KineticPauseSegmenter:
         #    nó vô hiệu hóa Swipe hoàn toàn — state luôn rời IDLE ngay khung đầu của
         #    chính cú quẹt do v_start_ratio (0.08) thấp hơn nhiều peak_vx của Swipe (0.20).
         is_swipe_left = False
+        if self.time_normalized:
+            max_buf_sec = self.swipe_max_buffer_sec if self.swipe_max_buffer_sec is not None else self.swipe_max_buffer_frames / self.ref_fps
+            if len(self.buffer) <= self._sec_to_frames(max_buf_sec) and self._detect_swipe_time(wrist_x, wrist_y, timestamp):
+                self.last_swipe_time = timestamp
+                self.reset()
+                return KineticState.IDLE, None, True, v_norm
         swipe_buffer_ok = len(self.buffer) <= self.swipe_max_buffer_frames
-        if swipe_buffer_ok and len(self.recent_wrists) >= 5 and (timestamp - self.last_swipe_time) >= self.swipe_cooldown_sec:
+        if (not self.time_normalized) and swipe_buffer_ok and len(self.recent_wrists) >= 5 and (timestamp - self.last_swipe_time) >= self.swipe_cooldown_sec:
             old_x, old_y, _, _, ref_palm, _ = self.recent_wrists[0]
             delta_x_total = (wrist_x - old_x) / ref_palm
             delta_y_total = (wrist_y - old_y) / ref_palm
@@ -665,6 +693,35 @@ class KineticPauseSegmenter:
             self._open_chain_window(timestamp)   # SPEC 08: mặc định chain_window_sec = 0 => không làm gì
 
         return self.state, completed_stroke, is_swipe_left, v_norm
+
+    def _detect_swipe_time(self, wrist_x: float, wrist_y: float, timestamp: float) -> bool:
+        """
+        Swipe-Left theo THỜI GIAN (chỉ gọi khi time_normalized): cùng 3 tiêu chí như bản theo khung nhưng trong cửa sổ
+        swipe_window_sec giây và vận tốc đỉnh tính theo giây (ngưỡng -0.20 palm/khung ở ref_fps = -0.20*ref_fps palm/giây).
+        Vận tốc đỉnh đo trên khoảng >= swipe_min_span_sec để khung trùng (dx=0 rồi nhảy) không làm vận tốc bùng nổ.
+        """
+        if (timestamp - self.last_swipe_time) < self.swipe_cooldown_sec:
+            return False
+        # Camera chậm (vài khung/giây): cửa sổ phải chứa >= 3 mẫu => nới cửa sổ, đồng thời nới ngưỡng độ dời theo tỉ lệ để
+        # tốc độ trung bình tối thiểu KHÔNG đổi (swipe_threshold / swipe_window_sec palm mỗi giây).
+        window = max(self.swipe_window_sec, 2.2 * self._dt_estimate())
+        win = [it for it in self.recent_wrists if it[5] >= timestamp - window - 1e-9]
+        if len(win) < 3 or (timestamp - win[0][5]) < 0.5 * self.swipe_window_sec:
+            return False
+        old_x, old_y, _, _, ref_palm, _ = win[0]
+        delta_x_total = (wrist_x - old_x) / ref_palm
+        delta_y_total = (wrist_y - old_y) / ref_palm
+        need = self.swipe_threshold * max(1.0, (timestamp - win[0][5]) / self.swipe_window_sec)
+        if not (delta_x_total <= need and (abs(delta_x_total) / (abs(delta_y_total) + 1e-4)) >= self.swipe_ratio):
+            return False
+        peak = 0.0
+        for i in range(len(win)):
+            for k in range(i - 1, -1, -1):
+                span = win[i][5] - win[k][5]
+                if span >= self.swipe_min_span_sec:
+                    peak = min(peak, (win[i][0] - win[k][0]) / win[i][4] / span)
+                    break
+        return peak <= -0.20 * self.ref_fps
 
     def reset(self):
         """Khởi tạo lại toàn bộ trạng thái bộ đệm."""
@@ -1486,7 +1543,12 @@ class GoldenTriadDTWMatcher:
         # Đường DTW nhanh (vector hóa numpy). Đây là NGOẠI LỆ CÓ CHỦ ĐÍCH cho quy tắc "mặc định giữ hành vi cũ":
         # mặc định True vì kết quả GIỐNG hệt hàm gốc về số học (sai khác < 1e-6) mà nhanh gấp ~100 lần
         # (hết cú khựng ~0,7 s mỗi từ). Tắt bằng use_fast_dtw=False hoặc biến môi trường DIP_FAST_DTW=0.
-        use_fast_dtw: bool = True
+        use_fast_dtw: bool = True,
+        # Chế độ scale_k: độ rộng dùng để chuẩn hóa = w_từ^(1-b) * w_trung_vị^b (trung bình nhân), b = width_blend.
+        # 0.0 = giữ nguyên hành vi cũ (mỗi từ dùng độ rộng riêng); 1.0 = một thang chung (trung vị các từ).
+        # Lý do: độ rộng riêng của từ là ước lượng nhiễu từ 10-17 mẫu của MỘT người ký, nên từ ký rất đều (BYE) bị siết
+        # ngưỡng quá chặt với người lạ. Số đo: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md.
+        width_blend: float = 0.0
     ):
         self.templates_path = templates_path
         self.use_fast_dtw = bool(use_fast_dtw)
@@ -1540,6 +1602,7 @@ class GoldenTriadDTWMatcher:
         self.cache_dir = cache_dir
         self.intra_widths: Dict[str, float] = {}
         self.r_typical: float = 1.0
+        self.width_blend = min(max(float(width_blend), 0.0), 1.0)
 
         self.load_sign_weights()
         if self.templates_dict is not None:
@@ -1550,6 +1613,18 @@ class GoldenTriadDTWMatcher:
         else:
             self.load_templates()
         self.validate_weights_against_vocabulary()
+
+    def effective_width(self, word_key: str) -> float:
+        """
+        Độ rộng dùng để chuẩn hóa khoảng cách của `word_key` (chế độ scale_k). width_blend = 0 trả đúng độ rộng riêng
+        của từ (bit-giống hành vi cũ); width_blend > 0 pha trộn dạng trung bình nhân với trung vị độ rộng các từ.
+        """
+        w = self.intra_widths.get(word_key, 0.25)
+        b = self.width_blend
+        if b <= 0.0 or not self.intra_widths:
+            return w
+        med = float(np.median(list(self.intra_widths.values())))
+        return float((max(w, 1e-6) ** (1.0 - b)) * (max(med, 1e-6) ** b))
 
     def compute_intra_widths(self) -> Dict[str, float]:
         """
@@ -1570,7 +1645,10 @@ class GoldenTriadDTWMatcher:
         cache_components = []
         for vk in vocab_keys:
             w_data = self.vocabulary[vk]
-            samples = w_data.get("samples", [])
+            # SPEC 06A (chế độ A): biến thể tăng cường (is_original=False) KHÔNG tham gia tính độ rộng nội lớp — chúng
+            # nằm sát mẫu gốc cùng stroke nên sẽ kéo độ rộng (và ngưỡng k * độ rộng) co lại một cách giả tạo.
+            # Bank thường không có khóa này => is_original mặc định True => hành vi cũ giữ nguyên.
+            samples = [s for s in w_data.get("samples", []) if s.get("is_original", True) is not False]
             eff_w = self._get_effective_weights(vk)
             sample_lens = [len(s.get("traj_features_9d") or s.get("traj_features") or []) for s in samples]
             cache_components.append({
@@ -1601,7 +1679,7 @@ class GoldenTriadDTWMatcher:
 
         for word_key in vocab_keys:
             word_data = self.vocabulary[word_key]
-            samples = word_data.get("samples", [])
+            samples = [s for s in word_data.get("samples", []) if s.get("is_original", True) is not False]
             valid_samples = []
             for s in samples:
                 raw = s.get("traj_features_9d") or s.get("traj_features")
@@ -2196,7 +2274,7 @@ class GoldenTriadDTWMatcher:
                 min_dist = min(sample_distances)
                 conf = max(0.0, min(1.0, 1.0 - (min_dist / (threshold + 1e-6))))
                 if self.threshold_mode == "scale_k":
-                    intra_w_cand = self.intra_widths.get(word_key, 0.25)
+                    intra_w_cand = self.effective_width(word_key)
                     r_cand = float(min_dist / max(intra_w_cand, 1e-6))
                     denom_cand = max(self.uncertainty_k - self.r_typical, 1e-4)
                     mq_cand = 100.0 * float(np.clip((self.uncertainty_k - r_cand) / denom_cand, 0.0, 1.0))
@@ -2229,7 +2307,7 @@ class GoldenTriadDTWMatcher:
         top1 = all_candidates[0]
 
         if self.threshold_mode == "scale_k":
-            intra_w = self.intra_widths.get(top1.word_key, 0.25)
+            intra_w = self.effective_width(top1.word_key)
             word_thresh = self.threshold_k * intra_w
             unc_thresh = self.uncertainty_k * intra_w
             r = float(top1.distance / max(intra_w, 1e-6))

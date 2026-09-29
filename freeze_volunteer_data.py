@@ -66,6 +66,15 @@ def signer_of(session_id: str, notes_data: Optional[List[Dict[str, str]]] = None
     if m:
         return m.group(1)
 
+    # 2b. Tình nguyện viên theo tên (people.py): Mai_..., Phi_...
+    try:
+        import people
+        for v in people.volunteer_ids():
+            if session_id.startswith(f"{v}_"):
+                return v
+    except Exception:
+        pass
+
     # 3. Mac dinh la DAT
     return "DAT"
 

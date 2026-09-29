@@ -185,6 +185,22 @@ def validate_and_hash_config(config_path: str) -> Tuple[Dict[str, Any], str]:
                     raise ValueError
             except Exception:
                 raise ValueError(f"Định dạng thresholds scale_k không hợp lệ: '{thresh}'. Ví dụ: 'scale_k:1.6'")
+        elif isinstance(thresh, str) and thresh.startswith(("global_k:", "blend_k:")):
+            # global_k:<k> = thang độ rộng chung (width_blend=1); blend_k:<b>:<k> = pha trộn 0..1 (0 = scale_k cũ)
+            try:
+                parts = thresh.split(":")[1:]
+                if thresh.startswith("global_k:"):
+                    if len(parts) != 1:
+                        raise ValueError
+                    beta, val = 1.0, float(parts[0])
+                else:
+                    if len(parts) != 2:
+                        raise ValueError
+                    beta, val = float(parts[0]), float(parts[1])
+                if val <= 0.0 or not (0.0 <= beta <= 1.0):
+                    raise ValueError
+            except Exception:
+                raise ValueError(f"Định dạng thresholds không hợp lệ: '{thresh}'. Ví dụ: 'global_k:2.0' hoặc 'blend_k:0.5:1.9'")
         elif isinstance(thresh, str) and os.path.exists(thresh):
             # File thresholds hợp lệ
             pass
@@ -503,6 +519,7 @@ def build_matcher_from_config(config: Dict[str, Any], ref_bank: Dict[str, Any]) 
     threshold_mode = "legacy"
     threshold_k = 1.6
     uncertainty_k = 2.2
+    width_blend = 0.0
 
     if isinstance(thresh_cfg, str):
         if thresh_cfg.startswith("fixed:"):
@@ -510,6 +527,14 @@ def build_matcher_from_config(config: Dict[str, Any], ref_bank: Dict[str, Any]) 
         elif thresh_cfg.startswith("scale_k:"):
             threshold_mode = "scale_k"
             threshold_k = float(thresh_cfg.split(":", 1)[1])
+            uncertainty_k = float(m.get("uncertainty_k", threshold_k + 0.6))
+        elif thresh_cfg.startswith(("global_k:", "blend_k:")):
+            threshold_mode = "scale_k"
+            parts = thresh_cfg.split(":")[1:]
+            if thresh_cfg.startswith("global_k:"):
+                width_blend, threshold_k = 1.0, float(parts[0])
+            else:
+                width_blend, threshold_k = float(parts[0]), float(parts[1])
             uncertainty_k = float(m.get("uncertainty_k", threshold_k + 0.6))
         elif thresh_cfg != "from_bank" and os.path.exists(thresh_cfg):
             with open(thresh_cfg, "r", encoding="utf-8") as f:
@@ -539,6 +564,7 @@ def build_matcher_from_config(config: Dict[str, Any], ref_bank: Dict[str, Any]) 
         threshold_mode=threshold_mode,
         threshold_k=threshold_k,
         uncertainty_k=uncertainty_k,
+        width_blend=width_blend,
     )
     return matcher
 

@@ -426,6 +426,7 @@ def build_matcher(bank_path: str, cache_dir: str, threshold_k: float, uncertaint
         asllex_blend_alpha=CONFIG.get("asllex_blend_alpha", 1.0), asllex_max_deviation=CONFIG.get("asllex_max_deviation"),
         w_z=CONFIG.get("w_z", 0.0), w_b=CONFIG.get("w_b", 0.0), w_s=CONFIG.get("w_s", 0.0), w_r=CONFIG.get("w_r", 0.0),
         threshold_mode=CONFIG.get("threshold_mode", "scale_k"), threshold_k=threshold_k, uncertainty_k=uncertainty_k,
+        width_blend=float(CONFIG.get("width_blend", 0.0)),
         cache_dir=cache_dir,
     )
 
@@ -905,8 +906,8 @@ def parse_args() -> argparse.Namespace:
 
 def setup(args: argparse.Namespace):
     cache_dir = os.path.join(os.environ.get("TEMP", HERE), "chain_replay_cache")
-    tk = args.threshold_k if args.threshold_k is not None else float(CONFIG.get("threshold_k", 1.75))
-    uk = args.uncertainty_k if args.uncertainty_k is not None else float(CONFIG.get("uncertainty_k", 2.35))
+    tk = args.threshold_k if args.threshold_k is not None else float(CONFIG.get("threshold_k", 1.9))
+    uk = args.uncertainty_k if args.uncertainty_k is not None else float(CONFIG.get("uncertainty_k", 2.5))
     matcher = build_matcher(args.bank, cache_dir, tk, uk)
     words = load_words(args.raw_dir, args.exclude_session_prefix)
     n_map = map_bank_samples(words, matcher.vocabulary)

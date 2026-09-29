@@ -2,12 +2,11 @@ r"""
 Kiem tra chat luong va tinh toan ven cua ho so du lieu tinh nguyen vien (SPEC 12 - Buoc 0.5).
 
 Tieu chuan danh gia:
-  - Tong so net hop le >= 45 (duong + am)
-  - Moi tu trong 13 tu chuan >= 3 net
-  - So net am (negative strokes) >= 8 net
+  - Moi tu trong 13 tu chuan (tru tu duoc mien) >= 3 net duong
+  - Net am (negative strokes) la TUY CHON tu 2026-09-29: co thi tot, khong co van DAT
   - Moi net tho trong raw_volunteers co thong tin hop mat (face_box)
   - session_id dung quy uoc (^V\d{2}_...)
-  - Dung 1 dong ghi chu tuong ung trong profiles/notes.csv
+  - Moi buoi thu (session_id) co dung 1 dong ghi chu trong profiles/notes.csv (nhieu buoi thu = nhieu dong)
   - KHONG co net nao cua signer do nam lan trong raw_strokes/
 """
 
@@ -17,7 +16,7 @@ import glob
 import json
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 if sys.platform == "win32":
     try:
@@ -43,7 +42,8 @@ def check_signer_data(
     profiles_dir: str = "profiles",
     raw_volunteers_dir: str = "raw_volunteers",
     raw_strokes_dir: str = "raw_strokes",
-    notes_file: str = os.path.join("profiles", "notes.csv")
+    notes_file: str = os.path.join("profiles", "notes.csv"),
+    skip_words: Optional[Iterable[str]] = None,
 ) -> Tuple[bool, List[str], List[str], Dict[str, int], Dict[str, int]]:
     """
     Kiem tra toan bo ho so cua signer_id.
@@ -51,9 +51,11 @@ def check_signer_data(
     Tra ve:
       (is_passed, fail_reasons, words_to_supplement, word_counts, handedness_counts)
     """
+    skipped = {str(w).strip().upper() for w in (skip_words or [])}     # tu duoc mien cho nguoi nay (khong bat buoc)
+    need_words = [w for w in REQUIRED_WORDS if w not in skipped]
     fail_reasons: List[str] = []
     words_to_supplement: List[str] = []
-    word_counts: Dict[str, int] = {w: 0 for w in REQUIRED_WORDS}
+    word_counts: Dict[str, int] = {w: 0 for w in need_words}
     handedness_counts: Dict[str, int] = {}
 
     signer_prefix = f"{signer_id}_"
@@ -68,7 +70,7 @@ def check_signer_data(
             with open(pos_file, "r", encoding="utf-8") as f:
                 pos_data = json.load(f)
             vocab = pos_data.get("vocabulary", {})
-            for w in REQUIRED_WORDS:
+            for w in need_words:
                 samples = vocab.get(w, {}).get("samples", [])
                 cnt = len(samples)
                 word_counts[w] = cnt
@@ -87,18 +89,12 @@ def check_signer_data(
     # 2. Kiem tra file mau am: profiles/<signer_id>_neg.json
     neg_file = os.path.join(profiles_dir, f"{signer_id}_neg.json")
     total_neg_samples = 0
-    if not os.path.exists(neg_file):
-        fail_reasons.append(f"Khong tim thay file mau am: '{neg_file}'.")
-    else:
+    if os.path.exists(neg_file):          # mau am la TUY CHON (2026-09-29): thieu khong lam ho so bi loai
         try:
             with open(neg_file, "r", encoding="utf-8") as f:
                 neg_data = json.load(f)
             neg_samples = neg_data.get("samples", [])
             total_neg_samples = len(neg_samples)
-            if total_neg_samples < MIN_NEGATIVE_SAMPLES:
-                fail_reasons.append(
-                    f"So net am chua dat ({total_neg_samples}/{MIN_NEGATIVE_SAMPLES}, can thu bu {MIN_NEGATIVE_SAMPLES - total_neg_samples} net am)."
-                )
             for s in neg_samples:
                 sess = s.get("session_id", "")
                 if sess and not sess.startswith(signer_prefix):
@@ -107,11 +103,8 @@ def check_signer_data(
             fail_reasons.append(f"Loi doc file mau am '{neg_file}': {e}")
 
     # 3. Kiem tra tong so net hop le
+    # Chi bat buoc net DUONG: moi tu can du MIN_SAMPLES_PER_WORD (kiem o tren). Net am chi la thong tin them.
     total_samples = total_pos_samples + total_neg_samples
-    if total_samples < MIN_TOTAL_SAMPLES:
-        fail_reasons.append(
-            f"Tong so net hop le chua dat ({total_samples}/{MIN_TOTAL_SAMPLES} net, gom {total_pos_samples} duong + {total_neg_samples} am)."
-        )
 
     # 4. Kiem tra net tho trong raw_volunteers
     volunteer_raw_files = []
@@ -167,10 +160,17 @@ def check_signer_data(
                         notes_rows.append(row)
             if len(notes_rows) == 0:
                 fail_reasons.append(f"Chua co dong ghi chu nao cho '{signer_id}' trong '{notes_file}'.")
-            elif len(notes_rows) > 1:
-                fail_reasons.append(
-                    f"Co {len(notes_rows)} dong ghi chu cho '{signer_id}' trong '{notes_file}' (yeu cau dung 1 dong)."
-                )
+            else:
+                # Moi buoi thu (session_id) can DUNG 1 dong; mot nguoi co nhieu buoi thu thi co nhieu dong.
+                seen = {}
+                for row in notes_rows:
+                    k = (row.get("session_id") or "").strip()
+                    seen[k] = seen.get(k, 0) + 1
+                dup = sorted(k for k, n in seen.items() if n > 1)
+                if dup:
+                    fail_reasons.append(
+                        f"Trung dong ghi chu cho buoi thu {dup} trong '{notes_file}' (moi buoi thu chi 1 dong)."
+                    )
         except Exception as e:
             fail_reasons.append(f"Loi doc file ghi chu '{notes_file}': {e}")
 
@@ -203,7 +203,8 @@ def print_report(
     fail_reasons: List[str],
     words_to_supplement: List[str],
     word_counts: Dict[str, int],
-    handedness_counts: Dict[str, int]
+    handedness_counts: Dict[str, int],
+    skip_words: Optional[Iterable[str]] = None,
 ):
     print("=" * 80)
     print(f"  KIEM TRA HO SO TINH NGUYEN VIEN: {signer_id}")
@@ -220,7 +221,11 @@ def print_report(
     # 2. Bang so net 13 tu
     print("  1. Phan bo so net theo tu vung (toi thieu 3 net/tu):")
     total_pos = sum(word_counts.values())
+    skipped = {str(x).strip().upper() for x in (skip_words or [])}
     for w in REQUIRED_WORDS:
+        if w in skipped:
+            print(f"     - {w:<12}: --  net  [BO QUA - da mien cho nguoi nay]")
+            continue
         cnt = word_counts.get(w, 0)
         status = "[OK]" if cnt >= MIN_SAMPLES_PER_WORD else "[THIEU]"
         print(f"     - {w:<12}: {cnt:2d} net  {status}")
@@ -290,6 +295,13 @@ def main():
         default=os.path.join("profiles", "notes.csv"),
         help="Duong dan file notes.csv (mac dinh: profiles/notes.csv)."
     )
+    parser.add_argument(
+        "--bo-qua",
+        nargs="+",
+        default=None,
+        metavar="TU",
+        help="Cac tu duoc mien cho nguoi nay (khong bat buoc thu), vi du: --bo-qua YOU YES BAD."
+    )
     args = parser.parse_args()
 
     is_passed, fail_reasons, words_to_supplement, word_counts, handedness_counts = check_signer_data(
@@ -297,7 +309,8 @@ def main():
         profiles_dir=args.profiles_dir,
         raw_volunteers_dir=args.raw_volunteers_dir,
         raw_strokes_dir=args.raw_strokes_dir,
-        notes_file=args.notes
+        notes_file=args.notes,
+        skip_words=args.bo_qua
     )
 
     print_report(
@@ -306,7 +319,8 @@ def main():
         fail_reasons=fail_reasons,
         words_to_supplement=words_to_supplement,
         word_counts=word_counts,
-        handedness_counts=handedness_counts
+        handedness_counts=handedness_counts,
+        skip_words=args.bo_qua
     )
 
     sys.exit(0 if is_passed else 1)

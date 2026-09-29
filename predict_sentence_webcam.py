@@ -96,6 +96,7 @@ import speech_service
 from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
+from session_enroll import SessionEnroller
 
 # =============================================================================
 # 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
@@ -117,8 +118,9 @@ CONFIG = {
     
     # --- Ngưỡng quyết định nhận diện & Chế độ độ khớp (SPEC 04B) ---
     "threshold_mode": "scale_k",   # "scale_k" (ngưỡng theo độ rộng nội lớp) hoặc "legacy" (cố định)
-    "threshold_k": 1.75,           # Hệ số k cho ngưỡng chấp nhận (k * intra_width). Chốt 2026-09-20 sau khi quét k: 1.75 hơn 1.6 về chấp nhận-đúng (p=0.002), 0 nhận nhầm
-    "uncertainty_k": 2.35,         # Hệ số k cho ranh giới từ chối (= k + 0.6)
+    "threshold_k": 1.9,            # Hệ số k cho ngưỡng chấp nhận (k * độ rộng). Chốt 2026-09-28 cùng width_blend=1.0 (cấu hình G1p90): người lạ Mai nhận 61%->73% (p=0.016), từ lạ nhận nhầm 3/175->0/175. (Trước đó: scale_k k=1.75, width_blend=0.0 — cấu hình C11_base.)
+    "uncertainty_k": 2.5,          # Hệ số k cho ranh giới từ chối (= k + 0.6)
+    "width_blend": 1.0,            # 1.0 = thang độ rộng chung (trung vị các từ) — mặc định từ 2026-09-28. 0.0 = mỗi từ dùng độ rộng riêng (hành vi cũ, phải đặt lại k=1.75/uncertainty_k=2.35). Xem docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md
     "default_threshold": 0.40,   # Ngưỡng chấp nhận chuẩn hóa SPEC 04A.1 (cho chế độ legacy)
     "uncertainty_ratio": 1.40,   # Vùng nghi vấn: từ threshold đến 1.4 * threshold (legacy)
     "margin_threshold": 0.12,    # Độ chênh lệch an toàn giữa Top 1 và Top 2 (12%)
@@ -127,6 +129,10 @@ CONFIG = {
     "v_start_ratio": 0.08,       # Vận tốc bắt đầu cử chỉ (8% palm_len/frame)
     "v_stop_ratio": 0.040,       # Vận tốc khựng tay dừng từ (4% palm_len/frame)
     "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
+    # Chuẩn hóa vận tốc + Swipe-Left theo THỜI GIAN (mặc định TẮT). Bật khi camera có fps thật lệch 30 (thiếu sáng, 60 fps).
+    # Số đo ngoại tuyến: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md (eval_segmenter_fps.py).
+    "time_norm": {"enabled": False, "ref_fps": 30.0, "max_stroke_sec": 2.0, "swipe_window_sec": 0.17, "v_scale_min": 1.0},
+    "dedupe_frames": False,      # True = bỏ khung TRÙNG y hệt (camera thiếu sáng lặp bộ đệm) trước khi dò tay; cần camera thật (video/headless bỏ qua). Chưa kiểm chứng trên webcam thật.
 
     # --- Đường dẫn template và trọng số DTW theo từng ký hiệu (ASL-LEX 2.0) ---
     "templates_path": "webcam_templates.json",
@@ -1013,7 +1019,10 @@ def run_sentence_builder(
     ui_lang: Optional[str] = None,
     fast_chain: Optional[bool] = None,
     transition_lockout: Optional[float] = None,
-    lead_trim: Optional[bool] = None
+    lead_trim: Optional[bool] = None,
+    width_blend: Optional[float] = None,
+    dedupe_frames: Optional[bool] = None,
+    confirm_enroll: bool = False
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1021,6 +1030,7 @@ def run_sentence_builder(
     fast_chain: SPEC 08 chế độ "ký nhanh" (None = lấy CONFIG["fast_chain"]["enabled"], mặc định BẬT); phím [j] bật/tắt lúc chạy.
     transition_lockout: SPEC 08B khoảng cấm sau chốt (giây). None = lấy từ cấu hình.
     lead_trim: SPEC 08B cắt phần dẫn đầu thích nghi (None = lấy từ cấu hình); phím [k] bật/tắt lúc chạy.
+    confirm_enroll: chế độ HỎI XÁC NHẬN (session_enroll.py): cử chỉ UNCERTAIN/REJECTED được hỏi lại; phím [y]/[2]/[n]/[z].
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -1032,6 +1042,7 @@ def run_sentence_builder(
     th_mode = threshold_mode if threshold_mode is not None else CONFIG.get("threshold_mode", "scale_k")
     th_k = threshold_k if threshold_k is not None else float(CONFIG.get("threshold_k", 1.6))
     unc_k = uncertainty_k if uncertainty_k is not None else float(CONFIG.get("uncertainty_k", 2.2))
+    w_blend = width_blend if width_blend is not None else float(CONFIG.get("width_blend", 0.0))
 
     if threshold_override is not None and th_mode == "scale_k":
         raise ValueError(
@@ -1120,7 +1131,8 @@ def run_sentence_builder(
         w_r=CONFIG.get("w_r", 0.0),
         threshold_mode=th_mode,
         threshold_k=th_k,
-        uncertainty_k=unc_k
+        uncertainty_k=unc_k,
+        width_blend=w_blend
     )
 
     # SPEC 03: bộ dò mặt có cache — CHỈ tạo khi nhóm mốc cơ thể đang bật (w_b > 0), để không tốn CPU vô ích.
@@ -1139,6 +1151,10 @@ def run_sentence_builder(
         print("[!] Vui lòng chạy 'collect_dynamic_templates.py' trước để thu mẫu cử chỉ.")
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
+
+    enroller: Optional[SessionEnroller] = SessionEnroller(dtw_engine) if confirm_enroll else None
+    if enroller is not None:
+        print("✓ Chế độ HỎI XÁC NHẬN: cử chỉ không chắc sẽ được hỏi lại. Phím [y]=đúng (gợi ý 1)  [2]=đúng (gợi ý 2)  [n]=bỏ  [z]=hoàn tác.")
 
     # SPEC 08 / 08B: chế độ "ký nhanh" và cắt chuyển tiếp. Mặc định BẬT (CONFIG["fast_chain"]); --no-fast-chain => make_segmenter(CONFIG) như cũ.
     fc_cfg: Dict[str, Any] = dict(CONFIG.get("fast_chain", {}))
@@ -1264,6 +1280,7 @@ def run_sentence_builder(
         cam_monitor = CameraHealthMonitor(
             cam_cfg, warnings_enabled=(video_path is None or bool(cam_cfg.get("warn_on_video", False))))
     cam_hand_moving_v = float(cam_cfg.get("hand_moving_v", 0.03))
+    dedupe_frames = bool(dedupe_frames if dedupe_frames is not None else CONFIG.get("dedupe_frames", False))
     cam_last_v_norm = 0.0   # v_norm của khung xử lý gần nhất (kết quả dò tay chạy nền nên trễ vài khung)
 
     print("\n[HƯỚNG DẪN SỬ DỤNG]")
@@ -1312,23 +1329,27 @@ def run_sentence_builder(
                     if cam_monitor is not None:
                         # Gọi MỖI lần đọc được khung (kể cả khung trùng), trước lật gương; tay chuyển động = v_norm khung trước
                         cam_monitor.update(frame, capture_ts, cam_last_v_norm >= cam_hand_moving_v)
+                    # Bỏ khung TRÙNG (driver lặp đúng bộ đệm cũ, is_new=False): không dò tay, không đưa vào bộ phân đoạn, để
+                    # dt và vận tốc phản ánh khung MỚI thật. Mặc định TẮT (CONFIG["dedupe_frames"]); vẫn poll kết quả dò như thường.
+                    is_dup_frame = bool(dedupe_frames and cam_monitor is not None and not cam_monitor.is_new)
                     frame_counter += 1
-                    if flip_cam:
-                        frame = cv2.flip(frame, 1)
+                    if not is_dup_frame:
+                        if flip_cam:
+                            frame = cv2.flip(frame, 1)
 
-                    if detect_scale < 0.999:
-                        det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
-                    else:
-                        det_frame = frame
-                    rgb_frame = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
+                        if detect_scale < 0.999:
+                            det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
+                        else:
+                            det_frame = frame
+                        rgb_frame = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
 
-                    meta = {
-                        "capture_ts": capture_ts,
-                        "frame": frame,
-                        "rgb_frame": rgb_frame,
-                        "submit_perf_ts": time.perf_counter()
-                    }
-                    detector_pool.submit(frame_counter, rgb_frame, meta)
+                        meta = {
+                            "capture_ts": capture_ts,
+                            "frame": frame,
+                            "rgb_frame": rgb_frame,
+                            "submit_perf_ts": time.perf_counter()
+                        }
+                        detector_pool.submit(frame_counter, rgb_frame, meta)
 
                     if profile:
                         _t0_mp = time.perf_counter()
@@ -1776,6 +1797,20 @@ def run_sentence_builder(
                                             round(cur_lead_trim_sec, 3), cur_lead_trim_tried
                                         ])
                                         session_file.flush()
+                            if enroller is not None:
+                                # Hỏi xác nhận: chỉ khi không chắc / từ chối và có ứng viên; ACCEPTED thì xóa câu hỏi cũ.
+                                enroller.clear()
+                                if match_result is not None and match_result.status != "ACCEPTED" and match_result.candidates:
+                                    _enr_traj, _enr_shp, _enr_body, _ = build_segment_features(seg_records if seg_records is not None else raw_records)
+                                    _enr_keys = [c.word_key for c in match_result.candidates[:2]]
+                                    if enroller.offer(_enr_traj, _enr_shp, handedness_label, _enr_body, stroke_duration, _enr_keys, curr_time):
+                                        _enr_names = [get_asl_phrase(k, lang="en", default=k) for k in _enr_keys]
+                                        banner_title = f"Is it {_enr_names[0]}?"
+                                        banner_subtitle = "[Y] yes   " + (f"[2] {_enr_names[1]}   " if len(_enr_names) > 1 else "") + "[N] skip"
+                                        banner_color = (0, 200, 255)
+                                        banner_expire = curr_time + enroller.ttl
+                                        print(f"[XacNhan] Hỏi: có phải '{_enr_names[0]}'? (y) / '{_enr_names[1] if len(_enr_names) > 1 else '-'}'? (2) / bỏ (n)")
+
                     else:
                         # R3 Layer 2: Cử chỉ nằm ngoài [0.4s, 2.5s] bị bỏ qua trong im lặng
                         print(f"[SentenceBuilder] Cử chỉ bị loại bởi Duration Gate ({stroke_duration:.2f}s).")
@@ -2075,6 +2110,31 @@ def run_sentence_builder(
                     stroke_ext_history.clear()
                     print(f"[UI] Chế độ KÝ NHANH: {'BẬT' if fast_on else 'TẮT'}"
                           + (f" | từ nhiều pha (không chốt sớm): {multi_phase_words or 'không có'}" if fast_on else ""))
+                elif enroller is not None and key in [ord('y'), ord('Y'), ord('2'), ord('n'), ord('N'), ord('z'), ord('Z')]:
+                    if key in [ord('n'), ord('N')]:
+                        enroller.clear()
+                        banner_expire = 0.0
+                    elif key in [ord('z'), ord('Z')]:
+                        _undone = enroller.undo()
+                        banner_title = f"UNDO: {_undone}" if _undone else "NOTHING TO UNDO"
+                        banner_subtitle = f"Session samples: {enroller.count()}"
+                        banner_color = (150, 150, 150)
+                        banner_expire = curr_time + 1.5
+                        print(f"[XacNhan] Hoàn tác mẫu '{_undone}'." if _undone else "[XacNhan] Không có mẫu nào để hoàn tác.")
+                    else:
+                        _picked = enroller.confirm(1 if key == ord('2') else 0, curr_time)
+                        if _picked:
+                            _pen = get_asl_phrase(_picked, lang="en", default=_picked)
+                            sentence_words.append(_pen)
+                            sentence_keys.append(_picked)
+                            sentence_finalized = False
+                            banner_title = f"SAVED: {_pen}"
+                            banner_subtitle = f"Session samples: {enroller.count()} ({enroller.summary()})"
+                            banner_color = (0, 255, 100)
+                            banner_expire = curr_time + 2.0
+                            print(f"[XacNhan] Đã thêm mẫu '{_picked}' vào bank phiên (tổng {enroller.count()}: {enroller.summary()}).")
+                        else:
+                            print("[XacNhan] Không có câu hỏi đang chờ, đã hết hạn, hoặc từ này đã đủ số mẫu tự thêm.")
                 elif key in [ord('k'), ord('K')]:
                     # SPEC 08B: bật/tắt CẮT DẪN ĐẦU (lead-trim) lúc chạy.
                     lead_trim_on = not lead_trim_on
@@ -2126,6 +2186,19 @@ def run_sentence_builder(
 
     finally:
         speech_service.shutdown()
+        if cam_monitor is not None:
+            _cam_sum = cam_monitor.session_summary()
+            if _cam_sum:
+                print(f"[Camera] Cả phiên: {_cam_sum}")
+                print("[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.")
+        if enroller is not None and enroller.count() > 0:
+            try:
+                _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
+                os.makedirs("profiles", exist_ok=True)
+                _n = enroller.save(_enr_path)
+                print(f"[XacNhan] Cả phiên: thêm {_n} mẫu ({enroller.summary()}) -> {_enr_path} (dùng lại: --templates {_enr_path})")
+            except Exception as _enr_err:
+                print(f"[XacNhan] Không lưu được mẫu phiên: {_enr_err}")
         if session_file is not None:
             try:
                 session_file.close()
@@ -2184,6 +2257,12 @@ if __name__ == "__main__":
     parser.add_argument("--threshold-mode", type=str, choices=["legacy", "scale_k"], default=None, help="Chế độ ngưỡng: 'scale_k' (ngưỡng theo độ rộng nội lớp) hoặc 'legacy' (cố định).")
     parser.add_argument("--threshold-k", type=float, default=None, help="Hệ số k cho ngưỡng chấp nhận (k * độ_rộng, mặc định 1.6)")
     parser.add_argument("--uncertainty-k", type=float, default=None, help="Hệ số k cho ranh giới từ chối (uncertainty_k * độ_rộng, mặc định 2.2)")
+    parser.add_argument("--time-norm", action=argparse.BooleanOptionalAction, default=None,
+                        help="Bật/tắt chuẩn hóa vận tốc + Swipe-Left theo thời gian (mặc định lấy CONFIG['time_norm']['enabled'] = TẮT).")
+    parser.add_argument("--dedupe-frames", action=argparse.BooleanOptionalAction, default=None,
+                        help="Bật/tắt bỏ khung trùng trước khi dò tay (mặc định lấy CONFIG['dedupe_frames'] = TẮT).")
+    parser.add_argument("--confirm-enroll", action="store_true", help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận thêm vào bank của phiên (phím y/2/n/z).")
+    parser.add_argument("--width-blend", type=float, default=None, help="Pha trộn độ rộng chuẩn hóa ngưỡng 0..1 (0 = độ rộng riêng từng từ, 1 = thang chung). Mặc định lấy CONFIG['width_blend'] (0.0).")
     parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
     parser.add_argument("--fast-chain", action=argparse.BooleanOptionalAction, default=None,
@@ -2201,6 +2280,8 @@ if __name__ == "__main__":
     selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
     sw_override = "" if args.global_weights else CONFIG.get("sign_weights_path", "")
     enable_cnn = True if args.with_cnn else None
+    if args.time_norm is not None:
+        CONFIG["time_norm"]["enabled"] = bool(args.time_norm)
     run_sentence_builder(
         camera_index=selected_cam,
         headless=args.headless,
@@ -2223,4 +2304,7 @@ if __name__ == "__main__":
         fast_chain=args.fast_chain,
         transition_lockout=args.transition_lockout,
         lead_trim=args.lead_trim,
+        width_blend=args.width_blend,
+        dedupe_frames=args.dedupe_frames,
+        confirm_enroll=args.confirm_enroll,
     )

@@ -48,6 +48,11 @@ def scan_and_separate(
 
     # Xay dung bieu thuc chinh quy
     patterns = [r"V\d{2}_", r"C_"]
+    try:
+        import people
+        patterns += [re.escape(f"{v}_") for v in people.volunteer_ids()]   # tình nguyện viên theo tên (Mai_, Phi_, ...)
+    except Exception:
+        pass
     for p in custom_prefixes:
         if p:
             patterns.append(re.escape(p))

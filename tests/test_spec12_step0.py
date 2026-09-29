@@ -199,7 +199,8 @@ def test_t0_c_check_volunteer_data():
         )
         assert passed_v02 is False
         assert len(missing_v02) > 0  # Missing 11 tu con lai va thieu so luong HELLO, BYE
-        assert any("am" in r.lower() for r in fails_v02)
+        # Mau am la TUY CHON (2026-09-29): thieu net am KHONG con la ly do loai ho so.
+        assert not any("net am" in r.lower() for r in fails_v02)
         
         # --- Ca 3: Ho so V01 bi ro ri vao raw_strokes -> Bao loi ro ri ---
         leak_dir = os.path.join(raw_str_dir, "HELLO")

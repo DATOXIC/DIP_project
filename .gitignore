@@ -195,6 +195,12 @@ cython_debug/
 /profiles/C_*
 /profiles/DAT_cond*
 /profiles/notes.csv
+# Ho so nguoi ky theo TEN THAT (2026-09-28): van KHONG dua len GitHub; muon dua len thi bo cac dong nay
+/profiles/*
+/archive/backups/ten_nguoi_ky_*
 
 # Microsoft Office lock files
 ~$*
+
+# CodeGraph index (sinh tu dong)
+/.codegraph/

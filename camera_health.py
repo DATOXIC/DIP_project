@@ -86,6 +86,8 @@ class CameraHealthMonitor:
         # mẫu: (t, dt, is_new, near_dup, moving)
         self._win: Deque[Tuple[float, float, bool, bool, bool]] = deque()
         self._n_frames = 0
+        self._tot_new = 0                  # tích lũy cả phiên (khác cửa sổ trượt): khung mới thật / gần-trùng
+        self._tot_near = 0
 
         # trạng thái từng loại cảnh báo
         self._st: Dict[str, Dict[str, object]] = {
@@ -149,6 +151,8 @@ class CameraHealthMonitor:
             self.luma_mean += alpha * (luma - self.luma_mean)
         self._t_prev = t
         self._n_frames += 1
+        self._tot_new += 1 if is_new else 0
+        self._tot_near += 1 if near_dup else 0
         self.is_new = bool(is_new)
         self.luma_raw = float(luma)
         self.luma_p95 = float(luma_p95)
@@ -167,6 +171,18 @@ class CameraHealthMonitor:
             self._advance_states(t)
         else:
             self._status = None
+
+    def session_summary(self) -> Optional[str]:
+        """Tóm tắt CẢ PHIÊN (không phải cửa sổ trượt): vòng lặp/s, khung mới thật/s, % khung trùng y hệt, % gần-trùng.
+        Dùng để quyết định có cần --dedupe-frames / --time-norm hay không. None nếu chưa đủ dữ liệu."""
+        if self._t_start is None or self._t_prev is None or self._n_frames < 2:
+            return None
+        span = self._t_prev - self._t_start
+        if span <= 1e-6:
+            return None
+        n = self._n_frames
+        return (f"{n} khung / {span:.1f}s | vòng lặp {n / span:.1f} khung/s | khung mới thật {self._tot_new / span:.1f}/s | "
+                f"trùng y hệt {100.0 * (1.0 - self._tot_new / n):.1f}% | gần-trùng {100.0 * self._tot_near / n:.1f}%")
 
     # ------------------------------------------------------------------ số liệu cửa sổ
     def _recompute_window(self, t: float) -> None:
