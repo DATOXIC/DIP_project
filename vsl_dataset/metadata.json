@@ -4964,171 +4964,6 @@
             "timestamp": 1788949442.2861621
         },
         {
-            "path": "samples/A/webcam_A_00125.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949442.6098711
-        },
-        {
-            "path": "samples/A/webcam_A_00126.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949458.1889775
-        },
-        {
-            "path": "samples/A/webcam_A_00127.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949481.0314124
-        },
-        {
-            "path": "samples/A/webcam_A_00128.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949482.8457427
-        },
-        {
-            "path": "samples/A/webcam_A_00129.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949483.7298462
-        },
-        {
-            "path": "samples/A/webcam_A_00130.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949484.5588636
-        },
-        {
-            "path": "samples/A/webcam_A_00131.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949491.4977596
-        },
-        {
-            "path": "samples/A/webcam_A_00132.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949495.4352825
-        },
-        {
-            "path": "samples/A/webcam_A_00133.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949496.7873802
-        },
-        {
-            "path": "samples/A/webcam_A_00134.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949503.4885988
-        },
-        {
-            "path": "samples/A/webcam_A_00135.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949505.6967454
-        },
-        {
-            "path": "samples/A/webcam_A_00136.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949525.083843
-        },
-        {
-            "path": "samples/A/webcam_A_00137.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949525.8935087
-        },
-        {
-            "path": "samples/A/webcam_A_00138.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949528.7905014
-        },
-        {
-            "path": "samples/A/webcam_A_00139.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949531.9474268
-        },
-        {
             "path": "samples/A/webcam_A_00115.npy",
             "class": "A",
             "class_id": 0,
@@ -5237,17 +5072,6 @@
                 3
             ],
             "timestamp": 1788949648.374806
-        },
-        {
-            "path": "samples/A/webcam_A_00125.npy",
-            "class": "A",
-            "class_id": 0,
-            "shape": [
-                128,
-                128,
-                3
-            ],
-            "timestamp": 1788949650.9819944
         },
         {
             "path": "samples/B/webcam_B_00142.npy",
@@ -5844,5 +5668,5 @@
             "timestamp": 1788949771.26235
         }
     ],
-    "updated_at": 1789475817.8820753
+    "updated_at": 1790760651.3411136
 }

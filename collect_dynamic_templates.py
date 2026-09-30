@@ -69,6 +69,7 @@ from collections import deque
 import queue
 import threading
 
+
 from predict_sentence_webcam import (
     CONFIG,
     GoldenTriadDTWMatcher,
@@ -104,6 +105,47 @@ RAW_STROKES_DIR = "raw_strokes"
 #   raw_stroke_v1.2 : bổ sung session_id vào top-level metadata và dict mẫu (SPEC 05A)
 #   raw_stroke_v1.3 : bổ sung capture_fourcc và capture_fps_reported vào top-level metadata (SPEC 05B)
 RAW_STROKE_SCHEMA_VERSION = "raw_stroke_v1.3"
+
+# Ngưỡng lọc khung ổn định cho nhãn dáng tay CNN (SPEC: chống nhiễu khung chuyển động).
+# v_norm <= STABLE_V_NORM_MAX: tay gần như đứng yên tại khung đó (không phải đang chuyển tiếp).
+# hand_shape_conf >= STABLE_SHAPE_CONF_MIN: CNN đủ tin để dùng nhãn của khung đó.
+STABLE_V_NORM_MAX = 0.04
+STABLE_SHAPE_CONF_MIN = 0.55
+
+
+def stabilize_hand_shapes(frames: List[GestureFrame]) -> List[str]:
+    """
+    Thay nhãn dáng tay của các khung KHÔNG ổn định (tay đang di chuyển hoặc CNN không đủ tin)
+    bằng nhãn của khung ỔN ĐỊNH gần nhất trong cùng stroke (forward-fill, lan ngược cho các
+    khung trước khung ổn định đầu tiên).
+
+    LÝ DO: trước đây mỗi khung hình trong lúc ký hiệu ĐỘNG đều được CNN phân loại độc lập,
+    kể cả các khung tay đang chuyển động (mờ, góc xấu) -- khác hẳn lúc test CNN tĩnh (giữ yên
+    tay). Kết quả: nhãn dáng tay nhiễu ngay cả khi CNN bản thân hoạt động tốt (VD dáng C của
+    DRINK không được nhận ra khi thu động dù test tĩnh riêng lẻ vẫn ổn -- 2026-09-30).
+    Nếu KHÔNG có khung nào đủ ổn định/tin cậy trong cả stroke, trả về nhãn gốc không đổi
+    (an toàn khi CNN tắt -- hand_shape_conf luôn None và hand_shape luôn "Unknown").
+    """
+    shapes = [f.hand_shape for f in frames]
+    stable_mask = [
+        (f.v_norm <= STABLE_V_NORM_MAX)
+        and (f.hand_shape_conf is None or f.hand_shape_conf >= STABLE_SHAPE_CONF_MIN)
+        and f.hand_shape != "Unknown"
+        for f in frames
+    ]
+    if not any(stable_mask):
+        return shapes
+    out = list(shapes)
+    last_stable = None
+    for i, is_stable in enumerate(stable_mask):
+        if is_stable:
+            last_stable = shapes[i]
+        elif last_stable is not None:
+            out[i] = last_stable
+    first_stable_idx = stable_mask.index(True)
+    for i in range(first_stable_idx):
+        out[i] = shapes[first_stable_idx]
+    return out
 
 
 def write_raw_stroke_archive(
@@ -359,6 +401,149 @@ def save_negative_strokes(file_path: str, samples: List[Dict[str, Any]]) -> bool
         return False
 
 
+
+# =============================================================================
+# DEMO VIDEO PLAYER — phát video ASL Citizen loop trong sidebar
+# =============================================================================
+
+class DemoVideoPlayer:
+    """
+    Phát video demo ASL Citizen trên thread riêng, loop liên tục.
+    Cung cấp frame hiện tại (BGR, đã resize) qua get_frame() cho vòng lặp chính.
+
+    Manifest file: asl_demo_videos.json (tạo bởi scratch/select_demo_videos.py)
+    Nếu không tìm thấy file / từ không có video → trả về None.
+    """
+
+    # Kích thước thumbnail hiển thị trong sidebar
+    THUMB_W = 310
+    THUMB_H = 174  # ~16:9
+
+    def __init__(self, manifest_path: str = "asl_demo_videos.json") -> None:
+        self._manifest: Dict[str, Optional[Dict]] = {}
+        self._load_manifest(manifest_path)
+
+        self._lock = threading.Lock()
+        self._current_word: Optional[str] = None
+        self._current_frame: Optional[np.ndarray] = None  # BGR thumbnail
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._stop_event = threading.Event()
+        self._switch_event = threading.Event()
+
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="DemoVideoPlayer")
+        self._thread.start()
+
+    # ------------------------------------------------------------------
+    def _load_manifest(self, path: str) -> None:
+        if not os.path.exists(path):
+            print(f"[DemoVideo] Không tìm thấy manifest: {path} — demo video bị tắt.")
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # Resolve absolute paths (manifest có thể lưu abs_path sẵn)
+            base = os.path.dirname(os.path.abspath(path))
+            for word, entry in raw.items():
+                if entry is None:
+                    self._manifest[word] = None
+                    continue
+                # Ưu tiên abs_path nếu tồn tại, fallback path tương đối
+                abs_p = entry.get("abs_path") or os.path.join(base, entry["path"])
+                if os.path.exists(abs_p):
+                    self._manifest[word] = {**entry, "abs_path": abs_p}
+                else:
+                    self._manifest[word] = None
+            n_ok = sum(1 for v in self._manifest.values() if v is not None)
+            print(f"[DemoVideo] Đã nạp manifest: {n_ok}/{len(self._manifest)} từ có video demo.")
+        except Exception as e:
+            print(f"[DemoVideo] Lỗi đọc manifest: {e}")
+
+    # ------------------------------------------------------------------
+    def switch(self, word_id: str) -> None:
+        """Chuyển sang video demo cho word_id (dùng khi người dùng đổi từ)."""
+        with self._lock:
+            if self._current_word == word_id:
+                return
+            self._current_word = word_id
+        self._switch_event.set()
+
+    def get_frame(self) -> Optional[np.ndarray]:
+        """Trả về frame demo hiện tại (BGR numpy, THUMB_W×THUMB_H) hoặc None."""
+        with self._lock:
+            return self._current_frame.copy() if self._current_frame is not None else None
+
+    def stop(self) -> None:
+        """Dừng thread player."""
+        self._stop_event.set()
+        self._switch_event.set()  # unblock nếu đang chờ
+
+    # ------------------------------------------------------------------
+    def _open_video(self, word_id: Optional[str]) -> Optional[cv2.VideoCapture]:
+        """Mở VideoCapture cho word_id. Trả về None nếu không có video."""
+        if word_id is None:
+            return None
+        entry = self._manifest.get(word_id)
+        if not entry:
+            return None
+        path = entry["abs_path"]
+        if not os.path.exists(path):
+            return None
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            cap.release()
+            return None
+        return cap
+
+    def _loop(self) -> None:
+        """Thread loop: đọc frame từ VideoCapture, resize, loop lại khi hết."""
+        cap: Optional[cv2.VideoCapture] = None
+        last_word: Optional[str] = None
+        frame_delay = 1.0 / 30.0  # fallback
+
+        while not self._stop_event.is_set():
+            # Kiểm tra có yêu cầu switch không
+            if self._switch_event.is_set():
+                self._switch_event.clear()
+                with self._lock:
+                    word_now = self._current_word
+                if word_now != last_word:
+                    if cap is not None:
+                        cap.release()
+                    cap = self._open_video(word_now)
+                    last_word = word_now
+                    if cap is not None:
+                        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                        frame_delay = 1.0 / fps
+                    else:
+                        with self._lock:
+                            self._current_frame = None
+
+            if cap is None:
+                # Không có video: chờ 50ms rồi thử lại
+                self._stop_event.wait(timeout=0.05)
+                continue
+
+            t0 = time.monotonic()
+            ret, frame = cap.read()
+            if not ret:
+                # Hết video → loop lại từ đầu
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = cap.read()
+            if ret and frame is not None:
+                thumb = cv2.resize(frame, (self.THUMB_W, self.THUMB_H), interpolation=cv2.INTER_AREA)
+                with self._lock:
+                    self._current_frame = thumb
+
+            # Ngủ đúng frame delay, tránh burn CPU, wake up sớm nếu switch
+            elapsed = time.monotonic() - t0
+            wait_sec = max(0.0, frame_delay - elapsed)
+            self._switch_event.wait(timeout=wait_sec)
+
+        # Dọn dẹp
+        if cap is not None:
+            cap.release()
+
+
 DEFAULT_VOCAB = {
     '1': ('HELLO',     'Hello / Xin chào',    'Vẫy tay mở B từ trán ra ngoài hoặc vẫy ngang'),
     '2': ('BYE',       'Bye / Tạm biệt',      'Nâng tay B lên và vẫy ngón tay'),
@@ -449,7 +634,7 @@ def run_dynamic_collector(
 
     # 2. Khởi tạo Two-Stream CNN nhận diện Dáng tay (nếu bật)
     device = torch.device('cpu')
-    model_path = 'vsl_dataset/models/best_model_v2.pth'
+    model_path = 'vsl_dataset/models/best_model_v3.pth'
     cnn_model = None
     classes = ['A', 'B', 'C', 'L', 'V']
     if enable_static_shape_cnn:
@@ -564,6 +749,11 @@ def run_dynamic_collector(
     cached_palm_len: float = 50.0
     cached_hand_shape: str = "Unknown"
     cached_handedness: str = "Right"
+
+    # Khởi tạo player video demo ASL Citizen (chạy nền, loop tự động)
+    demo_player = DemoVideoPlayer(manifest_path="asl_demo_videos.json")
+    demo_player.switch(curr_word_id)
+
 
     print("\n" + "=" * 75)
     print("  [HUONG DAN THU MAU - 10 TU VUNG ASL + MAU AM (SPEC 05B)]")
@@ -814,7 +1004,8 @@ def run_dynamic_collector(
                 wrist_y=wrist_y,
                 palm_len=palm_len,
                 hand_shape=hand_shape,
-                timestamp=curr_time
+                timestamp=curr_time,
+                hand_shape_conf=hand_shape_conf
             )
             if profile:
                 _t_seg = time.perf_counter() - _t0_seg
@@ -948,7 +1139,7 @@ def run_dynamic_collector(
                     raw_17d = append_extended_columns(raw_17d, raw_ext)
                     if not body_ok:
                         print("[Collector] CẢNH BÁO: không dò được mặt trong stroke này -> mẫu không có mốc cơ thể (body_anchor_valid=False).")
-                    stroke_shapes = [f.hand_shape for f in completed_stroke]
+                    stroke_shapes = stabilize_hand_shapes(completed_stroke)
 
                     res_traj_17d, res_shapes = resample_9d_gesture_sequence(raw_17d, stroke_shapes, k_target=32)
                     if res_traj_17d is not None:
@@ -1336,18 +1527,44 @@ def run_dynamic_collector(
         cv2.putText(canvas, f"Tong: {total_word_samples}/{max_total} mau tu | {len(negative_samples)}/{TARGET_NEGATIVE_SAMPLES} mau am",
                     (14, y_div + 34), cv2.FONT_HERSHEY_SIMPLEX, 0.31, (140, 140, 140), 1, lineType=cv2.LINE_AA)
 
-        # D. Card Hướng dẫn phím tắt chân Sidebar (Chiếm y: 390 -> 474)
-        card_d_y1, card_d_y2 = 390, 474
+        # D. Card Hướng dẫn phím tắt chân Sidebar (Chiếm y: 390 -> 452)
+        card_d_y1, card_d_y2 = 390, 452
         cv2.rectangle(canvas, (8, card_d_y1), (SIDEBAR_W - 8, card_d_y2), (12, 12, 12), -1)
         cv2.rectangle(canvas, (8, card_d_y1), (SIDEBAR_W - 8, card_d_y2), (32, 32, 32), 1)
-        cv2.putText(canvas, "[1-0, a-c]: Chon tu  | [n]: Mau am",
-                    (14, card_d_y1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (180, 180, 180), 1, lineType=cv2.LINE_AA)
-        cv2.putText(canvas, "[o]: Overlay quy dao | [d]: HUD 3D",
-                    (14, card_d_y1 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (180, 180, 180), 1, lineType=cv2.LINE_AA)
-        cv2.putText(canvas, "[r]: Undo mau | [x]: Xoa (x2)",
-                    (14, card_d_y1 + 54), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (180, 180, 180), 1, lineType=cv2.LINE_AA)
+        cv2.putText(canvas, "[1-0,a-c]: Chon tu | [n]: Mau am | [f]: Flip",
+                    (14, card_d_y1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (180, 180, 180), 1, lineType=cv2.LINE_AA)
+        cv2.putText(canvas, "[o]: Overlay | [d]: HUD 3D | [r]: Undo | [x]: Xoa",
+                    (14, card_d_y1 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (180, 180, 180), 1, lineType=cv2.LINE_AA)
         cv2.putText(canvas, "[q]: Thoat va luu du lieu an toan",
-                    (14, card_d_y1 + 72), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 220, 255), 1, lineType=cv2.LINE_AA)
+                    (14, card_d_y1 + 54), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (0, 220, 255), 1, lineType=cv2.LINE_AA)
+
+        # E. Video Demo ASL Citizen — cửa sổ phụ riêng, chiếu lặp liên tục
+        if not headless:
+            demo_frame = demo_player.get_frame()
+            if demo_frame is not None:
+                # Thêm label tên từ lên thumbnail trước khi hiển thị
+                demo_display = demo_frame.copy()
+                label_word = curr_word_id if not is_collecting_negative else "---"
+                (tw, th), _ = cv2.getTextSize(label_word, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                lx = (DemoVideoPlayer.THUMB_W - tw) // 2
+                # Nền mờ phía dưới để chữ dễ đọc
+                cv2.rectangle(demo_display,
+                              (0, DemoVideoPlayer.THUMB_H - th - 14),
+                              (DemoVideoPlayer.THUMB_W, DemoVideoPlayer.THUMB_H),
+                              (0, 0, 0), -1)
+                cv2.putText(demo_display, label_word,
+                            (lx, DemoVideoPlayer.THUMB_H - 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 200, 255), 2, lineType=cv2.LINE_AA)
+                cv2.imshow("Demo ASL Citizen (Chieu lap)", demo_display)
+            else:
+                # Hiển thị placeholder khi không có video
+                placeholder = np.zeros((DemoVideoPlayer.THUMB_H, DemoVideoPlayer.THUMB_W, 3), dtype=np.uint8)
+                no_vid_msg = f"Khong co demo: {curr_word_id if not is_collecting_negative else 'MAU AM'}"
+                cv2.putText(placeholder, no_vid_msg,
+                            (10, DemoVideoPlayer.THUMB_H // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (100, 100, 100), 1, lineType=cv2.LINE_AA)
+                cv2.imshow("Demo ASL Citizen (Chieu lap)", placeholder)
+
 
         # Bảng nhỏ profile góc màn hình (SPEC 05B Nhiệm vụ 3a)
         if profile and len(prof_total) > 0:
@@ -1430,6 +1647,7 @@ def run_dynamic_collector(
             stroke_handed_history.clear()
             stroke_ext_history.clear()
             stroke_raw_history.clear()
+            demo_player.switch(curr_word_id)   # Cập nhật video demo khi chuyển từ
             print(f"-> Chuyển sang thu từ: {curr_display_name}")
         elif key == ord('r'):
             if is_collecting_negative:
@@ -1531,6 +1749,9 @@ def run_dynamic_collector(
         bg_archive_writer.flush_and_stop()
     except Exception as e:
         print(f"[Collector] Loi flush archive: {e}")
+
+    # Dừng thread demo video player
+    demo_player.stop()
 
     if cap is not None:
         cap.release()

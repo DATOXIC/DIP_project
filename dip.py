@@ -4,10 +4,15 @@ DIP — một lệnh cho mọi việc của dự án nhận diện thủ ngữ.
     py dip.py                      # mở CỬA SỔ ỨNG DỤNG (làm mọi việc bằng chuột);  py dip.py --menu = menu chữ
     py dip.py tinh-nguyen          # MỘT lệnh cho cả buổi thu: chọn/tạo người, thu, kiểm tra, thử nhận diện
     py dip.py tien-do              # đã có bao nhiêu người đạt / mục tiêu
-    py dip.py nhan-dien            # chạy nhận diện với hồ sơ của Đạt (bank sản xuất)
-    py dip.py nhan-dien --ho-so Mai
-    py dip.py nhan-dien --xac-nhan # hỏi xác nhận khi không chắc, học dần người ký (bank Đạt + mẫu xác nhận)
-    py dip.py nhan-dien --ho-so Mai --gop-dat   # bank gộp Đạt + Mai;  --gop Phi Đạt để gộp nhiều hồ sơ
+    py dip.py nhan-dien            # chạy nhận diện với hồ sơ của Đạt (bank sản xuất); hỏi xác nhận khi không
+                                    # chắc là MẶC ĐỊNH BẬT (đòn bẩy chính cho người lạ, xem eval_enroll.py);
+                                    # tầng DL dự phòng cũng MẶC ĐỊNH BẬT nếu có best_gesture_model_none.pth
+                                    # (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md; tắt bằng --tat-dl)
+    py dip.py nhan-dien --ho-so Mai   # mẫu xác nhận được CỘNG DỒN vào profiles/Mai.json qua nhiều lần dùng
+    py dip.py nhan-dien --khong-xac-nhan   # tắt hỏi xác nhận (quay lại hành vi cũ)
+    py dip.py nhan-dien --ho-so Mai --gop-dat   # bank gộp Đạt + CHÍNH Mai (đã đo: cách đúng, KHÔNG dùng
+                                    # --gop <người khác> để gộp thêm người khác - đã đo là vô ích/có hại,
+                                    # xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md)
     py dip.py thu --ho-so Phi      # thu dữ liệu cho hồ sơ có sẵn
     py dip.py thu --moi "Nguyễn An"   # tạo hồ sơ mới rồi thu luôn
     py dip.py thu --ho-so Đạt --dieu-kien dark   # Đạt thu điều kiện môi trường (không đụng bank sản xuất)
@@ -99,10 +104,17 @@ def build_merged_bank(pid: str, gop_dat: bool, gop: Optional[List[str]] = None) 
 
 
 def cmd_nhan_dien(pid: str, extra: Optional[List[str]] = None, templates: Optional[str] = None,
-                  xac_nhan: bool = False) -> List[str]:
+                  xac_nhan: bool = True, dl_model: Optional[str] = None,
+                  dl_nguong: Optional[float] = None, tat_dl: bool = False) -> List[str]:
     args = ["predict_sentence_webcam.py"]
-    if xac_nhan:
-        args.append("--confirm-enroll")
+    if not xac_nhan:
+        args.append("--no-confirm-enroll")
+    if tat_dl:
+        args.append("--no-dl")
+    if dl_model:
+        args += ["--dl-model", dl_model]
+    if dl_nguong is not None:
+        args += ["--dl-conf-threshold", str(dl_nguong)]
     if templates:
         args += ["--templates", templates]
     elif pid != people.OWNER_ID:
@@ -522,7 +534,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = p.add_subparsers(dest="lenh")
     a = sub.add_parser("nhan-dien", help="Chạy nhận diện thời gian thực")
     a.add_argument("--ho-so", default=None, help="Tên/mã hồ sơ (mặc định: Đạt)")
-    a.add_argument("--xac-nhan", action="store_true", help="Hỏi xác nhận khi cử chỉ không chắc; mẫu được xác nhận thêm vào bank của phiên (phím y/2/n/z)")
+    a.add_argument("--khong-xac-nhan", action="store_true", help="TẮT hỏi xác nhận khi cử chỉ không chắc (mặc định đã BẬT — đòn bẩy chính giúp nhận đúng người lạ, xem eval_enroll.py). Bật lại bằng cách không truyền cờ này.")
+    a.add_argument("--tat-dl", action="store_true", help="TẮT tầng DL dự phòng (xem dl_fusion.py). Mặc định đã BẬT tự động nếu "
+                                                          "tìm thấy 'best_gesture_model_none.pth' (đã đo: nested CV 96.6% trung bình "
+                                                          "4 người lạ thật, xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md).")
+    a.add_argument("--dl-model", default=None, help="Checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
+    a.add_argument("--dl-nguong", type=float, default=None, help="Ngưỡng tin cậy softmax cho tầng DL (mặc định 0.38, xem dl_fusion.py).")
     a.add_argument("--gop-dat", action="store_true", help="Gộp thêm bank của Đạt vào hồ sơ đang chọn")
     a.add_argument("--gop", nargs="+", default=None, metavar="HO_SO", help="Gộp thêm các hồ sơ khác, ví dụ --gop Phi Đạt")
     a = sub.add_parser("tinh-nguyen", help="MỘT lệnh cho cả buổi thu: chọn/tạo người, thu, kiểm tra, thử nhận diện")
@@ -567,7 +584,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if x != people.OWNER_ID and people.profile_stats(x)["mau"] == 0:
                     raise SystemExit(f"Hồ sơ '{x}' chưa có dữ liệu.")
             templates = build_merged_bank(pid, args.gop_dat, others)
-        return chay(cmd_nhan_dien(pid, extra, templates, args.xac_nhan))
+        return chay(cmd_nhan_dien(pid, extra, templates, not args.khong_xac_nhan, args.dl_model, args.dl_nguong, args.tat_dl))
     if args.lenh == "tinh-nguyen":
         return phien_tinh_nguyen(_tim(args.ho_so) if args.ho_so else None, args.moi)
     if args.lenh == "tien-do":

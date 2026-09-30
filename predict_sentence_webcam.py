@@ -55,6 +55,7 @@ import torch
 import torch.nn.functional as F
 import mediapipe as mp
 
+import dl_fusion
 from train import TwoStreamHandCNN
 from improved_dip_pipeline import (
     extract_smart_hand_crop,
@@ -129,9 +130,11 @@ CONFIG = {
     "v_start_ratio": 0.08,       # Vận tốc bắt đầu cử chỉ (8% palm_len/frame)
     "v_stop_ratio": 0.040,       # Vận tốc khựng tay dừng từ (4% palm_len/frame)
     "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
-    # Chuẩn hóa vận tốc + Swipe-Left theo THỜI GIAN (mặc định TẮT). Bật khi camera có fps thật lệch 30 (thiếu sáng, 60 fps).
-    # Số đo ngoại tuyến: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md (eval_segmenter_fps.py).
-    "time_norm": {"enabled": False, "ref_fps": 30.0, "max_stroke_sec": 2.0, "swipe_window_sec": 0.17, "v_scale_min": 1.0},
+    # Chuẩn hóa vận tốc + Swipe-Left theo THỜI GIAN (mặc định BẬT từ 2026-09-29). Giúp khi camera có fps thật lệch 30
+    # (thiếu sáng, 60 fps) -- quan trọng cho người lạ vì ta không kiểm soát được fps camera của họ.
+    # Số đo ngoại tuyến: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md (eval_segmenter_fps.py) -- ở fps gốc (30) hành vi
+    # giống hệt lúc tắt; ở 60fps/15fps/45fps/khung-trùng đều cải thiện rõ (nhớ giảm, swipe-nhầm giảm về 0).
+    "time_norm": {"enabled": True, "ref_fps": 30.0, "max_stroke_sec": 2.0, "swipe_window_sec": 0.17, "v_scale_min": 1.0},
     "dedupe_frames": False,      # True = bỏ khung TRÙNG y hệt (camera thiếu sáng lặp bộ đệm) trước khi dò tay; cần camera thật (video/headless bỏ qua). Chưa kiểm chứng trên webcam thật.
 
     # --- Đường dẫn template và trọng số DTW theo từng ký hiệu (ASL-LEX 2.0) ---
@@ -1022,7 +1025,9 @@ def run_sentence_builder(
     lead_trim: Optional[bool] = None,
     width_blend: Optional[float] = None,
     dedupe_frames: Optional[bool] = None,
-    confirm_enroll: bool = False
+    confirm_enroll: bool = True,
+    dl_model_path: Optional[str] = None,
+    dl_conf_threshold: Optional[float] = None,
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1031,6 +1036,11 @@ def run_sentence_builder(
     transition_lockout: SPEC 08B khoảng cấm sau chốt (giây). None = lấy từ cấu hình.
     lead_trim: SPEC 08B cắt phần dẫn đầu thích nghi (None = lấy từ cấu hình); phím [k] bật/tắt lúc chạy.
     confirm_enroll: chế độ HỎI XÁC NHẬN (session_enroll.py): cử chỉ UNCERTAIN/REJECTED được hỏi lại; phím [y]/[2]/[n]/[z].
+    dl_model_path: đường dẫn checkpoint .pth của tầng DL dự phòng (xem dl_fusion.py). None (mặc định) =
+                   TẮT, hành vi giữ nguyên như trước khi có tầng này. CHỈ dùng checkpoint train với
+                   --test_signer none (train_dynamic_dl.py) - các checkpoint LOSO (best_gesture_model_
+                   <Ten>.pth) CỐ Ý giấu 1 người, không phải model để chạy thật.
+    dl_conf_threshold: ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận (None = dl_fusion.DEFAULT_CONF_THRESHOLD).
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -1132,8 +1142,12 @@ def run_sentence_builder(
         threshold_mode=th_mode,
         threshold_k=th_k,
         uncertainty_k=unc_k,
-        width_blend=w_blend
+        width_blend=w_blend,
+        dl_model_path=dl_model_path,
+        dl_conf_threshold=dl_conf_threshold if dl_conf_threshold is not None else dl_fusion.DEFAULT_CONF_THRESHOLD,
     )
+    if dl_model_path:
+        print(f"ℹ️ [DL] Tầng dự phòng BẬT: {dl_model_path} (ngưỡng={dtw_engine.dl_conf_threshold:.2f}).")
 
     # SPEC 03: bộ dò mặt có cache — CHỈ tạo khi nhóm mốc cơ thể đang bật (w_b > 0), để không tốn CPU vô ích.
     # Nếu không tạo được (thiếu model / không có mạng để tải), query sẽ không có mốc cơ thể và
@@ -1699,6 +1713,8 @@ def run_sentence_builder(
                                         _t_dtw += time.perf_counter() - _t0_dtw
 
                             if match_result is not None:
+                                if match_result.fusion_note:
+                                    print(f"[Fusion] {match_result.fusion_note}")
                                 # a) Chấp nhận từ vựng (ACCEPTED)
                                 if match_result.status == "ACCEPTED" and match_result.top_word:
                                     word_key = match_result.top_word
@@ -2193,10 +2209,21 @@ def run_sentence_builder(
                 print("[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.")
         if enroller is not None and enroller.count() > 0:
             try:
-                _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
-                os.makedirs("profiles", exist_ok=True)
-                _n = enroller.save(_enr_path)
-                print(f"[XacNhan] Cả phiên: thêm {_n} mẫu ({enroller.summary()}) -> {_enr_path} (dùng lại: --templates {_enr_path})")
+                _is_production_bank = os.path.abspath(templates_file) == os.path.abspath(
+                    CONFIG.get("templates_path", "webcam_templates.json"))
+                if _is_production_bank:
+                    # AN TOAN: khong bao gio tu dong ghi/gop vao bank san xuat chinh.
+                    # Chi khi chay voi --templates profiles/<ten>.json (ho so ca nhan) moi tich luy duoc.
+                    _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
+                    os.makedirs("profiles", exist_ok=True)
+                    _n = enroller.save(_enr_path)
+                    print(f"[XacNhan] Cả phiên: thêm {_n} mẫu ({enroller.summary()}) -> {_enr_path} "
+                          f"(KHÔNG gộp vào bank sản xuất; muốn tích lũy qua nhiều lần dùng: chạy lại với "
+                          f"--templates profiles/<tên hồ sơ>.json)")
+                else:
+                    _n = enroller.merge_into_file(templates_file)
+                    print(f"[XacNhan] Cả phiên: đã cộng dồn {_n} mẫu ({enroller.summary()}) vào hồ sơ "
+                          f"'{templates_file}' — lần dùng sau sẽ tự nhận tốt hơn, không cần lặp lại.")
             except Exception as _enr_err:
                 print(f"[XacNhan] Không lưu được mẫu phiên: {_enr_err}")
         if session_file is not None:
@@ -2261,7 +2288,10 @@ if __name__ == "__main__":
                         help="Bật/tắt chuẩn hóa vận tốc + Swipe-Left theo thời gian (mặc định lấy CONFIG['time_norm']['enabled'] = TẮT).")
     parser.add_argument("--dedupe-frames", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt bỏ khung trùng trước khi dò tay (mặc định lấy CONFIG['dedupe_frames'] = TẮT).")
-    parser.add_argument("--confirm-enroll", action="store_true", help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận thêm vào bank của phiên (phím y/2/n/z).")
+    parser.add_argument("--confirm-enroll", action=argparse.BooleanOptionalAction, default=True,
+                        help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận "
+                             "thêm vào bank (phím y/2/n/z). MẶC ĐỊNH BẬT (đã đo: đây là đòn bẩy lớn nhất cho "
+                             "người lạ, xem eval_enroll.py) — dùng --no-confirm-enroll để tắt.")
     parser.add_argument("--width-blend", type=float, default=None, help="Pha trộn độ rộng chuẩn hóa ngưỡng 0..1 (0 = độ rộng riêng từng từ, 1 = thang chung). Mặc định lấy CONFIG['width_blend'] (0.0).")
     parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
@@ -2274,7 +2304,26 @@ if __name__ == "__main__":
     parser.add_argument("--lead-trim", action=argparse.BooleanOptionalAction, default=None,
                         help="SPEC 08B: Bật/tắt cắt thích ứng phần dẫn đầu (adaptive lead trimming). "
                              "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (BẬT). Dùng --no-lead-trim để tắt. Phím [k] đổi lúc chạy.")
+    parser.add_argument("--dl", action=argparse.BooleanOptionalAction, default=None,
+                        help="Bật/tắt tầng DL dự phòng (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md). "
+                             "Mặc định None = TỰ ĐỘNG bật nếu tìm thấy 'best_gesture_model_none.pth' (hoặc file chỉ "
+                             "định qua --dl-model), tắt lặng lẽ nếu không có file. Dùng --no-dl để tắt hẳn dù có file. "
+                             "Đã đo: gate an toàn (Hybrid không tệ hơn max(DTW,DL) ở đa số từ, xem results_hybrid_*.json), "
+                             "và nested CV cho 96.6% trung bình 4 người lạ thật, không rò rỉ ngưỡng.")
+    parser.add_argument("--dl-model", type=str, default=None,
+                        help="Đường dẫn checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
+    parser.add_argument("--dl-conf-threshold", type=float, default=None,
+                        help="Ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận khi DTW không ACCEPTED. "
+                             "Mặc định 0.38 (chọn giữa miền ổn định qua nested CV 4 người lạ, xem dl_fusion.py).")
     args, _ = parser.parse_known_args()
+
+    eff_dl_model_path = None
+    if args.dl is not False:
+        candidate = args.dl_model if args.dl_model else "best_gesture_model_none.pth"
+        if os.path.exists(candidate):
+            eff_dl_model_path = candidate
+        elif args.dl is True:
+            print(f"[!] --dl được bật nhưng không tìm thấy '{candidate}' -> chạy KHÔNG có tầng DL.")
 
     selected_cam = args.cam if args.cam is not None else CONFIG.get("camera_source", 0)
     selected_templates = args.templates if args.templates is not None else CONFIG.get("templates_path", "dynamic_templates.json")
@@ -2307,4 +2356,6 @@ if __name__ == "__main__":
         width_blend=args.width_blend,
         dedupe_frames=args.dedupe_frames,
         confirm_enroll=args.confirm_enroll,
+        dl_model_path=eff_dl_model_path,
+        dl_conf_threshold=args.dl_conf_threshold,
     )

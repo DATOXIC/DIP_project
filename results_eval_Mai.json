@@ -1,0 +1,57 @@
+{
+  "test_signer": "Mai",
+  "overall_accuracy": 0.93,
+  "total_samples": 100,
+  "per_word": {
+    "BYE": {
+      "total": 8,
+      "correct": 7,
+      "accuracy": 0.875
+    },
+    "DRINK": {
+      "total": 18,
+      "correct": 16,
+      "accuracy": 0.8888888888888888
+    },
+    "EAT": {
+      "total": 10,
+      "correct": 10,
+      "accuracy": 1.0
+    },
+    "HELLO": {
+      "total": 9,
+      "correct": 8,
+      "accuracy": 0.8888888888888888
+    },
+    "HUNGRY": {
+      "total": 10,
+      "correct": 7,
+      "accuracy": 0.7
+    },
+    "ME": {
+      "total": 10,
+      "correct": 10,
+      "accuracy": 1.0
+    },
+    "PLEASE": {
+      "total": 11,
+      "correct": 11,
+      "accuracy": 1.0
+    },
+    "SORRY": {
+      "total": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    },
+    "THANK_YOU": {
+      "total": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    },
+    "WATER": {
+      "total": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    }
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "test_signer": "Mai",
+  "total_samples": 100,
+  "conf_threshold": 0.35,
+  "dtw_accuracy": 87.0,
+  "dl_accuracy": 93.0,
+  "hybrid_accuracy": 95.0,
+  "per_word": {
+    "HELLO": {
+      "total": 9,
+      "dtw": 8,
+      "dl": 8,
+      "hybrid": 8
+    },
+    "BYE": {
+      "total": 8,
+      "dtw": 7,
+      "dl": 7,
+      "hybrid": 7
+    },
+    "ME": {
+      "total": 10,
+      "dtw": 10,
+      "dl": 10,
+      "hybrid": 10
+    },
+    "EAT": {
+      "total": 10,
+      "dtw": 10,
+      "dl": 10,
+      "hybrid": 10
+    },
+    "DRINK": {
+      "total": 18,
+      "dtw": 17,
+      "dl": 16,
+      "hybrid": 18
+    },
+    "WATER": {
+      "total": 8,
+      "dtw": 8,
+      "dl": 8,
+      "hybrid": 8
+    },
+    "SORRY": {
+      "total": 8,
+      "dtw": 8,
+      "dl": 8,
+      "hybrid": 8
+    },
+    "PLEASE": {
+      "total": 11,
+      "dtw": 11,
+      "dl": 11,
+      "hybrid": 11
+    },
+    "THANK_YOU": {
+      "total": 8,
+      "dtw": 8,
+      "dl": 8,
+      "hybrid": 8
+    },
+    "HUNGRY": {
+      "total": 10,
+      "dtw": 0,
+      "dl": 7,
+      "hybrid": 7
+    }
+  },
+  "threshold_sweep": {
+    "best": {
+      "threshold": 0.3,
+      "accuracy": 0.95
+    },
+    "table": [
+      {
+        "threshold": 0.3,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.32,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.34,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.36,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.38,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.4,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.42,
+        "accuracy": 0.95
+      },
+      {
+        "threshold": 0.44,
+        "accuracy": 0.94
+      },
+      {
+        "threshold": 0.46,
+        "accuracy": 0.94
+      },
+      {
+        "threshold": 0.48,
+        "accuracy": 0.93
+      },
+      {
+        "threshold": 0.5,
+        "accuracy": 0.93
+      },
+      {
+        "threshold": 0.52,
+        "accuracy": 0.93
+      },
+      {
+        "threshold": 0.54,
+        "accuracy": 0.93
+      },
+      {
+        "threshold": 0.56,
+        "accuracy": 0.92
+      },
+      {
+        "threshold": 0.58,
+        "accuracy": 0.92
+      },
+      {
+        "threshold": 0.6,
+        "accuracy": 0.92
+      },
+      {
+        "threshold": 0.62,
+        "accuracy": 0.92
+      },
+      {
+        "threshold": 0.64,
+        "accuracy": 0.92
+      },
+      {
+        "threshold": 0.66,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.68,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.7,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.72,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.74,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.76,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.78,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.8,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.82,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.84,
+        "accuracy": 0.91
+      },
+      {
+        "threshold": 0.86,
+        "accuracy": 0.9
+      },
+      {
+        "threshold": 0.88,
+        "accuracy": 0.89
+      },
+      {
+        "threshold": 0.9,
+        "accuracy": 0.87
+      },
+      {
+        "threshold": 0.92,
+        "accuracy": 0.87
+      },
+      {
+        "threshold": 0.94,
+        "accuracy": 0.87
+      },
+      {
+        "threshold": 0.96,
+        "accuracy": 0.87
+      },
+      {
+        "threshold": 0.98,
+        "accuracy": 0.87
+      },
+      {
+        "threshold": 1.0,
+        "accuracy": 0.87
+      }
+    ]
+  }
+}

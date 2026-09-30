@@ -1,0 +1,52 @@
+{
+  "test_signer": "Vuong",
+  "overall_accuracy": 0.9615384615384616,
+  "total_samples": 52,
+  "per_word": {
+    "DRINK": {
+      "total": 6,
+      "correct": 6,
+      "accuracy": 1.0
+    },
+    "EAT": {
+      "total": 6,
+      "correct": 5,
+      "accuracy": 0.8333333333333334
+    },
+    "HELLO": {
+      "total": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    },
+    "HUNGRY": {
+      "total": 7,
+      "correct": 7,
+      "accuracy": 1.0
+    },
+    "ME": {
+      "total": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    },
+    "PLEASE": {
+      "total": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    },
+    "SORRY": {
+      "total": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    },
+    "THANK_YOU": {
+      "total": 5,
+      "correct": 4,
+      "accuracy": 0.8
+    },
+    "WATER": {
+      "total": 5,
+      "correct": 5,
+      "accuracy": 1.0
+    }
+  }
+}

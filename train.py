@@ -44,7 +44,7 @@ import math
 import random
 import argparse
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Dict, List, Optional, Tuple
 
 if sys.platform == "win32":
@@ -100,6 +100,10 @@ def parse_args() -> argparse.Namespace:
                         help="Khong lat ngang mau Kaggle (giu nguyen huong goc)")
     parser.add_argument("--num_workers", type=int,   default=2 if sys.platform != "win32" else 0,
                         help="So DataLoader workers (tu dong chon 2 tren Colab/Linux, 0 tren Windows)")
+    parser.add_argument("--class_weight", dest="class_weight", action="store_true", default=True,
+                        help="Can bang loss theo nghich dao tan suat lop (chong thien vi lop nhieu mau, VD B=155 vs C=64/V=54)")
+    parser.add_argument("--no_class_weight", dest="class_weight", action="store_false",
+                        help="Tat can bang loss, dung CrossEntropyLoss thuong (hanh vi cu)")
     return parser.parse_args()
 
 
@@ -1005,7 +1009,17 @@ def main() -> None:
     print(f"  Tong tham so (Trainable): {trainable:,}\n")
 
     # CrossEntropyLoss + Label Smoothing nhe (giam overfit khi dataset nho)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    # + Class Weight (nghich dao tan suat) de chong thien vi lop nhieu mau -- phat hien 2026-09-30:
+    # B=155 mau vs C=64/V=54 khien model hoc lech, V chi dat 63% ngay tren du lieu train (20/54 nham thanh L).
+    class_weight_tensor = None
+    if args.class_weight:
+        train_counts = Counter(c for _, c in train_list)
+        counts = np.array([max(1, train_counts.get(i, 0)) for i in range(num_classes)], dtype=np.float32)
+        raw_weight = counts.sum() / (num_classes * counts)
+        class_weight_tensor = torch.tensor(raw_weight / raw_weight.mean(), dtype=torch.float32).to(device)
+        print(f"  Class weight ({'BAT' if args.class_weight else 'TAT'}): " +
+              ", ".join(f"{label_names[i]}={class_weight_tensor[i]:.2f}" for i in range(num_classes)))
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05, weight=class_weight_tensor)
 
     # Adam + weight decay nhe
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)

@@ -1,0 +1,71 @@
+{
+  "test_signer": "Dang",
+  "total_samples": 42,
+  "conf_threshold": 0.38,
+  "dtw_accuracy": 73.80952380952381,
+  "dl_accuracy": 95.23809523809524,
+  "hybrid_accuracy": 95.23809523809524,
+  "per_word": {
+    "HELLO": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "BYE": {
+      "total": 4,
+      "dtw": 3,
+      "dl": 3,
+      "hybrid": 3
+    },
+    "ME": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "THANK_YOU": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "EAT": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 3,
+      "hybrid": 4
+    },
+    "DRINK": {
+      "total": 5,
+      "dtw": 4,
+      "dl": 5,
+      "hybrid": 4
+    },
+    "WATER": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "SORRY": {
+      "total": 4,
+      "dtw": 4,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "PLEASE": {
+      "total": 4,
+      "dtw": 0,
+      "dl": 4,
+      "hybrid": 4
+    },
+    "HUNGRY": {
+      "total": 5,
+      "dtw": 0,
+      "dl": 5,
+      "hybrid": 5
+    }
+  },
+  "threshold_sweep": null
+}

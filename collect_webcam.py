@@ -164,9 +164,10 @@ class LeanQualityAssessor:
 # 2. CHƯƠNG TRÌNH THU THẬP MẪU CHÍNH (MAIN COLLECTOR RUNNER)
 # =============================================================================
 
-def run_webcam_collector():
+def run_webcam_collector(camera_idx: int = 1):
     print("=" * 72)
     print("  BỘ THU THẬP MẪU WEBCAM (LEAN CONSOLIDATED PIPELINE v4)")
+    print(f"  Camera Index: {camera_idx}")
     print("=" * 72)
 
     # 1. Tải Hand Detector
@@ -195,11 +196,11 @@ def run_webcam_collector():
     motion_tracker = MotionTracker(history_len=16)
 
     # 3. Mở Webcam
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(camera_idx, cv2.CAP_DSHOW)
     if not cap.isOpened():
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(camera_idx)
     if not cap.isOpened():
-        print("[LỖI] Không thể mở webcam!")
+        print(f"[LỖI] Không thể mở webcam (Camera index: {camera_idx})!")
         return
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -417,4 +418,10 @@ def run_webcam_collector():
 
 
 if __name__ == "__main__":
-    run_webcam_collector()
+    cam_id = 1
+    if len(sys.argv) > 1:
+        try:
+            cam_id = int(sys.argv[1])
+        except ValueError:
+            pass
+    run_webcam_collector(camera_idx=cam_id)

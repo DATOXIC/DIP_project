@@ -308,7 +308,7 @@ def test_frame_parity_with_collector(tmp_path):
         def reset(self):
             self.buf = []
 
-        def update(self, wrist_x, wrist_y, palm_len, hand_shape, timestamp):
+        def update(self, wrist_x, wrist_y, palm_len, hand_shape, timestamp, hand_shape_conf=None):
             self.buf.append(GestureFrame(wrist_x, wrist_y, palm_len, hand_shape, timestamp))
             self.n += 1
             if self.n % 20 == 0:

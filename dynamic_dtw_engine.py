@@ -34,6 +34,7 @@ import numpy as np
 
 # SPEC 03: hàm đếm nhịp lặp dùng chung (dynamic_features.py chỉ phụ thuộc numpy, không import ngược file này ở mức module).
 from dynamic_features import compute_repetition_count, BODY_X_COLUMN
+import handshape_fusion
 
 if sys.platform == "win32":
     try:
@@ -248,6 +249,8 @@ class GestureFrame:
     palm_len: float              # Độ dài lòng bàn tay chuẩn hóa (LM 0 - LM 9)
     hand_shape: str              # Nhãn dáng tay tĩnh ('A', 'B', 'C', 'L', 'V', 'Unknown'...)
     timestamp: float             # Thời gian ghi nhận (time.time())
+    hand_shape_conf: Optional[float] = None  # Độ tin cậy softmax của hand_shape (None nếu CNN tắt)
+    v_norm: float = 0.0          # Vận tốc chuẩn hóa tại khung này (0 = tay đứng yên hoàn toàn)
 
 
 # LEGACY (Phase 2 sẽ dời): ResampledGesture chỉ phục vụ schema 4D cũ
@@ -321,6 +324,7 @@ class MatchResult:
     candidates: List[MatchCandidate] = field(default_factory=list)
     match_quality: float = 0.0   # SPEC 04B: Điểm độ khớp [0, 100]
     r_ratio: float = 0.0         # SPEC 04B: Tỉ lệ chuẩn hóa d1 / độ_rộng[top1]
+    fusion_note: str = ""        # Khác rỗng nếu handshape_fusion đã ghi đè top1 (xem handshape_fusion.py)
 
 
 # =============================================================================
@@ -511,7 +515,8 @@ class KineticPauseSegmenter:
         wrist_y: float,
         palm_len: float,
         hand_shape: str = "Unknown",
-        timestamp: Optional[float] = None
+        timestamp: Optional[float] = None,
+        hand_shape_conf: Optional[float] = None
     ) -> Tuple[KineticState, Optional[List[GestureFrame]], bool, float]:
         """
         Cập nhật từng khung hình camera.
@@ -531,7 +536,8 @@ class KineticPauseSegmenter:
             x=wrist_x, y=wrist_y,
             palm_len=safe_palm,
             hand_shape=hand_shape,
-            timestamp=timestamp
+            timestamp=timestamp,
+            hand_shape_conf=hand_shape_conf
         )
 
         # 1. Tính vận tốc chuẩn hóa theo cơ thể
@@ -548,6 +554,7 @@ class KineticPauseSegmenter:
             # Quy về "mỗi khung ở ref_fps": v_mỗi_giây / ref_fps = v_mỗi_khung * (1/ref_fps) / dt_ước_lượng.
             v_norm *= max(self.v_scale_min, (1.0 / self.ref_fps) / self._dt_estimate())
 
+        curr_frame.v_norm = v_norm
         self.prev_wrist = (wrist_x, wrist_y)
         self.recent_wrists.append((wrist_x, wrist_y, dx, dy, safe_palm, timestamp))
 
@@ -1548,7 +1555,11 @@ class GoldenTriadDTWMatcher:
         # 0.0 = giữ nguyên hành vi cũ (mỗi từ dùng độ rộng riêng); 1.0 = một thang chung (trung vị các từ).
         # Lý do: độ rộng riêng của từ là ước lượng nhiễu từ 10-17 mẫu của MỘT người ký, nên từ ký rất đều (BYE) bị siết
         # ngưỡng quá chặt với người lạ. Số đo: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md.
-        width_blend: float = 0.0
+        width_blend: float = 0.0,
+        # Tầng DL dự phòng (xem dl_fusion.py) - MẶC ĐỊNH TẮT (None) nên hành vi cũ giữ nguyên
+        # 100% khi không cấu hình gì: không tốn chi phí nạp torch/model nếu không truyền đường dẫn.
+        dl_model_path: Optional[str] = None,
+        dl_conf_threshold: float = 0.38,  # dl_fusion.DEFAULT_CONF_THRESHOLD - xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md
     ):
         self.templates_path = templates_path
         self.use_fast_dtw = bool(use_fast_dtw)
@@ -1603,6 +1614,11 @@ class GoldenTriadDTWMatcher:
         self.intra_widths: Dict[str, float] = {}
         self.r_typical: float = 1.0
         self.width_blend = min(max(float(width_blend), 0.0), 1.0)
+
+        self.dl_model_path = dl_model_path
+        self.dl_conf_threshold = float(dl_conf_threshold)
+        self._dl_bundle: Any = None
+        self._dl_bundle_loaded: bool = False
 
         self.load_sign_weights()
         if self.templates_dict is not None:
@@ -2158,7 +2174,57 @@ class GoldenTriadDTWMatcher:
         """Relative Contrast Margin: (D2 - D1) / max(D1, eps)."""
         return float((d_top2 - d_top1) / max(d_top1, eps))
 
+    def _get_fusion_reference(self) -> Dict[str, np.ndarray]:
+        """Chu ky dang tay tham chieu (DRINK/WATER) cua chinh bank dang dung, cache theo
+        id(self.vocabulary) - cung kieu cache-invalidation da dung cho fast bank (xem
+        invalidate_fast_bank / _fast_bank_sig o tren)."""
+        sig = id(self.vocabulary)
+        if getattr(self, "_fusion_ref_sig", None) != sig:
+            self._fusion_ref = handshape_fusion.build_reference_signatures(self.vocabulary)
+            self._fusion_ref_sig = sig
+        return self._fusion_ref
+
+    def _get_dl_bundle(self) -> Any:
+        """Nap mo hinh DL MOT LAN, chi khi dl_model_path duoc truyen vao luc khoi tao (xem
+        dl_fusion.py). Neu khong cau hinh gi (mac dinh), tra None ngay, KHONG import torch,
+        khong doi hanh vi/hieu nang cu mot chut nao."""
+        if not self._dl_bundle_loaded:
+            self._dl_bundle_loaded = True
+            if self.dl_model_path:
+                import dl_fusion
+                self._dl_bundle = dl_fusion.load_model(self.dl_model_path)
+        return self._dl_bundle
+
     def match(
+        self,
+        query_traj_9d: np.ndarray,
+        query_shapes: List[str],
+        handedness: Optional[str] = None,
+        query_has_body: bool = True,
+        query_rep_count: Optional[int] = None,
+        _precomputed_fast_min: Optional[Dict[str, float]] = None
+    ) -> MatchResult:
+        """So khop cu chi + 2 tang FUSION theo thu tu uu tien, moi tang CHI can thiep khi
+        tang truoc van chua ACCEPTED (khong bao gio ghi de quyet dinh DTW dang tu tin):
+          1. handshape_fusion - hep, chi DRINK/WATER, da kiem chung tren loi nguoi la that.
+          2. dl_fusion - rong hon (GRU da train da nguoi), chi bat khi dl_model_path duoc
+             cau hinh luc khoi tao (mac dinh KHONG bat)."""
+        result = self._match_core(
+            query_traj_9d, query_shapes, handedness=handedness,
+            query_has_body=query_has_body, query_rep_count=query_rep_count,
+            _precomputed_fast_min=_precomputed_fast_min,
+        )
+        result = handshape_fusion.apply_drink_water_veto(
+            result, query_traj_9d, self._get_fusion_reference()
+        )
+        bundle = self._get_dl_bundle()
+        if bundle is not None:
+            canon_traj, _ = canonicalize_chirality(query_traj_9d, handedness=handedness, flip_body_x=self.flip_body_x)
+            import dl_fusion
+            result = dl_fusion.apply_dl_fallback(result, canon_traj, bundle, self.dl_conf_threshold)
+        return result
+
+    def _match_core(
         self,
         query_traj_9d: np.ndarray,
         query_shapes: List[str],
