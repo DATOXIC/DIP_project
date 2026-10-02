@@ -564,6 +564,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     a.add_argument("--moi", default=None)
     sub.add_parser("test", help="Chạy kiểm thử")
     sub.add_parser("camera", help="Chẩn đoán camera")
+    a = sub.add_parser("web", help="Bản web: nhận diện từ video, chọn mốc bắt đầu ngay trên trình phát (http://127.0.0.1:8000)")
+    a.add_argument("--port", type=int, default=8000)
+    a.add_argument("--khong-mo-trinh-duyet", action="store_true", help="Không tự mở trình duyệt")
     args = p.parse_args(argv)
 
     if args.lenh is None:
@@ -629,6 +632,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return chay(cmd_test(extra))
     if args.lenh == "camera":
         return chay(cmd_camera(extra))
+    if args.lenh == "web":
+        return chay(["web_app.py", "--port", str(args.port)] + (["--no-browser"] if args.khong_mo_trinh_duyet else []))
     return 0
 
 

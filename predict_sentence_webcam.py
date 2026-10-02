@@ -95,6 +95,7 @@ from dynamic_dtw_engine import (
 # Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
 import speech_service
 from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
+import ui_side_panel
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
 from session_enroll import SessionEnroller
@@ -1028,9 +1029,36 @@ def run_sentence_builder(
     confirm_enroll: bool = True,
     dl_model_path: Optional[str] = None,
     dl_conf_threshold: Optional[float] = None,
+    start_sec: Optional[float] = None,
+    end_sec: Optional[float] = None,
+    events_path: Optional[str] = None,
+    mute_speech: bool = False,
+    ready_pose: Optional[bool] = None,
+    hold_on_hand_loss: bool = False,
+    force_stroke: bool = False,
+    trace_path: Optional[str] = None,
+    seg_tune: Optional[Dict[str, Any]] = None,
+    motion_mode: str = "wrist",
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
+    start_sec / end_sec: chỉ áp dụng khi có video_path; nhảy tới start_sec và dừng khi quá end_sec (giây trong video).
+                         Ở chế độ video, MỌI mốc thời gian của bộ phân đoạn dùng đồng hồ của VIDEO (chỉ số khung / fps),
+                         không dùng đồng hồ máy, nên kết quả không phụ thuộc tốc độ xử lý.
+    events_path: ghi mỗi cử chỉ (ACCEPTED/UNCERTAIN/REJECTED/OUT_OF_DURATION) thành một dòng JSON (JSONL), kèm nguồn DTW/DL.
+    mute_speech: tắt hẳn giọng nói (dùng khi chạy nền, ví dụ bản web).
+    ready_pose: False = KHÔNG đòi tay đứng yên trước khi bắt đầu ghi (người ký nhanh, đưa tay lên là ký ngay). None/True = như cũ.
+    hold_on_hand_loss: True = khi tay biến mất giữa lúc đang ghi (ra khỏi khung, nhòe do quá nhanh), giữ nguyên tư thế cuối thêm
+                       ~0.3 s để bộ phân đoạn kịp chốt cử chỉ thay vì xóa cả bộ đệm. Mặc định tắt.
+    force_stroke: True (chỉ với --video) = KHÔNG dùng bộ phân đoạn để tìm cử chỉ: toàn bộ đoạn [start_sec, end_sec] (các khung có tay) được coi là
+                  MỘT cử chỉ, bỏ qua cổng thời lượng/chuyển tiếp/lead-trim. Dùng để lấy mẫu từ đoạn người dùng tự xác định.
+    seg_tune: ghi đè riêng các ngưỡng chốt cử chỉ (None = giữ cấu hình): pause_sec (tay khựng bao lâu thì vào chờ chốt), grace_sec (chờ thêm
+              trước khi chốt hẳn), v_stop / v_start (ngưỡng vận tốc coi là đứng yên / bắt đầu ký, đơn vị lòng bàn tay mỗi khung),
+              early_commit (False = tắt chốt sớm khi dự đoán tạm đã chắc). Áp dụng cho cả chế độ chuỗi nhanh lẫn cơ bản.
+    motion_mode: "wrist" (mặc định) = vận tốc phân đoạn chỉ từ cổ tay; "hand" = lấy max(cổ tay, chuyển động của các khớp so với cổ tay), để cử chỉ
+                 nhẹ (ngón cử động, cổ tay gần đứng yên) vẫn được nhận là đang ký.
+    trace_path: ghi mỗi khung đã xử lý một dòng JSON (thời gian video, có tay không, vận tốc, trạng thái FSM, 21 mốc bàn tay) để bản web
+                duyệt từng khung và vẽ khung xương.
     ui_mode: "demo" | "debug" (mặc định CONFIG["ui_mode"]); ui_lang: "en" | "vi" (mặc định CONFIG["ui_lang"]).
     fast_chain: SPEC 08 chế độ "ký nhanh" (None = lấy CONFIG["fast_chain"]["enabled"], mặc định BẬT); phím [j] bật/tắt lúc chạy.
     transition_lockout: SPEC 08B khoảng cấm sau chốt (giây). None = lấy từ cấu hình.
@@ -1081,6 +1109,77 @@ def run_sentence_builder(
             ])
             session_file.flush()
         print(f"✓ Đang ghi log phiên cử chỉ vào: '{log_session_path}'")
+
+    # Nhật ký sự kiện có cấu trúc (JSONL): mỗi cử chỉ hoàn thành một dòng, kèm nguồn quyết định DTW/DL.
+    events_file = None
+    eof_clip = [float("inf")]   # giây video thật cuối cùng; cắt t_end của cử chỉ chốt nhờ đoạn đệm cuối video
+    if events_path is not None:
+        _ev_dir = os.path.dirname(os.path.abspath(events_path))
+        if _ev_dir and not os.path.exists(_ev_dir):
+            os.makedirs(_ev_dir, exist_ok=True)
+        events_file = open(events_path, mode="w", encoding="utf-8")
+
+    def _emit_event(event: str, mr: Optional[MatchResult], stroke_frames, duration_sec: float, commit_mode: str,
+                    records: Optional[List[Dict[str, Any]]] = None) -> None:
+        if events_file is None:
+            return
+        widths = getattr(dtw_engine, "intra_widths", {}) or {}
+        cands = []
+        if mr is not None:
+            for c in mr.candidates:
+                cands.append({"word": c.word_key, "distance": round(float(c.distance), 4),
+                              "quality": round(float(c.match_quality), 1), "r_ratio": round(float(c.r_ratio), 3),
+                              "width": (round(float(widths[c.word_key]), 4) if c.word_key in widths else None)})
+        rec = {
+            "event": event,
+            "word": (mr.top_word if (mr is not None and event == "ACCEPTED") else (cands[0]["word"] if cands else "")),
+            "t_start": round(float(stroke_frames[0].timestamp), 3),
+            "t_end": round(min(float(stroke_frames[-1].timestamp), eof_clip[0]), 3),
+            "duration": round(float(duration_sec), 3),
+            "commit_mode": commit_mode,
+            "status": mr.status if mr is not None else "",
+            "distance": round(float(mr.best_distance), 4) if mr is not None else None,
+            "quality": round(float(mr.match_quality), 1) if mr is not None else None,
+            "r_ratio": round(float(mr.r_ratio), 4) if mr is not None else None,
+            "source": mr.result_source if mr is not None else "",
+            "dtw_status": mr.dtw_status if mr is not None else "",
+            "dtw_word": mr.dtw_word if mr is not None else None,
+            "dl_word": mr.dl_word if mr is not None else None,
+            "dl_confidence": (round(float(mr.dl_confidence), 3) if (mr is not None and mr.dl_confidence >= 0.0) else None),
+            "fusion_note": mr.fusion_note if mr is not None else "",
+            "candidates": cands,
+            "forced": bool(force_stroke),
+        }
+        # Mẫu thô để lưu vào hồ sơ (đúng đặc trưng 24D mà bộ so khớp nhìn thấy) + xác suất DL của MỌI từ (hỏi DL cả khi DTW đã ACCEPTED).
+        if records is not None:
+            try:
+                s_traj, s_shapes, s_body, _s_dom = build_segment_features(records)
+            except Exception:
+                s_traj = None
+            if s_traj is not None:
+                s_arr = np.nan_to_num(np.asarray(s_traj, dtype=np.float32))
+                rec["sample"] = {"traj_features": np.round(s_arr, 6).tolist(), "hand_shapes": list(s_shapes),
+                                 "handedness": handedness_label, "body_anchor_valid": bool(s_body),
+                                 "duration_sec": round(float(duration_sec), 3)}
+                try:
+                    _bundle = dtw_engine._get_dl_bundle()
+                    if _bundle is not None:
+                        _pred = dl_fusion.predict(_bundle, s_arr)
+                        if _pred is not None:
+                            _probs = {w: round(float(pp), 4) for w, pp in zip(_bundle["words"], _pred[2])}
+                            rec["dl_probs"] = dict(sorted(_probs.items(), key=lambda kv: -kv[1])[:6])
+                            rec["dl_top"] = _pred[0]
+                except Exception:
+                    pass
+        events_file.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        events_file.flush()
+
+    trace_file = None
+    if trace_path is not None:
+        _tr_dir = os.path.dirname(os.path.abspath(trace_path))
+        if _tr_dir and not os.path.exists(_tr_dir):
+            os.makedirs(_tr_dir, exist_ok=True)
+        trace_file = open(trace_path, mode="w", encoding="utf-8")
 
     # 1. Khởi tạo MediaPipe Hand Landmarker song song đa luồng (SPEC 05C)
     model_asset_path = 'hand_landmarker.task'
@@ -1194,7 +1293,36 @@ def run_sentence_builder(
               f"kéo đuôi={fc_cfg.get('tail_pad_sec')}s. Từ nhiều pha (không chốt sớm): {multi_phase_words or 'không có'}")
     else:
         print("ℹ️ [FastChain] TẮT (bật bằng --fast-chain hoặc phím [j]).")
-    segmenter = make_segmenter(CONFIG, fc_cfg if fast_on else None)
+    if seg_tune and seg_tune.get("early_commit") is False:
+        fc_cfg["early_commit"] = False   # early_commit_ok() đọc khóa này mỗi lần quyết định chốt sớm
+        print("ℹ️ [Tinh chỉnh] Đã TẮT chốt sớm: cử chỉ chỉ chốt khi hết thời gian chờ.")
+    if seg_tune:
+        print(f"ℹ️ [Tinh chỉnh] Ghi đè bộ phân đoạn: {seg_tune}")
+
+    def _new_segmenter():
+        seg = make_segmenter(CONFIG, fc_cfg if fast_on else None)
+        if ready_pose is False:
+            seg.require_ready_pose = False
+        if seg_tune:
+            if seg_tune.get("pause_sec") is not None:
+                seg.pause_sec = float(seg_tune["pause_sec"])
+            if seg_tune.get("grace_sec") is not None:
+                seg.grace_window_sec = float(seg_tune["grace_sec"])
+            if seg_tune.get("v_stop") is not None:
+                seg.v_stop_ratio = float(seg_tune["v_stop"])
+            if seg_tune.get("v_start") is not None:
+                seg.v_start_ratio = float(seg_tune["v_start"])
+        if force_stroke:
+            # Ghi liên tục từ khung có tay đầu tiên, không bao giờ "khựng", không Swipe: cử chỉ chỉ chốt khi hết đoạn người dùng chọn.
+            seg.require_ready_pose = False
+            seg.v_start_ratio = 0.0
+            seg.v_stop_ratio = -1.0
+            seg.max_stroke_frames = 10 ** 6
+            seg.max_stroke_sec = None
+            seg.swipe_cooldown_sec = 1e9
+        return seg
+
+    segmenter = _new_segmenter()
     early_pre: Optional[Tuple[Any, Any, bool, Any, float, int]] = None   # (traj, shapes, body_ok, match, tau, n_tried) của dự đoán tạm khi chốt sớm
     lead_trim_history: List[float] = []   # Lưu lại tau của các từ đã commit trong phiên để in thống kê lúc thoát
     _commit_mode = "normal"
@@ -1227,6 +1355,11 @@ def run_sentence_builder(
     banner_color = (0, 255, 0)
     banner_expire = 0.0
 
+    # Panel bên/dưới thay thế HUD đè lên camera + log sự kiện thay terminal (xem ui_side_panel.py)
+    event_log = ui_side_panel.EventLog(maxlen=30)
+    _last_banner_log_key: Optional[Tuple[str, float]] = None
+    last_match_result: Optional[MatchResult] = None
+
     # Giao diện demo song ngữ: toast có cấu trúc, ngôn ngữ, loa, bảng trợ giúp
     ui_mode = (ui_mode if ui_mode is not None else CONFIG.get("ui_mode", "demo"))
     ui_mode = ui_mode if ui_mode in ("demo", "debug") else "demo"
@@ -1237,6 +1370,8 @@ def run_sentence_builder(
     demo_hud = DemoHUD(phrase_lookup=lambda k, lg: get_asl_phrase(k, lang=lg, default=""))
     hud_warned = False
     speech_service.init_speech()  # dò giọng tiếng Việt ở luồng nền (không chặn)
+    if mute_speech:
+        speech_service.set_muted(True)
 
     # Quản lý Vệt sáng chuyển động neon (R4 Motion Trail)
     # Lưu các điểm dạng tuple: (x, y, timestamp)
@@ -1271,6 +1406,24 @@ def run_sentence_builder(
     # Mở nguồn video hoặc Webcam — thử MSMF trước, rồi fallback sang DSHOW
     cap = None
     if video_path is not None:
+        if str(video_path).startswith(("http://", "https://")):
+            print(f"[Video] Nhận diện nguồn là URL trực tuyến: {video_path}")
+            import requests, tempfile
+            try:
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                print("[Video] Đang tải video về bộ đệm tạm...")
+                resp = requests.get(video_path, headers=headers, stream=True, timeout=25)
+                resp.raise_for_status()
+                tmp_suffix = os.path.splitext(video_path.split("?")[0])[1] or ".mp4"
+                tmp_file = os.path.join(tempfile.gettempdir(), f"vsl_input_video{tmp_suffix}")
+                with open(tmp_file, "wb") as f_out:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if chunk:
+                            f_out.write(chunk)
+                print(f"[Video] Tải thành công! Đã nạp vào pipeline: {tmp_file}")
+                video_path = tmp_file
+            except Exception as e_dl:
+                print(f"[!] Không thể tải video từ URL ({e_dl}). Thử mở trực tiếp qua OpenCV...")
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print(f"[!] KHÔNG THỂ mở video: {video_path}")
@@ -1280,10 +1433,35 @@ def run_sentence_builder(
     elif not headless:
         cap = open_camera(camera_index, prefer_mjpg=True)
 
+    # Đồng hồ VIDEO: chỉ số khung / fps thay cho time.time(), để bộ phân đoạn (nghỉ, cổng thời lượng...) không phụ thuộc
+    # tốc độ xử lý. Khung được thưa bớt về <= ~30 fps (video 60 fps lấy cách một khung) cho giống điều kiện webcam.
+    vid_fps = 30.0
+    vid_stride = 1
+    vid_idx = 0
+    vid_ts = 0.0
+    vid_seek_sec = 0.0
+    vid_total_sec = 0.0
+    vid_progress_every = 15
+    if video_path is not None and cap is not None:
+        _fps_raw = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        vid_fps = _fps_raw if (_fps_raw == _fps_raw and _fps_raw > 1.0) else 30.0
+        vid_stride = max(1, int(round(vid_fps / 30.0)))
+        _nframes = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+        _dur = (_nframes / vid_fps) if _nframes > 0 else 0.0
+        if start_sec is not None and start_sec > 0.0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(start_sec * vid_fps))
+        vid_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES) or 0)
+        vid_seek_sec = vid_idx / vid_fps
+        vid_total_sec = float(end_sec) if end_sec is not None else _dur
+        print(f"[Video] fps={vid_fps:.2f} stride={vid_stride} bắt đầu={vid_seek_sec:.2f}s "
+              f"kết thúc={'hết video' if end_sec is None else f'{end_sec:.2f}s'} (tổng {_dur:.2f}s)")
+        # Mọi đồng hồ nội bộ khởi tạo theo đồng hồ video (ban đầu là time.time() của đồng hồ máy).
+        last_hand_seen_time = vid_seek_sec
+
     flip_cam = False
     if show_features is None:
         show_features = False
-    prev_time = time.time()
+    prev_time = vid_seek_sec if (video_path is not None and cap is not None) else time.time()
     fps = 0.0
 
     # Giám sát sức khỏe camera: CHỈ đo (khung mới thật/giây, độ sáng) và cảnh báo trên HUD, không đổi nhận diện.
@@ -1308,6 +1486,14 @@ def run_sentence_builder(
     print(f"  Giao diện: {ui_mode} | Ngôn ngữ: {ui_lang}\n")
 
     processed_frames = 0
+    last_real_item = None
+    last_hand_det = None
+    loss_hold = 0
+    eof_padded = False
+    force_flush = False
+    force_done = False
+    prev_rel = None
+    art_ema = 0.0
     has_predicted_pending = False
     ready_queue: deque = deque()
     cap_exhausted = False
@@ -1330,6 +1516,15 @@ def run_sentence_builder(
                     ret = True
                 else:
                     ret, frame = cap.read()
+                    vid_ts = 0.0
+                    if video_path is not None:
+                        vid_ts = vid_idx / vid_fps
+                        vid_idx += 1
+                        for _skip in range(vid_stride - 1):
+                            if cap.grab():
+                                vid_idx += 1
+                        if ret and end_sec is not None and vid_ts > end_sec:
+                            ret = False
                     if not ret:
                         if video_path is not None and max_frames is not None and processed_frames < max_frames:
                             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -1339,7 +1534,7 @@ def run_sentence_builder(
                             ready_queue.extend(detector_pool.flush())
 
                 if ret and frame is not None:
-                    capture_ts = time.time()
+                    capture_ts = vid_ts if video_path is not None else time.time()
                     if cam_monitor is not None:
                         # Gọi MỖI lần đọc được khung (kể cả khung trùng), trước lật gương; tay chuyển động = v_norm khung trước
                         cam_monitor.update(frame, capture_ts, cam_last_v_norm >= cam_hand_moving_v)
@@ -1374,6 +1569,23 @@ def run_sentence_builder(
 
             if not ready_queue:
                 if cap_exhausted:
+                    # Cuối video mà tay vẫn đang ở tư thế ký: đệm ~1 s "giữ nguyên tư thế cuối" để bộ phân đoạn chốt nốt cử chỉ
+                    # dở dang (ngoài đời sau cử chỉ luôn có thời gian nghỉ; clip bị cắt sát thì không có).
+                    if (video_path is not None and cap is not None and not eof_padded and last_real_item is not None
+                            and (last_real_item[2].hand_landmarks or (force_stroke and last_hand_det is not None))):
+                        eof_padded = True
+                        _eseq, _emeta, _edet = last_real_item
+                        if force_stroke and not _edet.hand_landmarks:
+                            _edet = last_hand_det
+                        eof_clip[0] = float(_emeta["capture_ts"])
+                        _edt = 1.0 / max(vid_fps / vid_stride, 1.0)
+                        if force_stroke:
+                            force_flush = True
+                        for _ek in range(1, (1 if force_stroke else int(round(1.0 / _edt))) + 1):
+                            _em = dict(_emeta)
+                            _em["capture_ts"] = float(_emeta["capture_ts"]) + _ek * _edt
+                            ready_queue.append((_eseq, _em, _edet))
+                        continue
                     break
                 if not headless:
                     key = cv2.waitKey(1) & 0xFF
@@ -1382,7 +1594,20 @@ def run_sentence_builder(
                 continue
 
             seq, meta_item, det_result = ready_queue.popleft()
+            if det_result.hand_landmarks:
+                last_hand_det = det_result
+                loss_hold = 0
+            elif (hold_on_hand_loss and last_hand_det is not None and loss_hold < 9
+                  and segmenter.state in (KineticState.RECORDING, KineticState.PENDING_COMMIT)):
+                # Tay biến mất giữa lúc đang ghi: coi như tay giữ nguyên tư thế cuối (giống đoạn đệm cuối video và
+                # extend_still_tail) để bộ phân đoạn chốt bằng đường thường, đủ lịch sử đặc trưng, thay vì reset mất cử chỉ.
+                det_result = last_hand_det
+                loss_hold += 1
+            last_real_item = (seq, meta_item, det_result)
             processed_frames += 1
+            if events_path is not None and video_path is not None and processed_frames % vid_progress_every == 0:
+                _span = max(vid_total_sec - vid_seek_sec, 1e-3)
+                print(f"@@PROGRESS {min(1.0, max(0.0, (meta_item['capture_ts'] - vid_seek_sec) / _span)):.4f}", flush=True)
             frame = meta_item["frame"]
             curr_time = meta_item["capture_ts"]
             rgb_frame = meta_item.get("rgb_frame")
@@ -1406,6 +1631,7 @@ def run_sentence_builder(
 
             hand_found = False
             raw_wrist_x, raw_wrist_y = 0.0, 0.0
+            art_v = None
             wrist_x, wrist_y = 0.0, 0.0
             palm_len = cached_palm_len
             hand_shape = cached_hand_shape
@@ -1457,6 +1683,13 @@ def run_sentence_builder(
                 current_normal = compute_palm_normal_vector(lm_3d, handedness=handedness_label)
                 if profile:
                     _t_feat = time.perf_counter() - _t0_feat
+                if motion_mode == "hand":
+                    _rel = lm_3d[:, :2] - lm_3d[0:1, :2]
+                    if prev_rel is not None:
+                        _raw_art = float(np.mean(np.linalg.norm(_rel - prev_rel, axis=1))) / max(palm_len, 15.0)
+                        art_ema = 0.5 * art_ema + 0.5 * _raw_art   # làm trơn nhẹ: mốc ngón chưa qua bộ lọc nên nhiễu hơn cổ tay
+                        art_v = art_ema
+                    prev_rel = _rel
                 stroke_angles_history.append(current_angles)
                 stroke_normals_history.append(current_normal)
                 stroke_ext_history.append((lm_3d, current_face_box))
@@ -1523,7 +1756,9 @@ def run_sentence_builder(
                         hand_found = True
                         last_hand_seen_time = curr_time
 
-                if hand_lost_frames >= 4:
+                if hand_lost_frames >= 4 and not force_stroke:
+                    prev_rel = None
+                    art_ema = 0.0
                     segmenter.reset()
                     wrist_smoother.reset()
                     lk_fallback.reset()
@@ -1541,7 +1776,10 @@ def run_sentence_builder(
                     banner_expire = curr_time + 2.0
                     hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
                     print(f"[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: {final_sentence}")
+                    event_log.push(f"Chốt câu: \"{final_sentence}\"", ui_side_panel.COL_OK)
 
+            if trace_file is not None and not hand_found:
+                trace_file.write(json.dumps({"t": round(float(curr_time), 3), "h": 0, "s": segmenter.state.name[:3]}) + "\n")
             if hand_found:
                 # 3. Cập nhật Bộ phân đoạn động học (Tầng 2)
                 seg_state, completed_stroke, is_swipe, v_norm = segmenter.update(
@@ -1549,9 +1787,24 @@ def run_sentence_builder(
                     wrist_y=wrist_y,
                     palm_len=palm_len,
                     hand_shape=hand_shape,
-                    timestamp=curr_time
+                    timestamp=curr_time,
+                    extra_motion=art_v
                 )
                 cam_last_v_norm = v_norm
+                if force_stroke and force_flush and not force_done and seg_state == KineticState.RECORDING:
+                    # Hết đoạn người dùng chọn: chốt toàn bộ bộ đệm thành MỘT cử chỉ.
+                    force_done = True
+                    if len(segmenter.buffer) >= 3:
+                        completed_stroke = list(segmenter.buffer)
+                        segmenter.buffer.clear()
+                        segmenter.state = KineticState.IDLE
+                        seg_state = segmenter.state
+                if trace_file is not None:
+                    _lm_xy = None
+                    if det_result.hand_landmarks:
+                        _lm_xy = [[round(float(pt.x), 3), round(float(pt.y), 3)] for pt in det_result.hand_landmarks[0]]
+                    trace_file.write(json.dumps({"t": round(float(curr_time), 3), "h": 1, "v": round(float(v_norm), 3),
+                                                 "s": seg_state.name[:3], "lm": _lm_xy}) + "\n")
                 if seg_state == KineticState.RECORDING:
                     recording_streak += 1
                     has_predicted_pending = False
@@ -1609,6 +1862,7 @@ def run_sentence_builder(
                                     if profile:
                                         _t0_dtw = time.perf_counter()
                                     t_match = dtw_engine.match(rt_17d, rt_shapes, handedness=handedness_label, query_has_body=t_body_ok)
+                                    last_match_result = t_match
                                     if profile:
                                         _t_dtw += time.perf_counter() - _t0_dtw
                                     # SPEC 08 - CHỐT SỚM: dự đoán tạm đủ chắc (ACCEPTED, chất lượng, margin, không phải từ nhiều pha)
@@ -1643,6 +1897,7 @@ def run_sentence_builder(
                         banner_color = (0, 140, 255)
                         banner_expire = curr_time + 1.6
                         print(f"[SentenceBuilder] Swipe-Left: Đã xóa '{removed}' | Còn lại: {sentence_words}")
+                        event_log.push(f"Quét tay: Đã xóa từ '{removed}'", ui_side_panel.COL_WARN)
                     else:
                         banner_title = "<- SENTENCE IS EMPTY"
                         banner_subtitle = "Nothing to delete"
@@ -1673,8 +1928,8 @@ def run_sentence_builder(
                     # Hai con số này lấy từ hằng số DÙNG CHUNG trong dynamic_dtw_engine.py
                     # (STROKE_DURATION_MIN_SEC / STROKE_DURATION_MAX_SEC) để cổng ở đây và
                     # cổng ở collect_dynamic_templates.py không bao giờ lệch nhau nữa.
-                    if is_stroke_duration_valid(stroke_duration):
-                        if is_movement_epenthesis(epi_frames):
+                    if force_stroke or is_stroke_duration_valid(stroke_duration):
+                        if (not force_stroke) and is_movement_epenthesis(epi_frames):
                             print("[BO QUA: chuyen dong chuyen tiep]")
                         else:
                             n_stroke = len(completed_stroke)
@@ -1690,7 +1945,7 @@ def run_sentence_builder(
                                 # Chốt sớm: dùng lại đặc trưng + kết quả match của dự đoán tạm (không tính lại).
                                 _ep_traj, _ep_shp, _ep_body, match_result, cur_lead_trim_sec, cur_lead_trim_tried = early_pre
                                 body_ok = _ep_body
-                            elif fast_on and lead_trim_on:
+                            elif fast_on and lead_trim_on and not force_stroke:
                                 # SPEC 08B: Cắt phần dẫn đầu thích nghi ở nhánh chốt thường
                                 _lt_res = select_best_lead_trim(
                                     raw_records, dtw_engine, cfg=lt_cfg, handedness=handedness_label,
@@ -1713,8 +1968,10 @@ def run_sentence_builder(
                                         _t_dtw += time.perf_counter() - _t0_dtw
 
                             if match_result is not None:
+                                last_match_result = match_result
                                 if match_result.fusion_note:
                                     print(f"[Fusion] {match_result.fusion_note}")
+                                    event_log.push(f"Fusion: {match_result.fusion_note}", ui_side_panel.COL_DL)
                                 # a) Chấp nhận từ vựng (ACCEPTED)
                                 if match_result.status == "ACCEPTED" and match_result.top_word:
                                     word_key = match_result.top_word
@@ -1755,7 +2012,10 @@ def run_sentence_builder(
                                             print(f"[Speech] Lỗi giọng nói ({speech_err}) — bỏ qua, tiếp tục chạy.")
                                         trim_str = f" [trim: {cur_lead_trim_sec:.2f}s, {cur_lead_trim_tried} tried]" if cur_lead_trim_sec > 0.0 else ""
                                         print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' (Do khop: {do_khop:.0f}){trim_str} | Câu: {' '.join(sentence_words)}")
+                                        event_log.push(f"Nhận từ: {en_phrase} (Khớp {do_khop:.0f}%, nguồn {match_result.result_source})", ui_side_panel.COL_OK)
 
+                                    _emit_event("ACCEPTED", match_result, completed_stroke, stroke_duration, _commit_mode,
+                                            records=(seg_records if seg_records is not None else raw_records))
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
                                         c2_k = match_result.candidates[1].word_key if len(match_result.candidates) >= 2 else ""
@@ -1784,6 +2044,8 @@ def run_sentence_builder(
                                     reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= (c1.r_ratio * 1.6) else "Vượt ngưỡng chuẩn"
                                     print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}, Do khop={c1.match_quality:.0f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
 
+                                    _emit_event("UNCERTAIN", match_result, completed_stroke, stroke_duration, _commit_mode,
+                                            records=(seg_records if seg_records is not None else raw_records))
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
                                         session_writer.writerow([
@@ -1803,6 +2065,8 @@ def run_sentence_builder(
                                     hud_toast = _make_toast("rejected", [], float(match_result.match_quality), curr_time, 1.0)
                                     print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f}, Do khop: {match_result.match_quality:.0f})")
 
+                                    _emit_event("REJECTED", match_result, completed_stroke, stroke_duration, _commit_mode,
+                                            records=(seg_records if seg_records is not None else raw_records))
                                     # Ghi CSV Session Log
                                     if session_writer is not None:
                                         top_k = match_result.candidates[0].word_key if match_result.candidates else ""
@@ -1830,6 +2094,8 @@ def run_sentence_builder(
                     else:
                         # R3 Layer 2: Cử chỉ nằm ngoài [0.4s, 2.5s] bị bỏ qua trong im lặng
                         print(f"[SentenceBuilder] Cử chỉ bị loại bởi Duration Gate ({stroke_duration:.2f}s).")
+                        event_log.push(f"Loai bo (Duration Gate): {stroke_duration:.2f}s", ui_side_panel.COL_MUTED)
+                        _emit_event("OUT_OF_DURATION", None, completed_stroke, stroke_duration, _commit_mode)
                         if session_writer is not None:
                             session_writer.writerow([
                                 time.strftime("%Y-%m-%d %H:%M:%S"), "OUT_OF_DURATION", "", 0.0,
@@ -1887,105 +2153,45 @@ def run_sentence_builder(
             else:
                 draw_soft_trail(display_frame, trail_points, curr_time, max_age_sec=MAX_TRAIL_AGE_SEC)
 
-            if ui_mode == "debug":
-                # 2. Thanh trạng thái phía trên (Top Status Bar)
-                cv2.rectangle(display_frame, (0, 0), (w_f, 44), (20, 20, 20), -1)
-                fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
-                cv2.putText(display_frame, f"FPS: {fps:.1f} [CAM {camera_index}]", (10, 28),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, fps_color, 2, lineType=cv2.LINE_AA)
-                # Chẩn đoán camera: khung MỚI THẬT/s, trùng (giống hệt từng điểm ảnh), gần-trùng (ngưỡng cũ 0.5), độ sáng
-                if cam_monitor is not None:
-                    cv2.putText(display_frame,
-                                f"that:{cam_monitor.unique_fps:.0f}/s trung:{cam_monitor.dup_ratio*100:.0f}% "
-                                f"(gan-trung {cam_monitor.near_dup_ratio*100:.0f}%) sang:{cam_monitor.luma_mean:.0f}",
-                                (10, 41), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (200, 200, 120), 1, lineType=cv2.LINE_AA)
-
-                # Trạng thái mốc cơ thể (khuôn mặt)
-                if face_detector is None:
-                    face_badge = "MAT: TAT"
-                    face_col = (130, 130, 130)
-                elif current_face_box is not None:
-                    face_badge = "MAT: OK"
-                    face_col = (0, 255, 0)
-                else:
-                    face_badge = "MAT: TIM..."
-                    face_col = (0, 165, 255)
-                cv2.putText(display_frame, f"| {face_badge}", (195, 28),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, face_col, 2, lineType=cv2.LINE_AA)
-
-                # Trạng thái phân đoạn động học
-                if seg_state == KineticState.RECORDING:
-                    k_text = "DANG GHI"
-                    k_color = (0, 255, 0)
-                elif seg_state == KineticState.READY:
-                    k_text = "SAN SANG"
-                    k_color = (0, 255, 0)
-                else:
-                    k_text = "KHUNG TAY" if hand_found else "CHO TAY"
-                    k_color = (180, 180, 180)
-                cv2.putText(display_frame, f"| {k_text}", (310, 28),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, k_color, 2, lineType=cv2.LINE_AA)
-
-                # Thanh hiển thị vận tốc chuẩn hóa
-                v_bar = int(min(1.0, v_norm / 0.15) * 80)
-                cv2.putText(display_frame, f"v: {v_norm*100:.1f}%", (w_f - 160, 28),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 1, lineType=cv2.LINE_AA)
-                cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 95 + v_bar, 28), (0, 255, 255), -1)
-                cv2.rectangle(display_frame, (w_f - 95, 15), (w_f - 15, 28), (100, 100, 100), 1)
-
-                # 3. Banner nhận diện nổi bật cỡ lớn (Prominent Banner for 2.0s)
-                if len(dtw_engine.vocabulary) == 0:
-                    cv2.rectangle(display_frame, (10, 52), (w_f - 10, 92), (0, 0, 180), -1)
-                    cv2.putText(display_frame, "CHUA CO TU DIEN! HAY CHAY collect_dynamic_templates.py",
-                                (18, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-                elif curr_time < banner_expire:
-                    draw_prominent_hud_banner(display_frame, banner_title, banner_subtitle, banner_color, h_f, w_f)
-
-                # 4. Bảng biểu diễn trực quan đặc trưng 3D (Golden Triad Features HUD) khi bấm 'd'
-                if show_features and hand_found and current_angles is not None:
-                    vel_vec = (raw_wrist_x - wrist_smoother.prev_x, raw_wrist_y - wrist_smoother.prev_y) if wrist_smoother.prev_x is not None else (0.0, 0.0)
-                    draw_feature_metrics_hud(
-                        display_frame,
-                        angles=current_angles,
-                        palm_len=palm_len,
-                        v_norm=v_norm,
-                        wrist_pt=(int(wrist_x), int(wrist_y)),
-                        vel_vector=vel_vec,
-                        palm_normal=current_normal,
-                        x_offset=15,
-                        y_offset=h_f - 265
-                    )
-
-                # 5. Hộp phụ đề câu thoại hoàn chỉnh ở đáy màn hình (Bottom Subtitle Box)
-                cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), (12, 12, 12), -1)
-                border_box_col = (0, 255, 0) if sentence_finalized else (0, 200, 255)
-                cv2.rectangle(display_frame, (0, h_f - 75), (w_f, h_f - 24), border_box_col, 2)
-
-                if len(sentence_words) > 0:
-                    sentence_str = " ".join(sentence_words)
-                    if sentence_finalized:
-                        sentence_str += " ."
-                    sentence_display = f"ASL SENTENCE: \"{sentence_str}\""
-                else:
-                    sentence_display = "ASL SENTENCE: (Awaiting first gesture...)"
-
-                text_col = (0, 255, 0) if sentence_finalized else (255, 255, 255)
-                font_scale = 0.70
-                (t_w, _), _ = cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
-                max_allowed_w = w_f - 30
-                if t_w > max_allowed_w and t_w > 0:
-                    font_scale = max(0.40, font_scale * (max_allowed_w / t_w))
-                cv2.putText(display_frame, sentence_display, (15, h_f - 42),
-                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_col, 2, lineType=cv2.LINE_AA)
-
-                # 6. Hướng dẫn phím tắt chân trang
-                cv2.putText(display_frame,
-                            "[d]: Toggle Features HUD | [Swipe-Left]: Backspace | [Hand-Down]: Commit | [c]: Clear | [q]: Quit",
-                            (10, h_f - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (190, 190, 190), 1, lineType=cv2.LINE_AA)
-
+            # Từ đây, TOÀN BỘ trạng thái/kết quả/log/demo quá trình nhận diện được vẽ vào panel
+            # bên phải + panel dưới (xem ui_side_panel.py) — KHÔNG còn overlay nào đè lên khung
+            # camera nữa (chỉ giữ face-anchor-box/trail vẽ trực tiếp lên tay ở trên, vốn là một
+            # phần của việc demo chính DIP đang "nhìn" tay, không phải HUD số liệu che khung).
+            fps_color = (0, 255, 0) if fps >= 24.0 else ((0, 200, 255) if fps >= 20.0 else (0, 0, 255))
+            if face_detector is None:
+                face_badge = "MAT: TAT"
+                face_col = (130, 130, 130)
+            elif current_face_box is not None:
+                face_badge = "MAT: OK"
+                face_col = (0, 255, 0)
             else:
-                # ---------------- GIAO DIỆN DEMO SONG NGỮ (ui_render.DemoHUD) ----------------
-                # Không vẽ hộp bao / hull / defects / khung mặt / skeleton / thanh vận tốc / bảng 12D / khoảng cách DTW.
+                face_badge = "MAT: TIM..."
+                face_col = (0, 165, 255)
+
+            if seg_state == KineticState.RECORDING:
+                k_text = "DANG GHI"
+                k_color = (0, 255, 0)
+            elif seg_state == KineticState.READY:
+                k_text = "SAN SANG"
+                k_color = (0, 255, 0)
+            else:
+                k_text = "KHUNG TAY" if hand_found else "CHO TAY"
+                k_color = (180, 180, 180)
+
+            # Mọi sự kiện phản hồi (banner_title/subtitle: commit, uncertain, unknown, backspace,
+            # save, undo...) trước đây CHỈ hiện 1-2s trên camera; giờ đẩy vào log sự kiện của panel
+            # để không phụ thuộc terminal/kịp nhìn. Khoá theo (title, banner_expire) để mỗi lần
+            # banner được set MỚI chỉ log đúng 1 lần, không log lặp lại mỗi khung hình đang hiển thị.
+            if banner_title and curr_time < banner_expire:
+                _banner_log_key = (banner_title, banner_expire)
+                if _banner_log_key != _last_banner_log_key:
+                    _last_banner_log_key = _banner_log_key
+                    _log_text = f"{banner_title} | {banner_subtitle}" if banner_subtitle else banner_title
+                    event_log.push(_log_text, banner_color)
+
+            if ui_mode == "legacy_demo":
+                # ---------------- GIAO DIỆN DEMO SONG NGỮ CŨ (ui_render.DemoHUD) ----------------
+                # Chỉ dùng khi cố tình chạy legacy_demo không có side panel
                 _seg_val = getattr(seg_state, "value", str(seg_state))
                 _settle: Optional[float] = None
                 if getattr(segmenter, "require_ready_pose", False):
@@ -2048,11 +2254,13 @@ def run_sentence_builder(
                     if not hud_warned:
                         hud_warned = True
                         print(f"[HUD] Lỗi vẽ giao diện demo ({hud_err}) — bỏ qua khung hình này, vòng lặp vẫn chạy.")
+                        event_log.push(f"Loi HUD demo: {hud_err}", (0, 0, 255))
 
             if profile:
                 _t_draw += time.perf_counter() - _t0_draw_hud
 
-            # Bảng nhỏ profile góc màn hình (SPEC 02 Nhiệm vụ 1)
+            # Số liệu profile (SPEC 02 Nhiệm vụ 1) — vẽ vào panel bên phải thay vì đè lên camera.
+            profile_lines: List[str] = []
             if profile and len(prof_total) > 0:
                 avg_mp = sum(prof_mediapipe) / len(prof_mediapipe) * 1000.0
                 avg_dip = sum(prof_dip_cnn) / len(prof_dip_cnn) * 1000.0
@@ -2061,25 +2269,48 @@ def run_sentence_builder(
                 avg_draw = sum(prof_draw) / len(prof_draw) * 1000.0
                 avg_tot = sum(prof_total) / len(prof_total) * 1000.0
                 fps_prof = 1000.0 / avg_tot if avg_tot > 0 else 0.0
-
-                px0 = max(10, w_f - 230)
-                py0 = 50
-                cv2.rectangle(display_frame, (px0, py0), (w_f - 10, py0 + 155), (15, 15, 15), -1)
-                cv2.rectangle(display_frame, (px0, py0), (w_f - 10, py0 + 155), (80, 80, 80), 1)
-                lines_prof = [
-                    "PROFILE (60f avg)",
-                    f"FPS:       {fps_prof:5.1f}",
-                    f"mediapipe: {avg_mp:5.2f} ms",
-                    f"dip_cnn:   {avg_dip:5.2f} ms",
-                    f"features:  {avg_feat:5.2f} ms",
-                    f"dtw:       {avg_dtw:5.2f} ms",
-                    f"draw:      {avg_draw:5.2f} ms",
-                    f"total:     {avg_tot:5.2f} ms",
+                profile_lines = [
+                    f"PROFILE(60f) fps={fps_prof:.1f}",
+                    f"mp={avg_mp:.1f}ms dip={avg_dip:.1f}ms feat={avg_feat:.1f}ms",
+                    f"dtw={avg_dtw:.1f}ms draw={avg_draw:.1f}ms tot={avg_tot:.1f}ms",
                 ]
-                for li, ltext in enumerate(lines_prof):
-                    col = (0, 255, 255) if li == 0 else ((0, 255, 0) if li == 1 else (220, 220, 220))
-                    cv2.putText(display_frame, ltext, (px0 + 8, py0 + 16 + li * 17),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.40, col, 1, lineType=cv2.LINE_AA)
+
+            cam_diag = None
+            if cam_monitor is not None:
+                cam_diag = (f"that:{cam_monitor.unique_fps:.0f}/s trung:{cam_monitor.dup_ratio*100:.0f}% "
+                            f"(gan-trung {cam_monitor.near_dup_ratio*100:.0f}%) sang:{cam_monitor.luma_mean:.0f}")
+
+            panel_state = ui_side_panel.SidePanelState(
+                fps=fps,
+                camera_index=camera_index,
+                cam_diag=cam_diag,
+                face_badge=face_badge,
+                face_color=face_col,
+                seg_text=k_text,
+                seg_color=k_color,
+                v_norm=v_norm,
+                vocabulary_empty=(len(dtw_engine.vocabulary) == 0),
+                hand_found=hand_found,
+                match_result=last_match_result,
+                dl_enabled=bool(dl_model_path),
+                dl_conf_threshold=dtw_engine.dl_conf_threshold,
+                sentence_words=list(sentence_words),
+                sentence_finalized=sentence_finalized,
+                show_features=show_features,
+                angles=current_angles,
+                palm_len=palm_len,
+                palm_normal=current_normal,
+                event_log=event_log,
+                help_line="[d]:Dac trung [Swipe-Left]:Xoa tu [Ha tay]:Chot cau [c]:Xoa cau [u]:Doi giao dien [q]:Thoat",
+                ui_mode=ui_mode,
+                ui_lang=ui_lang,
+                profile_lines=profile_lines,
+                speech_status=speech_service.get_speech_status(ui_lang),
+            )
+            canvas, _cw, _ch = ui_side_panel.compose_canvas(display_frame)
+            ui_side_panel.draw_right_panel(canvas, w_f, 0, ui_side_panel.PANEL_W, h_f + ui_side_panel.BOTTOM_H, panel_state)
+            ui_side_panel.draw_bottom_panel(canvas, 0, h_f, w_f, ui_side_panel.BOTTOM_H, panel_state)
+            display_frame = canvas
 
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
@@ -2100,14 +2331,17 @@ def run_sentence_builder(
                     banner_color = (0, 200, 255)
                     banner_expire = curr_time + 1.5
                     print("[SentenceBuilder] Đã xóa toàn bộ câu thoại.")
+                    event_log.push("Đã xóa toàn bộ câu thoại", ui_side_panel.COL_WARN)
                 elif key == ord('f'):
                     flip_cam = not flip_cam
+                    event_log.push(f"Lật camera: {'BẬT (Gương)' if flip_cam else 'TẮT'}", ui_side_panel.COL_MUTED)
                 elif key in [ord('p'), ord('P')]:
                     if cap is not None:
                         cap.set(cv2.CAP_PROP_SETTINGS, 1)
                 elif key in [ord('l'), ord('L')]:
                     ui_lang = "vi" if ui_lang == "en" else "en"
                     print(f"[UI] Ngôn ngữ giao diện + giọng nói: {ui_lang.upper()}")
+                    event_log.push(f"Đổi ngôn ngữ: {ui_lang.upper()}", ui_side_panel.COL_DL)
                 elif key in [ord('u'), ord('U')]:
                     ui_mode = "debug" if ui_mode == "demo" else "demo"
                     print(f"[UI] Chuyển sang giao diện: {ui_mode}")
@@ -2119,7 +2353,7 @@ def run_sentence_builder(
                 elif key in [ord('j'), ord('J')]:
                     # SPEC 08: bật/tắt chế độ KÝ NHANH lúc chạy. Dựng lại bộ phân đoạn (tham số khác) và bỏ dở stroke đang ghi.
                     fast_on = not fast_on
-                    segmenter = make_segmenter(CONFIG, fc_cfg if fast_on else None)
+                    segmenter = _new_segmenter()
                     has_predicted_pending = False
                     stroke_angles_history.clear()
                     stroke_normals_history.clear()
@@ -2226,6 +2460,16 @@ def run_sentence_builder(
                           f"'{templates_file}' — lần dùng sau sẽ tự nhận tốt hơn, không cần lặp lại.")
             except Exception as _enr_err:
                 print(f"[XacNhan] Không lưu được mẫu phiên: {_enr_err}")
+        if events_file is not None:
+            try:
+                events_file.close()
+            except Exception:
+                pass
+        if trace_file is not None:
+            try:
+                trace_file.close()
+            except Exception:
+                pass
         if session_file is not None:
             try:
                 session_file.close()
@@ -2315,6 +2559,24 @@ if __name__ == "__main__":
     parser.add_argument("--dl-conf-threshold", type=float, default=None,
                         help="Ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận khi DTW không ACCEPTED. "
                              "Mặc định 0.38 (chọn giữa miền ổn định qua nested CV 4 người lạ, xem dl_fusion.py).")
+    parser.add_argument("--start", type=float, default=None, help="Chỉ với --video: nhảy tới giây này của video trước khi nhận diện.")
+    parser.add_argument("--end", type=float, default=None, help="Chỉ với --video: dừng khi quá giây này của video.")
+    parser.add_argument("--events", type=str, default=None, help="Ghi mỗi cử chỉ thành một dòng JSON (JSONL) kèm nguồn DTW/DL (dùng cho bản web).")
+    parser.add_argument("--mute", action="store_true", default=False, help="Tắt hẳn giọng nói.")
+    parser.add_argument("--force-stroke", action="store_true", default=False,
+                        help="Chỉ với --video --start --end: coi TOÀN BỘ đoạn đã chọn là một cử chỉ (không dùng bộ phân đoạn) để lấy mẫu.")
+    parser.add_argument("--motion", type=str, choices=["wrist", "hand"], default="wrist",
+                        help="Nguồn vận tốc cho bộ phân đoạn: 'wrist' (cổ tay, mặc định) hoặc 'hand' (thêm chuyển động ngón tay so với cổ tay, cho cử chỉ nhẹ).")
+    parser.add_argument("--pause-sec", type=float, default=None, help="Tay khựng ngần này giây thì vào chờ chốt (mặc định 0.12 ở chuỗi nhanh).")
+    parser.add_argument("--grace-sec", type=float, default=None, help="Chờ thêm ngần này giây trước khi chốt hẳn (mặc định 0.05 ở chuỗi nhanh).")
+    parser.add_argument("--v-stop", type=float, default=None, help="Ngưỡng vận tốc coi là đứng yên (mặc định 0.04 lòng bàn tay/khung).")
+    parser.add_argument("--v-start", type=float, default=None, help="Ngưỡng vận tốc bắt đầu ký (mặc định 0.08 lòng bàn tay/khung).")
+    parser.add_argument("--early-commit", action=argparse.BooleanOptionalAction, default=None, help="Bật/tắt chốt sớm khi dự đoán tạm đã chắc.")
+    parser.add_argument("--trace", type=str, default=None, help="Ghi vết từng khung (JSONL) cho bản web.")
+    parser.add_argument("--no-ready-pose", action="store_true", default=False,
+                        help="Không đòi tay đứng yên trước khi bắt đầu ghi (cho người ký nhanh, video không có nhịp dừng).")
+    parser.add_argument("--hold-on-hand-loss", action="store_true", default=False,
+                        help="Khi tay biến mất giữa lúc đang ghi, giữ tư thế cuối ~0.3 s để chốt cử chỉ thay vì xóa.")
     args, _ = parser.parse_known_args()
 
     eff_dl_model_path = None
@@ -2358,4 +2620,15 @@ if __name__ == "__main__":
         confirm_enroll=args.confirm_enroll,
         dl_model_path=eff_dl_model_path,
         dl_conf_threshold=args.dl_conf_threshold,
+        start_sec=args.start,
+        end_sec=args.end,
+        events_path=args.events,
+        mute_speech=args.mute,
+        ready_pose=False if args.no_ready_pose else None,
+        hold_on_hand_loss=args.hold_on_hand_loss,
+        force_stroke=args.force_stroke,
+        trace_path=args.trace,
+        motion_mode=args.motion,
+        seg_tune={k: v for k, v in {"pause_sec": args.pause_sec, "grace_sec": args.grace_sec, "v_stop": args.v_stop,
+                                    "v_start": args.v_start, "early_commit": args.early_commit}.items() if v is not None} or None,
     )

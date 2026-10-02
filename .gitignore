@@ -204,3 +204,6 @@ cython_debug/
 
 # CodeGraph index (sinh tu dong)
 /.codegraph/
+
+# Bản web: video tải lên tạm thời
+web_uploads/
