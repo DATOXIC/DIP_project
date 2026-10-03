@@ -17,15 +17,17 @@ khoang dung (tay khong cham nguong dong du lau) -> chung nam trong cung mot span
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class Spotter(ABC):
     """Giao dien bo bao hieu "dang ky / khong ky". Cac cai dat (luat, model DL) deu phai theo giao dien nay."""
 
     @abstractmethod
-    def update(self, t: float, hand_found: bool, v_norm: float) -> bool:
-        """Nhan 1 khung (thoi gian giay, co thay tay khong, van toc chuan hoa theo long ban tay/khung).
+    def update(self, t: float, hand_found: bool, v_norm: float, landmarks: Any = None,
+               frame_wh: Optional[Tuple[float, float]] = None) -> bool:
+        """Nhan 1 khung (thoi gian giay, co thay tay khong, van toc chuan hoa theo long ban tay/khung;
+        tuy chon: 21 landmark chuan hoa cua tay va kich thuoc khung cho spotter hoc may).
         Tra ve True neu dang ky (gate mo)."""
         raise NotImplementedError
 
@@ -73,7 +75,8 @@ class RuleSpotter(Spotter):
         self._open_since = None
         self._close_since = None
 
-    def update(self, t: float, hand_found: bool, v_norm: float) -> bool:
+    def update(self, t: float, hand_found: bool, v_norm: float, landmarks: Any = None,
+               frame_wh: Optional[Tuple[float, float]] = None) -> bool:
         t = float(t)
         if not self.is_open:
             self._close_since = None
@@ -105,11 +108,65 @@ class RuleSpotter(Spotter):
         return self.is_open
 
 
-def make_spotter(kind: str = "rule", v_stop_ratio: float = RuleSpotter.DEFAULT_V_STOP_RATIO) -> Spotter:
-    """Nha may tao spotter theo ten. Hien chi co 'rule'; them 'dl' sau nay o day."""
+class ProbGate:
+    """
+    Cong nguong kep (hysteresis) tren XAC SUAT "dang ky" p cua mot mo hinh (Spotter DL):
+      - MO khi p >= open_thr lien tuc >= open_hold_sec.
+      - DONG khi p < close_thr lien tuc >= close_hold_sec.
+    Dung chung cho do offline (train_spotter.py) va chay that, de hai ben cung mot luat.
+    """
+
+    def __init__(self, open_thr: float = 0.5, close_thr: float = 0.35,
+                 open_hold_sec: float = 0.10, close_hold_sec: float = 0.20):
+        if close_thr > open_thr:
+            raise ValueError("close_thr phai <= open_thr de co lich tre (hysteresis).")
+        self.open_thr = float(open_thr)
+        self.close_thr = float(close_thr)
+        self.open_hold_sec = float(open_hold_sec)
+        self.close_hold_sec = float(close_hold_sec)
+        self.is_open = False
+        self._open_since: Optional[float] = None
+        self._close_since: Optional[float] = None
+
+    def reset(self) -> None:
+        self.is_open = False
+        self._open_since = None
+        self._close_since = None
+
+    def update(self, t: float, p: float) -> bool:
+        t = float(t)
+        if not self.is_open:
+            self._close_since = None
+            if p >= self.open_thr:
+                if self._open_since is None:
+                    self._open_since = t
+                if t - self._open_since >= self.open_hold_sec:
+                    self.is_open = True
+                    self._open_since = None
+            else:
+                self._open_since = None
+            return self.is_open
+        self._open_since = None
+        if p < self.close_thr:
+            if self._close_since is None:
+                self._close_since = t
+            if t - self._close_since >= self.close_hold_sec:
+                self.is_open = False
+                self._close_since = None
+        else:
+            self._close_since = None
+        return self.is_open
+
+
+def make_spotter(kind: str = "rule", v_stop_ratio: float = RuleSpotter.DEFAULT_V_STOP_RATIO,
+                 model_path: str = "spotter_model.pth") -> Spotter:
+    """Nha may tao spotter theo ten: 'rule' (luat van toc) hoac 'dl' (CNN nho, doc model_path)."""
     if kind == "rule":
         return RuleSpotter.from_segmenter(v_stop_ratio)
-    raise ValueError(f"Spotter khong ho tro: {kind!r} (hien chi co 'rule').")
+    if kind == "dl":
+        from spotter_dl import DLSpotter   # import tre: torch chi nap khi that su dung
+        return DLSpotter(model_path)
+    raise ValueError(f"Spotter khong ho tro: {kind!r} (co 'rule', 'dl').")
 
 
 class OneShotLock:
@@ -121,10 +178,12 @@ class OneShotLock:
     lech `tolerance_sec` vi spotter mo tre hon luc stroke bat dau mot chut):
       - span chua dung  -> danh dau da dung, (True, "first")
       - span da dung    -> (False, "dup_in_span")
-      - khong co span   -> (True, "no_span")   [fail-open de khong pha hanh vi cu]
+      - khong co span   -> (True, "no_span") [fail-open, hanh vi cu]; strict=True -> (False, "no_span") [chan tu vu vo]
     """
 
-    def __init__(self, max_spans: int = 50, tolerance_sec: float = 0.5, max_gap_sec: float = 1.0):
+    def __init__(self, max_spans: int = 50, tolerance_sec: float = 0.5, max_gap_sec: float = 1.0, strict: bool = False):
+        # strict=True: stroke KHONG thuoc span nao (spotter bao 'khong ky') bi CHAN thay vi cho qua -> loai tu vu vo.
+        self.strict = bool(strict)
         self.max_spans = int(max_spans)
         self.tolerance_sec = float(tolerance_sec)   # cho phep stroke bat dau truoc t_open cua span toi toi da chung nay
         self.max_gap_sec = float(max_gap_sec)       # span da dong qua lau (> chung nay) thi khong con tinh la "gan nhat truoc"
@@ -177,6 +236,9 @@ class OneShotLock:
     def allow_commit(self, t_stroke_start: float) -> Tuple[bool, str]:
         span = self._find_span(float(t_stroke_start))
         if span is None:
+            if self.strict:
+                self.stats["suppressed"] += 1
+                return False, "no_span"
             self.stats["allowed"] += 1
             return True, "no_span"
         if span[3]:

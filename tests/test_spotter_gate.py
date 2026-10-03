@@ -3,6 +3,7 @@ TEST: spotter_gate (RuleSpotter + OneShotLock) - cơ chế KHÓA MỘT LẦN.
 Dùng chuỗi v_norm tổng hợp, không cần webcam/cv2.
 """
 
+import numpy as np
 import pytest
 
 from spotter_gate import OneShotLock, RuleSpotter, Spotter, make_spotter
@@ -213,3 +214,67 @@ def test_known_limit_two_words_without_pause_share_span():
     lock, _ = _lock_from(sp, [(30, 0.1)])
     assert lock.allow_commit(0.0)[0] is True
     assert lock.allow_commit(0.6)[0] is False
+
+
+# ------------------------------------------------------------------ OneShotLock strict + DLSpotter
+def test_lock_strict_blocks_stroke_without_span():
+    lock = OneShotLock(strict=True)
+    ok, why = lock.allow_commit(5.0)                       # chưa có span nào: tay vu vơ, spotter báo "không ký"
+    assert (ok, why) == (False, "no_span") and lock.stats["suppressed"] == 1
+    for k in range(10):
+        lock.observe(10.0 + 0.1 * k, True)
+    lock.observe(11.0, False)
+    assert lock.allow_commit(10.2) == (True, "first")
+    assert lock.allow_commit(10.6) == (False, "dup_in_span")
+    assert OneShotLock().allow_commit(5.0) == (True, "no_span")   # mặc định vẫn fail-open như cũ
+
+
+def _random_model(tmp_path, seed=0):
+    import torch
+    from spotter_dl import build_net
+    from spotter_features import FEAT_DIM, WINDOW
+    torch.manual_seed(seed)
+    net = build_net()
+    path = str(tmp_path / "m.pth")
+    rng = np.random.default_rng(seed)
+    torch.save({"state_dict": net.state_dict(), "mean": rng.normal(0, 0.1, FEAT_DIM).astype(np.float32),
+                "std": (1.0 + rng.random(FEAT_DIM)).astype(np.float32), "window": WINDOW, "feat_dim": FEAT_DIM,
+                "version": 1}, path)
+    return path
+
+
+def test_dl_spotter_streaming_equals_offline(tmp_path):
+    import torch
+    from spotter_dl import DLSpotter, load_model
+    from spotter_features import session_features, windows_from_features
+    path = _random_model(tmp_path)
+    rng = np.random.default_rng(1)
+    T = 60
+    base = rng.random((21, 3)) * 0.2 + 0.4
+    lm = np.stack([base + 0.01 * rng.normal(size=(21, 3)) + 0.002 * i for i in range(T)])   # (T, 21, 3)
+    lm[20:26] = np.nan                                       # mất tay vài khung
+    t = np.arange(T) / 30.0
+    scores = np.ones((T, 2))
+    lm2 = np.full((T, 2, 21, 3), np.nan)
+    lm2[:, 0] = lm
+    feats = session_features(lm2, scores, t, 640.0, 480.0)
+    net, mean, std = load_model(path)
+    w = (windows_from_features(feats) - mean) / std
+    with torch.no_grad():
+        offline = torch.sigmoid(net(torch.from_numpy(w.astype(np.float32)))).numpy()
+    sp = DLSpotter(path)
+    online = []
+    for i in range(T):
+        found = not np.isnan(lm[i, 0, 0])
+        sp.update(float(t[i]), found, 0.0, lm[i] if found else None, (640, 480))
+        online.append(sp.last_prob)
+    assert np.allclose(np.array(online), offline, atol=1e-5)
+
+
+def test_dl_spotter_rejects_mismatched_model(tmp_path):
+    import torch
+    from spotter_dl import load_model
+    p = str(tmp_path / "bad.pth")
+    torch.save({"state_dict": {}, "mean": np.zeros(3), "std": np.ones(3), "window": 8, "feat_dim": 3}, p)
+    with pytest.raises(ValueError):
+        load_model(p)

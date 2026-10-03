@@ -1032,6 +1032,8 @@ def run_sentence_builder(
     dl_conf_threshold: Optional[float] = None,
     one_shot: bool = False,
     spotter_kind: str = "rule",
+    spotter_model_path: str = "spotter_model.pth",
+    video_clock: bool = False,
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1046,7 +1048,11 @@ def run_sentence_builder(
                    <Ten>.pth) CỐ Ý giấu 1 người, không phải model để chạy thật.
     dl_conf_threshold: ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận (None = dl_fusion.DEFAULT_CONF_THRESHOLD).
     one_shot: KHÓA MỘT LẦN (spotter_gate.py): mỗi khoảng "đang ký" chỉ commit tối đa MỘT từ. Mặc định False = hành vi cũ.
-    spotter_kind: loại spotter cấp tín hiệu "đang ký" cho one_shot (hiện chỉ có "rule"); bỏ qua khi one_shot=False.
+    spotter_kind: loại spotter cấp tín hiệu "đang ký" cho one_shot: "rule" (luật vận tốc) hoặc "dl" (CNN nhỏ, spotter_dl.py;
+                  chế độ NGHIÊM: stroke ngoài khoảng "đang ký" bị chặn => loại từ vu vơ). Bỏ qua khi one_shot=False.
+    spotter_model_path: checkpoint cho spotter "dl" (train_spotter.py --save).
+    video_clock: khi chạy từ --video, dùng ĐỒNG HỒ CỦA VIDEO (khung n tại n/fps) thay cho giờ máy làm mốc thời gian khung, để các ngưỡng
+                 theo giây và đặc trưng vận tốc đúng như lúc thu dù xử lý nhanh hơn thời gian thật. Mặc định False = như cũ.
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -1209,9 +1215,10 @@ def run_sentence_builder(
     one_shot_lock: Optional[OneShotLock] = None
     one_shot_spotter: Optional[Spotter] = None
     if one_shot:
-        one_shot_spotter = make_spotter(spotter_kind, v_stop_ratio=float(segmenter.v_stop_ratio))
-        one_shot_lock = OneShotLock()
-        print(f"[OneShot] BẬT khóa một lần (spotter={spotter_kind}): mỗi khoảng ký chỉ chốt tối đa 1 từ.")
+        one_shot_spotter = make_spotter(spotter_kind, v_stop_ratio=float(segmenter.v_stop_ratio), model_path=spotter_model_path)
+        one_shot_lock = OneShotLock(strict=(spotter_kind == "dl"))
+        print(f"[OneShot] BẬT khóa một lần (spotter={spotter_kind}"
+              f"{', NGHIÊM: chặn stroke ngoài khoảng đang ký' if spotter_kind == 'dl' else ''}): mỗi khoảng ký chỉ chốt tối đa 1 từ.")
 
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
     wrist_smoother = make_wrist_smoother()
@@ -1284,6 +1291,9 @@ def run_sentence_builder(
 
     # Mở nguồn video hoặc Webcam — thử MSMF trước, rồi fallback sang DSHOW
     cap = None
+    _vclk_n = 0
+    _vclk_t0 = time.time()
+    _vclk_fps = 30.0
     if video_path is not None:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -1291,6 +1301,9 @@ def run_sentence_builder(
             cap = None
         else:
             print(f"[Video] KẾT NỐI THÀNH CÔNG video file: {video_path}")
+            if video_clock:
+                _vclk_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+                print(f"[Video] Dùng ĐỒNG HỒ VIDEO ({_vclk_fps:.1f} fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0={_vclk_t0:.3f}")
     elif not headless:
         cap = open_camera(camera_index, prefer_mjpg=True)
 
@@ -1354,6 +1367,9 @@ def run_sentence_builder(
 
                 if ret and frame is not None:
                     capture_ts = time.time()
+                    if video_clock and video_path is not None:
+                        _vclk_n += 1
+                        capture_ts = _vclk_t0 + _vclk_n / _vclk_fps
                     if cam_monitor is not None:
                         # Gọi MỖI lần đọc được khung (kể cả khung trùng), trước lật gương; tay chuyển động = v_norm khung trước
                         cam_monitor.update(frame, capture_ts, cam_last_v_norm >= cam_hand_moving_v)
@@ -1568,7 +1584,9 @@ def run_sentence_builder(
                 cam_last_v_norm = v_norm
                 if one_shot_lock is not None:
                     # KHÓA MỘT LẦN: spotter nhận đúng v_norm của segmenter, lock ghi span theo thời gian.
-                    one_shot_lock.observe(curr_time, one_shot_spotter.update(curr_time, True, float(v_norm)))
+                    # landmarks chỉ hợp lệ ở khung MediaPipe thấy tay thật (hand_lost_frames == 0); khung LK-fallback => None.
+                    one_shot_lock.observe(curr_time, one_shot_spotter.update(
+                        curr_time, True, float(v_norm), landmarks if hand_lost_frames == 0 else None, (w_f, h_f)))
                 if seg_state == KineticState.RECORDING:
                     recording_streak += 1
                     has_predicted_pending = False
@@ -1749,7 +1767,9 @@ def run_sentence_builder(
                                         _os_blocked = not _os_ok
                                     if _os_blocked:
                                         hud_toast = _make_toast("suppressed", [word_key], None, curr_time, 1.0)
-                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): đã có từ được chốt trong khoảng ký này.")
+                                        _os_why = ("ngoài khoảng đang ký (spotter báo không ký)" if _os_reason == "no_span"
+                                                   else "đã có từ được chốt trong khoảng ký này")
+                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): {_os_why}.")
                                         if session_writer is not None:
                                             session_writer.writerow([
                                                 time.strftime("%Y-%m-%d %H:%M:%S"), "SUPPRESSED_DUP", word_key, round(match_result.best_distance, 4),
@@ -2119,6 +2139,14 @@ def run_sentence_builder(
                     cv2.putText(display_frame, ltext, (px0 + 8, py0 + 16 + li * 17),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.40, col, 1, lineType=cv2.LINE_AA)
 
+            if one_shot_lock is not None and not headless:
+                # Chỉ báo spotter (gỡ lỗi): xanh = đang ký (gate mở), xám = không ký; kèm xác suất nếu là spotter DL.
+                _g_open = bool(one_shot_spotter.gate.is_open if hasattr(one_shot_spotter, "gate") else one_shot_spotter.is_open)
+                _g_p = getattr(one_shot_spotter, "last_prob", None)
+                _g_txt = f"SPOTTER {'KY' if _g_open else '--'}" + (f" p={_g_p:.2f}" if _g_p is not None else "")
+                cv2.putText(display_frame, _g_txt, (max(10, display_frame.shape[1] - 230), 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 0) if _g_open else (150, 150, 150), 2, lineType=cv2.LINE_AA)
+
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -2321,6 +2349,9 @@ if __name__ == "__main__":
     parser.add_argument("--detector-workers", type=int, default=None, help="Số luồng làm việc song song cho MediaPipe (mặc định None = tự chọn min(3, max(1, CPU//4))).")
     parser.add_argument("--video", type=str, default=None, help="Đường dẫn file video đầu vào thay vì webcam")
     parser.add_argument("--log-session", "-l", type=str, default=None, help="Đường dẫn file CSV lưu log kết quả từng cử chỉ live (phục vụ test Phiên 3)")
+    parser.add_argument("--video-clock", action="store_true", default=False,
+                        help="Với --video: dùng đồng hồ của video (khung n tại n/fps) làm mốc thời gian, để phát lại nhanh hơn thời gian thật "
+                             "mà các ngưỡng theo giây vẫn đúng như lúc thu.")
     parser.add_argument("--headless", action="store_true", default=False, help="Chạy không mở cửa sổ đồ họa OpenCV (dùng cho đo benchmark/test).")
     parser.add_argument("--max-frames", type=int, default=None, help="Dừng sau số khung hình nhất định (dùng cho benchmark/test).")
     parser.add_argument("--threshold-mode", type=str, choices=["legacy", "scale_k"], default=None, help="Chế độ ngưỡng: 'scale_k' (ngưỡng theo độ rộng nội lớp) hoặc 'legacy' (cố định).")
@@ -2360,9 +2391,11 @@ if __name__ == "__main__":
     parser.add_argument("--one-shot", action="store_true", default=False,
                         help="KHÓA MỘT LẦN: mỗi khoảng 'đang ký' (span do spotter báo) chỉ commit tối đa MỘT từ; "
                              "các stroke còn lại trong cùng span bị chặn (SUPPRESSED_DUP). Mặc định TẮT = hành vi cũ.")
-    parser.add_argument("--spotter", type=str, choices=["rule"], default="rule",
-                        help="Bộ spotter cấp tín hiệu 'đang ký' cho --one-shot (hiện chỉ có 'rule' = luật vận tốc). "
-                             "Chỉ có tác dụng khi bật --one-shot.")
+    parser.add_argument("--spotter", type=str, choices=["rule", "dl"], default="rule",
+                        help="Bộ spotter cấp tín hiệu 'đang ký' cho --one-shot: 'rule' = luật vận tốc (chỉ chặn từ trùng), "
+                             "'dl' = CNN nhỏ (chặn cả từ vu vơ ngoài khoảng đang ký). Chỉ có tác dụng khi bật --one-shot.")
+    parser.add_argument("--spotter-model", type=str, default="spotter_model.pth",
+                        help="Checkpoint spotter DL (train_spotter.py --save). Chỉ dùng khi --spotter dl.")
     args, _ = parser.parse_known_args()
 
     eff_dl_model_path = None
@@ -2408,4 +2441,6 @@ if __name__ == "__main__":
         dl_conf_threshold=args.dl_conf_threshold,
         one_shot=args.one_shot,
         spotter_kind=args.spotter,
+        spotter_model_path=args.spotter_model,
+        video_clock=args.video_clock,
     )

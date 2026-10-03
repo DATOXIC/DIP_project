@@ -206,3 +206,4 @@ cython_debug/
 /.codegraph/
 /web_uploads
 /continuous_data
+/scratch
