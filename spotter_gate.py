@@ -181,7 +181,11 @@ class OneShotLock:
       - khong co span   -> (True, "no_span") [fail-open, hanh vi cu]; strict=True -> (False, "no_span") [chan tu vu vo]
     """
 
-    def __init__(self, max_spans: int = 50, tolerance_sec: float = 0.5, max_gap_sec: float = 1.0, strict: bool = False):
+    def __init__(self, max_spans: int = 50, tolerance_sec: float = 0.5, max_gap_sec: float = 1.0, strict: bool = False,
+                 min_gap_sec: float = 0.5, soft_prob: float = 0.25):
+        self.soft_prob = float(soft_prob)           # strict: stroke khong co span nhung p >= nguong nay van duoc cho qua
+        self._probs: List[Tuple[float, float]] = [] # (t, p) gan day, de xem p trong luc stroke
+        self.min_gap_sec = float(min_gap_sec)       # khoang toi thieu giua hai lan chot (hai tu khac nhau) trong cung span
         # strict=True: stroke KHONG thuoc span nao (spotter bao 'khong ky') bi CHAN thay vi cho qua -> loai tu vu vo.
         self.strict = bool(strict)
         self.max_spans = int(max_spans)
@@ -191,6 +195,7 @@ class OneShotLock:
         self._spans: List[list] = []
         self._next_id = 0
         self._prev_open = False
+        self.last_pmax = 0.0
         self.stats: Dict[str, int] = {"allowed": 0, "suppressed": 0}
 
     @property
@@ -198,12 +203,16 @@ class OneShotLock:
         """Danh sach (span_id, t_open, t_close|None) dang giu trong bo nho."""
         return [(s[0], s[1], s[2]) for s in self._spans]
 
-    def observe(self, t: float, gate_open: bool) -> None:
+    def observe(self, t: float, gate_open: bool, prob: Optional[float] = None) -> None:
         """Nhan gate_open cua khung tai thoi diem t; mo/dong span theo canh len/xuong."""
         t = float(t)
+        if prob is not None:
+            self._probs.append((t, float(prob)))
+            if len(self._probs) > 300:
+                del self._probs[:100]
         gate_open = bool(gate_open)
         if gate_open and not self._prev_open:
-            self._spans.append([self._next_id, t, None, False])
+            self._spans.append([self._next_id, t, None, False, None, 0.0])
             self._next_id += 1
             if len(self._spans) > self.max_spans:
                 del self._spans[: len(self._spans) - self.max_spans]
@@ -233,18 +242,35 @@ class OneShotLock:
             return before
         return None
 
-    def allow_commit(self, t_stroke_start: float) -> Tuple[bool, str]:
-        span = self._find_span(float(t_stroke_start))
+    def allow_commit(self, t_stroke_start: float, word: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        word: tu vua doc ra. Neu co, ky nhanh (gate khong dong giua hai tu) van duoc chot them MOT TU KHAC
+        trong cung span khi stroke bat dau cach lan chot truoc >= min_gap_sec. Cung tu => van la doc lap.
+        """
+        t_start = float(t_stroke_start)
+        span = self._find_span(t_start)
         if span is None:
             if self.strict:
+                pmax = max((p for tt, p in self._probs if tt >= t_start - 0.3), default=0.0)
+                self.last_pmax = pmax
+                if pmax >= self.soft_prob:
+                    self.stats["allowed"] += 1
+                    return True, "soft"
                 self.stats["suppressed"] += 1
                 return False, "no_span"
             self.stats["allowed"] += 1
             return True, "no_span"
         if span[3]:
+            last_word, last_t = span[4], span[5]
+            if word is not None and last_word is not None and word != last_word \
+                    and t_start - last_t >= self.min_gap_sec:
+                span[4], span[5] = word, t_start
+                self.stats["allowed"] += 1
+                return True, "next_word"
             self.stats["suppressed"] += 1
             return False, "dup_in_span"
         span[3] = True
+        span[4], span[5] = word, t_start
         self.stats["allowed"] += 1
         return True, "first"
 

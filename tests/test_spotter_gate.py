@@ -278,3 +278,24 @@ def test_dl_spotter_rejects_mismatched_model(tmp_path):
     torch.save({"state_dict": {}, "mean": np.zeros(3), "std": np.ones(3), "window": 8, "feat_dim": 3}, p)
     with pytest.raises(ValueError):
         load_model(p)
+
+
+def test_one_shot_fast_signing_allows_different_word_in_same_span():
+    from spotter_gate import OneShotLock
+    lk = OneShotLock()
+    lk.observe(0.0, True)
+    assert lk.allow_commit(0.2, "A") == (True, "first")
+    assert lk.allow_commit(0.4, "B") == (False, "dup_in_span")      # qua gan lan chot truoc
+    assert lk.allow_commit(1.0, "A") == (False, "dup_in_span")      # cung tu
+    assert lk.allow_commit(1.0, "B") == (True, "next_word")         # tu khac, du xa
+    assert lk.allow_commit(1.1, "B") == (False, "dup_in_span")
+
+
+def test_one_shot_strict_soft_prob_lets_weak_spotter_through():
+    from spotter_gate import OneShotLock
+    lk = OneShotLock(strict=True)
+    for i in range(10):
+        lk.observe(i * 0.03, False, 0.1)
+    assert lk.allow_commit(0.1, "A") == (False, "no_span")
+    lk.observe(0.4, False, 0.4)
+    assert lk.allow_commit(0.2, "A") == (True, "soft")

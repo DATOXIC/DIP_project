@@ -1585,8 +1585,9 @@ def run_sentence_builder(
                 if one_shot_lock is not None:
                     # KHÓA MỘT LẦN: spotter nhận đúng v_norm của segmenter, lock ghi span theo thời gian.
                     # landmarks chỉ hợp lệ ở khung MediaPipe thấy tay thật (hand_lost_frames == 0); khung LK-fallback => None.
-                    one_shot_lock.observe(curr_time, one_shot_spotter.update(
-                        curr_time, True, float(v_norm), landmarks if hand_lost_frames == 0 else None, (w_f, h_f)))
+                    _os_gate = one_shot_spotter.update(
+                        curr_time, True, float(v_norm), landmarks if hand_lost_frames == 0 else None, (w_f, h_f))
+                    one_shot_lock.observe(curr_time, _os_gate, getattr(one_shot_spotter, "last_prob", None))
                 if seg_state == KineticState.RECORDING:
                     recording_streak += 1
                     has_predicted_pending = False
@@ -1763,13 +1764,13 @@ def run_sentence_builder(
                                     # Chỉ hỏi khóa khi không phải is_repeat (is_repeat vẫn do cơ chế cũ xử lý, không tốn lượt của span).
                                     _os_blocked = False
                                     if one_shot_lock is not None and not is_repeat:
-                                        _os_ok, _os_reason = one_shot_lock.allow_commit(float(completed_stroke[0].timestamp))
+                                        _os_ok, _os_reason = one_shot_lock.allow_commit(float(completed_stroke[0].timestamp), word_key)
                                         _os_blocked = not _os_ok
                                     if _os_blocked:
                                         hud_toast = _make_toast("suppressed", [word_key], None, curr_time, 1.0)
                                         _os_why = ("ngoài khoảng đang ký (spotter báo không ký)" if _os_reason == "no_span"
                                                    else "đã có từ được chốt trong khoảng ký này")
-                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): {_os_why}.")
+                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): {_os_why}. (p tối đa trong stroke = {one_shot_lock.last_pmax:.2f})")
                                         if session_writer is not None:
                                             session_writer.writerow([
                                                 time.strftime("%Y-%m-%d %H:%M:%S"), "SUPPRESSED_DUP", word_key, round(match_result.best_distance, 4),
