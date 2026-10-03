@@ -205,3 +205,4 @@ cython_debug/
 # CodeGraph index (sinh tu dong)
 /.codegraph/
 /web_uploads
+/continuous_data

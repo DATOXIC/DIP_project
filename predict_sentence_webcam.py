@@ -364,6 +364,8 @@ def speak_async(text: str) -> bool:
 # 3. BỘ LỌC LÀM MƯỢT TỌA ĐỘ CỔ TAY (1€ FILTER) & HÌNH THÁI HỌC DIP V2.0
 # =============================================================================
 
+from spotter_gate import OneShotLock, Spotter, make_spotter   # KHÓA MỘT LẦN (--one-shot), import nhẹ
+
 # Tái xuất từ pipeline_common (nguồn sự thật duy nhất) để giữ tương thích ngược 100%
 from pipeline_common import (
     WristCoordinateSmoother,
@@ -1028,6 +1030,8 @@ def run_sentence_builder(
     confirm_enroll: bool = True,
     dl_model_path: Optional[str] = None,
     dl_conf_threshold: Optional[float] = None,
+    one_shot: bool = False,
+    spotter_kind: str = "rule",
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1041,6 +1045,8 @@ def run_sentence_builder(
                    --test_signer none (train_dynamic_dl.py) - các checkpoint LOSO (best_gesture_model_
                    <Ten>.pth) CỐ Ý giấu 1 người, không phải model để chạy thật.
     dl_conf_threshold: ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận (None = dl_fusion.DEFAULT_CONF_THRESHOLD).
+    one_shot: KHÓA MỘT LẦN (spotter_gate.py): mỗi khoảng "đang ký" chỉ commit tối đa MỘT từ. Mặc định False = hành vi cũ.
+    spotter_kind: loại spotter cấp tín hiệu "đang ký" cho one_shot (hiện chỉ có "rule"); bỏ qua khi one_shot=False.
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -1198,6 +1204,14 @@ def run_sentence_builder(
     early_pre: Optional[Tuple[Any, Any, bool, Any, float, int]] = None   # (traj, shapes, body_ok, match, tau, n_tried) của dự đoán tạm khi chốt sớm
     lead_trim_history: List[float] = []   # Lưu lại tau của các từ đã commit trong phiên để in thống kê lúc thoát
     _commit_mode = "normal"
+
+    # KHÓA MỘT LẦN (--one-shot): mặc định TẮT (one_shot_lock = None) => mọi nhánh bên dưới bị bỏ qua, hành vi như cũ.
+    one_shot_lock: Optional[OneShotLock] = None
+    one_shot_spotter: Optional[Spotter] = None
+    if one_shot:
+        one_shot_spotter = make_spotter(spotter_kind, v_stop_ratio=float(segmenter.v_stop_ratio))
+        one_shot_lock = OneShotLock()
+        print(f"[OneShot] BẬT khóa một lần (spotter={spotter_kind}): mỗi khoảng ký chỉ chốt tối đa 1 từ.")
 
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
     wrist_smoother = make_wrist_smoother()
@@ -1552,6 +1566,9 @@ def run_sentence_builder(
                     timestamp=curr_time
                 )
                 cam_last_v_norm = v_norm
+                if one_shot_lock is not None:
+                    # KHÓA MỘT LẦN: spotter nhận đúng v_norm của segmenter, lock ghi span theo thời gian.
+                    one_shot_lock.observe(curr_time, one_shot_spotter.update(curr_time, True, float(v_norm)))
                 if seg_state == KineticState.RECORDING:
                     recording_streak += 1
                     has_predicted_pending = False
@@ -1723,7 +1740,25 @@ def run_sentence_builder(
 
                                     # R3 Layer 3 / Debouncing: Chống bắn lặp từ trong 0.8s
                                     is_repeat = (en_phrase == last_committed_word and (curr_time - last_commit_time) < 0.8)
-                                    if not is_repeat:
+                                    # KHÓA MỘT LẦN: stroke này đã được FSM chốt (kể cả early commit qua force_commit) nên
+                                    # không thể chốt lần hai ở đường normal; ở đây chỉ quyết định có COMMIT TỪ hay không.
+                                    # Chỉ hỏi khóa khi không phải is_repeat (is_repeat vẫn do cơ chế cũ xử lý, không tốn lượt của span).
+                                    _os_blocked = False
+                                    if one_shot_lock is not None and not is_repeat:
+                                        _os_ok, _os_reason = one_shot_lock.allow_commit(float(completed_stroke[0].timestamp))
+                                        _os_blocked = not _os_ok
+                                    if _os_blocked:
+                                        hud_toast = _make_toast("suppressed", [word_key], None, curr_time, 1.0)
+                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): đã có từ được chốt trong khoảng ký này.")
+                                        if session_writer is not None:
+                                            session_writer.writerow([
+                                                time.strftime("%Y-%m-%d %H:%M:%S"), "SUPPRESSED_DUP", word_key, round(match_result.best_distance, 4),
+                                                "", "", 0.0, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1),
+                                                round(match_result.best_confidence, 4), round(match_result.match_quality, 2), round(match_result.r_ratio, 4), round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                                round(cur_lead_trim_sec, 3), cur_lead_trim_tried
+                                            ])
+                                            session_file.flush()
+                                    elif not is_repeat:
                                         sentence_words.append(en_phrase)
                                         sentence_keys.append(word_key)
                                         last_commit_time = curr_time
@@ -1756,8 +1791,8 @@ def run_sentence_builder(
                                         trim_str = f" [trim: {cur_lead_trim_sec:.2f}s, {cur_lead_trim_tried} tried]" if cur_lead_trim_sec > 0.0 else ""
                                         print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' (Do khop: {do_khop:.0f}){trim_str} | Câu: {' '.join(sentence_words)}")
 
-                                    # Ghi CSV Session Log
-                                    if session_writer is not None:
+                                    # Ghi CSV Session Log (bị khóa một lần thì đã ghi dòng SUPPRESSED_DUP ở trên)
+                                    if session_writer is not None and not _os_blocked:
                                         c2_k = match_result.candidates[1].word_key if len(match_result.candidates) >= 2 else ""
                                         c2_d = round(match_result.candidates[1].distance, 4) if len(match_result.candidates) >= 2 else ""
                                         m_val = round(((match_result.candidates[1].distance - match_result.best_distance) / max(match_result.best_distance, 1e-4)) * 100.0, 2) if len(match_result.candidates) >= 2 else 100.0
@@ -1863,6 +1898,9 @@ def run_sentence_builder(
                     draw_hand_skeleton_features(display_frame, landmarks, current_angles, w_f, h_f, handedness=handedness_label)
                 if profile:
                     _t_draw += time.perf_counter() - _t0_draw_box
+            elif one_shot_lock is not None:
+                # KHÓA MỘT LẦN: mất tay -> spotter đóng span (v_norm = 0).
+                one_shot_lock.observe(curr_time, one_shot_spotter.update(curr_time, False, 0.0))
 
             if profile:
                 _t0_draw_hud = time.perf_counter()
@@ -2202,6 +2240,10 @@ def run_sentence_builder(
 
     finally:
         speech_service.shutdown()
+        if one_shot_lock is not None:
+            print(f"[OneShot] Cả phiên: cho phép {one_shot_lock.stats['allowed']} lần commit, "
+                  f"chặn {one_shot_lock.stats['suppressed']} lần trùng trong cùng span "
+                  f"(tổng {len(one_shot_lock.spans)} span gần nhất đang giữ).")
         if cam_monitor is not None:
             _cam_sum = cam_monitor.session_summary()
             if _cam_sum:
@@ -2315,6 +2357,12 @@ if __name__ == "__main__":
     parser.add_argument("--dl-conf-threshold", type=float, default=None,
                         help="Ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận khi DTW không ACCEPTED. "
                              "Mặc định 0.38 (chọn giữa miền ổn định qua nested CV 4 người lạ, xem dl_fusion.py).")
+    parser.add_argument("--one-shot", action="store_true", default=False,
+                        help="KHÓA MỘT LẦN: mỗi khoảng 'đang ký' (span do spotter báo) chỉ commit tối đa MỘT từ; "
+                             "các stroke còn lại trong cùng span bị chặn (SUPPRESSED_DUP). Mặc định TẮT = hành vi cũ.")
+    parser.add_argument("--spotter", type=str, choices=["rule"], default="rule",
+                        help="Bộ spotter cấp tín hiệu 'đang ký' cho --one-shot (hiện chỉ có 'rule' = luật vận tốc). "
+                             "Chỉ có tác dụng khi bật --one-shot.")
     args, _ = parser.parse_known_args()
 
     eff_dl_model_path = None
@@ -2358,4 +2406,6 @@ if __name__ == "__main__":
         confirm_enroll=args.confirm_enroll,
         dl_model_path=eff_dl_model_path,
         dl_conf_threshold=args.dl_conf_threshold,
+        one_shot=args.one_shot,
+        spotter_kind=args.spotter,
     )
