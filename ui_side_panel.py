@@ -83,6 +83,9 @@ class SidePanelState:
     ui_lang: str = "vi"
     profile_lines: List[str] = field(default_factory=list)
     speech_status: str = "on"
+    # SPEC 14: câu tự nhiên sinh từ chuỗi từ (sentence_composer). Chỉ hiện khi câu đã chốt; None = không hiện gì thêm.
+    # Phải là chuỗi ASCII (cv2.putText không vẽ được chữ có dấu) — người gọi bỏ dấu tiếng Việt trước khi truyền vào.
+    composed_sentence: Optional[str] = None
 
 
 def compose_canvas(frame: np.ndarray, panel_w: int = PANEL_W, bottom_h: int = BOTTOM_H,
@@ -269,6 +272,17 @@ def draw_bottom_panel(canvas: np.ndarray, x0: int, y0: int, w: int, h: int, st: 
     if tw > max_w and tw > 0:
         font_scale = max(0.40, font_scale * (max_w / tw))
     cv2.putText(canvas, sentence_display, (x, y0 + 40), FONT, font_scale, text_col, 2, cv2.LINE_AA)
+
+    # SPEC 14: dòng câu tự nhiên bên dưới dòng gloss gốc (không che, không thêm khung).
+    if st.sentence_finalized and st.composed_sentence:
+        natural = st.composed_sentence
+        nat_scale = 0.55
+        (nw, _), _ = cv2.getTextSize(natural, FONT, nat_scale, 1)
+        if nw > max_w and nw > 0:
+            nat_scale = max(0.38, nat_scale * (max_w / nw))
+        while len(natural) > 4 and cv2.getTextSize(natural, FONT, nat_scale, 1)[0][0] > max_w:
+            natural = natural[:-4].rstrip() + "..."
+        cv2.putText(canvas, natural, (x, y0 + 75), FONT, nat_scale, COL_OK, 1, cv2.LINE_AA)
 
     if st.help_line:
         cv2.putText(canvas, st.help_line, (x, y0 + h - 16), FONT, 0.34, (190, 190, 190), 1, cv2.LINE_AA)

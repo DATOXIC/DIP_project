@@ -94,8 +94,9 @@ from dynamic_dtw_engine import (
 )
 # Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
 import speech_service
-from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
+from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail, strip_diacritics
 import ui_side_panel
+from sentence_composer import compose as compose_sentence
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
 from session_enroll import SessionEnroller
@@ -207,6 +208,14 @@ CONFIG = {
         "hysteresis": 0.10,              # ngưỡng thoát nới ~10% so với ngưỡng vào
         "hand_moving_v": 0.03,           # v_norm >= mức này coi là tay đang chuyển động
         "warn_on_video": False,          # chạy từ file video: tắt cảnh báo (khung trùng của video là bình thường)
+    },
+
+    # --- SPEC 14: sinh câu tự nhiên từ chuỗi từ (sentence_composer.py, luật offline, KHÔNG ảnh hưởng nhận dạng).
+    #     Khi chốt câu (hạ tay > 1.8s): hiện thêm dòng câu tự nhiên dưới dòng gloss gốc, và đọc câu đó nếu nó KHÁC cách nối thô.
+    #     Tắt: --no-composer (hành vi y hệt cũ). ---
+    "composer": {
+        "enabled": True,          # sinh câu tự nhiên khi chốt câu (chỉ hiển thị/giọng nói)
+        "speak_sentence": True,   # chốt câu xong thì đọc câu tự nhiên nếu nó KHÁC cách nối thô
     },
 }
 
@@ -1039,6 +1048,7 @@ def run_sentence_builder(
     trace_path: Optional[str] = None,
     seg_tune: Optional[Dict[str, Any]] = None,
     motion_mode: str = "wrist",
+    composer: Optional[bool] = None,
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1348,6 +1358,14 @@ def run_sentence_builder(
     last_committed_word: Optional[str] = None
     last_hand_seen_time = time.time()
     sentence_finalized = False
+    # SPEC 14: bộ sinh câu tự nhiên. Kết quả được tính lại khi (chuỗi từ, ngôn ngữ) đổi, nên không cần reset ở từng chỗ sửa câu.
+    composer_cfg: Dict[str, Any] = dict(CONFIG.get("composer", {}))
+    composer_on = bool(composer_cfg.get("enabled", True)) if composer is None else bool(composer)
+    composer_cache_key: Optional[Tuple[Tuple[str, ...], str]] = None
+    composed_result: Optional[Any] = None
+
+    def _phrase_for_composer(key: str, lang: str) -> str:
+        return get_asl_phrase(key, lang=lang, default="")
 
     # Quản lý Banner phản hồi trực quan (R4 HUD)
     banner_title = ""
@@ -1777,6 +1795,19 @@ def run_sentence_builder(
                     hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
                     print(f"[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: {final_sentence}")
                     event_log.push(f"Chốt câu: \"{final_sentence}\"", ui_side_panel.COL_OK)
+                    if composer_on:
+                        # SPEC 14: câu tự nhiên song hành với gloss gốc (gloss không bị đổi/che).
+                        try:
+                            composed_result = compose_sentence(sentence_keys, ui_lang, phrase_fn=_phrase_for_composer)
+                            composer_cache_key = (tuple(sentence_keys), ui_lang)
+                            if composed_result.changed:
+                                print(f"[Composer] ({composed_result.rule}) {composed_result.text}")
+                                event_log.push(f"Cau tu nhien: {strip_diacritics(composed_result.text)}", ui_side_panel.COL_OK)
+                                if composer_cfg.get("speak_sentence", True):
+                                    speech_service.speak_word("__SENTENCE__", ui_lang, composed_result.text)
+                        except Exception as composer_err:
+                            composed_result = None
+                            print(f"[Composer] Lỗi sinh câu ({composer_err}) — bỏ qua, vẫn hiển thị chuỗi từ như cũ.")
 
             if trace_file is not None and not hand_found:
                 trace_file.write(json.dumps({"t": round(float(curr_time), 3), "h": 0, "s": segmenter.state.name[:3]}) + "\n")
@@ -2280,6 +2311,19 @@ def run_sentence_builder(
                 cam_diag = (f"that:{cam_monitor.unique_fps:.0f}/s trung:{cam_monitor.dup_ratio*100:.0f}% "
                             f"(gan-trung {cam_monitor.near_dup_ratio*100:.0f}%) sang:{cam_monitor.luma_mean:.0f}")
 
+            # SPEC 14: câu tự nhiên chỉ hiện khi câu đã chốt và nó KHÁC cách nối thô; tiếng Việt bỏ dấu vì panel vẽ bằng cv2.putText.
+            composed_display: Optional[str] = None
+            if composer_on and sentence_finalized and sentence_keys:
+                _ckey = (tuple(sentence_keys), ui_lang)
+                if _ckey != composer_cache_key:
+                    try:
+                        composed_result = compose_sentence(sentence_keys, ui_lang, phrase_fn=_phrase_for_composer)
+                    except Exception:
+                        composed_result = None
+                    composer_cache_key = _ckey
+                if composed_result is not None and composed_result.changed:
+                    composed_display = strip_diacritics(composed_result.text)
+
             panel_state = ui_side_panel.SidePanelState(
                 fps=fps,
                 camera_index=camera_index,
@@ -2306,6 +2350,7 @@ def run_sentence_builder(
                 ui_lang=ui_lang,
                 profile_lines=profile_lines,
                 speech_status=speech_service.get_speech_status(ui_lang),
+                composed_sentence=composed_display,
             )
             canvas, _cw, _ch = ui_side_panel.compose_canvas(display_frame)
             ui_side_panel.draw_right_panel(canvas, w_f, 0, ui_side_panel.PANEL_W, h_f + ui_side_panel.BOTTOM_H, panel_state)
@@ -2532,6 +2577,9 @@ if __name__ == "__main__":
                         help="Bật/tắt chuẩn hóa vận tốc + Swipe-Left theo thời gian (mặc định lấy CONFIG['time_norm']['enabled'] = TẮT).")
     parser.add_argument("--dedupe-frames", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt bỏ khung trùng trước khi dò tay (mặc định lấy CONFIG['dedupe_frames'] = TẮT).")
+    parser.add_argument("--composer", action=argparse.BooleanOptionalAction, default=None,
+                        help="SPEC 14: bật/tắt sinh câu tự nhiên khi chốt câu (dòng thứ hai dưới chuỗi từ + đọc câu). "
+                             "Mặc định lấy CONFIG['composer']['enabled'] (BẬT); dùng --no-composer để về hành vi cũ.")
     parser.add_argument("--confirm-enroll", action=argparse.BooleanOptionalAction, default=True,
                         help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận "
                              "thêm vào bank (phím y/2/n/z). MẶC ĐỊNH BẬT (đã đo: đây là đòn bẩy lớn nhất cho "
@@ -2629,6 +2677,7 @@ if __name__ == "__main__":
         force_stroke=args.force_stroke,
         trace_path=args.trace,
         motion_mode=args.motion,
+        composer=args.composer,
         seg_tune={k: v for k, v in {"pause_sec": args.pause_sec, "grace_sec": args.grace_sec, "v_stop": args.v_stop,
                                     "v_start": args.v_start, "early_commit": args.early_commit}.items() if v is not None} or None,
     )
