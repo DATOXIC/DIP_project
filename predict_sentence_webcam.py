@@ -147,6 +147,7 @@ CONFIG = {
     # Mặc định TẮT. Số đo: results/handshape_gate_eval.json (eval_handshape_gate.py). Bật: --handshape-gate.
     "handshape_gate": {"enabled": False, "model": "letter_landmark_model_image.pt", "table": "handshape_gate_table.json",
                        "conf": 0.6, "compat": 0.15},
+    "max_sentence_words": 8,            # Chốt câu tự động khi đủ ngần này từ (0 = tắt); từ kế tiếp mở câu mới
     "enable_static_shape_cnn": False,   # Tắt DIP + CNN trong vòng lặp động (lambda_shape=0.0 nên không dùng)
     "detect_scale": 1.0,                 # SPEC 05C: Trả về 1.0 vì MediaPipe không giảm ms khi resize
     "detector_workers": None,           # SPEC 05C: Số worker song song (None = tự chọn theo CPU)
@@ -1838,11 +1839,21 @@ def run_sentence_builder(
                                             ])
                                             session_file.flush()
                                     elif not is_repeat:
+                                        if sentence_words and sentence_finalized:
+                                            # Câu trước đã chốt (hạ tay > 1,8 s hoặc đủ từ): từ mới mở CÂU MỚI, không nối vào câu cũ.
+                                            sentence_words.clear()
+                                            sentence_keys.clear()
                                         sentence_words.append(en_phrase)
                                         sentence_keys.append(word_key)
                                         last_commit_time = curr_time
                                         last_committed_word = en_phrase
                                         sentence_finalized = False
+                                        _max_sw = int(CONFIG.get("max_sentence_words", 8))
+                                        if _max_sw > 0 and len(sentence_words) >= _max_sw:
+                                            # Ký liên tục không hạ tay: chốt câu khi đủ số từ để câu không dài vô hạn.
+                                            sentence_finalized = True
+                                            hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
+                                            print(f"[SentenceBuilder] ✓ ĐỦ {_max_sw} TỪ, CHỐT CÂU: {' '.join(sentence_words)} .")
                                         lead_trim_history.append(cur_lead_trim_sec)
 
                                         # Điểm độ khớp (SPEC 04B: Do khop thay vì xác suất)
@@ -2088,8 +2099,14 @@ def run_sentence_builder(
 
                 text_col = (0, 255, 0) if sentence_finalized else (255, 255, 255)
                 font_scale = 0.70
-                (t_w, _), _ = cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
                 max_allowed_w = w_f - 30
+                # Ký liên tục thì câu rất dài: bỏ dần từ CŨ NHẤT (giữ từ mới), thêm "..." đầu câu, thay vì co chữ tới mức tràn màn hình.
+                if len(sentence_words) > 1:
+                    _tail = list(sentence_words)
+                    while len(_tail) > 1 and cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)[0][0] > max_allowed_w:
+                        _tail.pop(0)
+                        sentence_display = f"ASL SENTENCE: \"... {' '.join(_tail)}{' .' if sentence_finalized else ''}\""
+                (t_w, _), _ = cv2.getTextSize(sentence_display, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
                 if t_w > max_allowed_w and t_w > 0:
                     font_scale = max(0.40, font_scale * (max_allowed_w / t_w))
                 cv2.putText(display_frame, sentence_display, (15, h_f - 42),
