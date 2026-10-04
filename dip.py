@@ -109,6 +109,7 @@ def build_merged_bank(pid: str, gop_dat: bool, gop: Optional[List[str]] = None) 
 
 
 SPOTTER_MODEL = "spotter_model.pth"
+HANDSHAPE_FILES = ("letter_landmark_model_image.pt", "handshape_gate_table.json")
 
 
 def lenh_hieu_chinh(pid: str, words: List[str], so_mau: int = 3, tat_dl: bool = False,
@@ -128,11 +129,14 @@ def lenh_hieu_chinh(pid: str, words: List[str], so_mau: int = 3, tat_dl: bool = 
 def cmd_nhan_dien(pid: str, extra: Optional[List[str]] = None, templates: Optional[str] = None,
                   xac_nhan: bool = True, dl_model: Optional[str] = None,
                   dl_nguong: Optional[float] = None, tat_dl: bool = False,
-                  day_tu: Optional[List[str]] = None, so_mau: int = 3, spotter: bool = True) -> List[str]:
+                  day_tu: Optional[List[str]] = None, so_mau: int = 3, spotter: bool = True, dang_tay: bool = True) -> List[str]:
     args = ["predict_sentence_webcam.py"]
     if spotter and os.path.exists(os.path.join(ROOT, SPOTTER_MODEL)):
         # Mặc định BẬT khóa một lần + spotter DL (giảm báo nhầm 31 -> 9, hết đọc lặp; xem eval_replay_log.py). Tắt: --khong-spotter.
         args += ["--one-shot", "--spotter", "dl"]
+    if dang_tay and all(os.path.exists(os.path.join(ROOT, f)) for f in HANDSHAPE_FILES):
+        # Bộ lọc dáng tay (nhánh chữ cái landmark 3D): chỉ can thiệp khi DTW chưa chắc; đã đo không làm tăng báo nhầm (replay). Tắt: --khong-dang-tay.
+        args.append("--handshape-gate")
     if day_tu:
         args += ["--day-tu"] + list(day_tu) + ["--day-so-mau", str(int(so_mau))]
     if templates and os.path.basename(templates).startswith("_gop_") and pid != people.OWNER_ID:
@@ -640,6 +644,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                                                           "4 người lạ thật, xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md).")
     a.add_argument("--dl-model", default=None, help="Checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
     a.add_argument("--dl-nguong", type=float, default=None, help="Ngưỡng tin cậy softmax cho tầng DL (mặc định 0.38, xem dl_fusion.py).")
+    a.add_argument("--khong-dang-tay", action="store_true", help="Tắt bộ lọc dáng tay (mặc định BẬT nếu có model chữ cái + bảng dáng tay)")
     a.add_argument("--khong-spotter", action="store_true", help="Tắt khóa một lần + spotter DL (mặc định BẬT nếu có spotter_model.pth)")
     a.add_argument("--gop-dat", action="store_true", help="Gộp bank của Đạt vào hồ sơ đang chọn. MẶC ĐỊNH ĐÃ BẬT cho người không phải chủ (đã đo: Đạt + mẫu riêng là cấu hình tốt nhất, xem eval_enroll.py)")
     a.add_argument("--khong-gop-dat", action="store_true", help="Chỉ dùng bank riêng của hồ sơ, không gộp bank Đạt (kém an toàn hơn: nhận nhầm nét âm nhiều hơn)")
@@ -705,7 +710,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     raise SystemExit(f"Hồ sơ '{x}' chưa có dữ liệu.")
             templates = build_merged_bank(pid, args.gop_dat, others)
         return chay(cmd_nhan_dien(pid, extra, templates, not args.khong_xac_nhan, args.dl_model, args.dl_nguong, args.tat_dl,
-                                  spotter=not args.khong_spotter))
+                                  spotter=not args.khong_spotter, dang_tay=not args.khong_dang_tay))
     if args.lenh == "hieu-chinh":
         if args.moi:
             try:

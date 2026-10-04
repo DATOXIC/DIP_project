@@ -207,3 +207,5 @@ cython_debug/
 /web_uploads
 /continuous_data
 /scratch
+/letter_landmarks
+/letter_landmarks_backup

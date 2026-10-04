@@ -142,6 +142,11 @@ CONFIG = {
     "sign_weights_path": "",     # Tắt ASL-LEX (chuỗi rỗng kích hoạt Global Weights theo SPEC 04A.1)
 
     # --- Tối ưu hóa hiệu năng (SPEC 02 & SPEC 05C - Chống lag) ---
+    # --- Bộ lọc ứng viên theo DÁNG TAY (handshape_gate.py, nhánh landmark 3D chuẩn hóa) ---
+    # Loại ứng viên DTW mâu thuẫn rõ với dáng tay đo ở đầu/cuối cử chỉ; chỉ can thiệp khi DTW KHÔNG ACCEPTED.
+    # Mặc định TẮT. Số đo: results/handshape_gate_eval.json (eval_handshape_gate.py). Bật: --handshape-gate.
+    "handshape_gate": {"enabled": False, "model": "letter_landmark_model_image.pt", "table": "handshape_gate_table.json",
+                       "conf": 0.6, "compat": 0.15},
     "enable_static_shape_cnn": False,   # Tắt DIP + CNN trong vòng lặp động (lambda_shape=0.0 nên không dùng)
     "detect_scale": 1.0,                 # SPEC 05C: Trả về 1.0 vì MediaPipe không giảm ms khi resize
     "detector_workers": None,           # SPEC 05C: Số worker song song (None = tự chọn theo CPU)
@@ -1289,6 +1294,19 @@ def run_sentence_builder(
         detect_scale = float(CONFIG.get("detect_scale", 1.0))
     detect_scale = max(0.1, min(1.0, float(detect_scale)))
 
+    # Bộ lọc dáng tay (mặc định tắt). Lỗi nạp => tắt lặng lẽ, KHÔNG làm hỏng pipeline.
+    shape_gate = None
+    _sg_cfg = CONFIG.get("handshape_gate", {})
+    if _sg_cfg.get("enabled"):
+        try:
+            from handshape_gate import HandshapeGateRuntime
+            shape_gate = HandshapeGateRuntime(_sg_cfg["model"], _sg_cfg["table"],
+                                              conf_thresh=float(_sg_cfg.get("conf", 0.6)),
+                                              compat_thresh=float(_sg_cfg.get("compat", 0.15)))
+            print(f"[HandshapeGate] BẬT (model={_sg_cfg['model']}, bảng={_sg_cfg['table']})")
+        except Exception as _sg_err:
+            print(f"[HandshapeGate] Không nạp được, tắt: {_sg_err}")
+
     # Biến phục vụ tối ưu hóa xen kẽ suy luận DIP + CNN trên CPU
     frame_counter = 0
     cached_hand_shape = "Unknown" if not enable_static_shape_cnn else "B"
@@ -1785,6 +1803,9 @@ def run_sentence_builder(
                                     if profile:
                                         _t_dtw += time.perf_counter() - _t0_dtw
 
+                            if match_result is not None and shape_gate is not None:
+                                match_result = shape_gate.apply(
+                                    match_result, seg_records if seg_records is not None else raw_records, handedness_label)
                             if match_result is not None:
                                 if match_result.fusion_note:
                                     print(f"[Fusion] {match_result.fusion_note}")
@@ -2433,6 +2454,9 @@ if __name__ == "__main__":
     parser.add_argument("--lead-trim", action=argparse.BooleanOptionalAction, default=None,
                         help="SPEC 08B: Bật/tắt cắt thích ứng phần dẫn đầu (adaptive lead trimming). "
                              "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (BẬT). Dùng --no-lead-trim để tắt. Phím [k] đổi lúc chạy.")
+    parser.add_argument("--handshape-gate", action=argparse.BooleanOptionalAction, default=None,
+                        help="Bật/tắt bộ lọc ứng viên theo dáng tay (handshape_gate.py). Mặc định tắt. Cần letter_landmark_model_image.pt "
+                             "và handshape_gate_table.json (py build_handshape_table.py).")
     parser.add_argument("--dl", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt tầng DL dự phòng (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md). "
                              "Mặc định None = TỰ ĐỘNG bật nếu tìm thấy 'best_gesture_model_none.pth' (hoặc file chỉ "
@@ -2472,6 +2496,8 @@ if __name__ == "__main__":
     enable_cnn = True if args.with_cnn else None
     if args.time_norm is not None:
         CONFIG["time_norm"]["enabled"] = bool(args.time_norm)
+    if args.handshape_gate is not None:
+        CONFIG["handshape_gate"]["enabled"] = bool(args.handshape_gate)
     run_sentence_builder(
         camera_index=selected_cam,
         headless=args.headless,
