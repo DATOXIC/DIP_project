@@ -212,3 +212,7 @@ cython_debug/
 
 # Bản web: video tải lên tạm thời
 web_uploads/
+/continuous_data
+/scratch
+/letter_landmarks_backup
+/letter_landmarks
