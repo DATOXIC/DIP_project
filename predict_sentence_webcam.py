@@ -99,7 +99,7 @@ import ui_side_panel
 from sentence_composer import compose as compose_sentence
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
-from session_enroll import SessionEnroller
+from session_enroll import SessionEnroller, TeachPlan
 
 # =============================================================================
 # 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
@@ -144,6 +144,12 @@ CONFIG = {
     "sign_weights_path": "",     # Tắt ASL-LEX (chuỗi rỗng kích hoạt Global Weights theo SPEC 04A.1)
 
     # --- Tối ưu hóa hiệu năng (SPEC 02 & SPEC 05C - Chống lag) ---
+    # --- Bộ lọc ứng viên theo DÁNG TAY (handshape_gate.py, nhánh landmark 3D chuẩn hóa) ---
+    # Loại ứng viên DTW mâu thuẫn rõ với dáng tay đo ở đầu/cuối cử chỉ; chỉ can thiệp khi DTW KHÔNG ACCEPTED.
+    # Mặc định TẮT. Số đo: results/handshape_gate_eval.json (eval_handshape_gate.py). Bật: --handshape-gate.
+    "handshape_gate": {"enabled": False, "model": "letter_landmark_model_image.pt", "table": "handshape_gate_table.json",
+                       "conf": 0.6, "compat": 0.15},
+    "max_sentence_words": 8,            # Chốt câu tự động khi đủ ngần này từ (0 = tắt); từ kế tiếp mở câu mới
     "enable_static_shape_cnn": False,   # Tắt DIP + CNN trong vòng lặp động (lambda_shape=0.0 nên không dùng)
     "detect_scale": 1.0,                 # SPEC 05C: Trả về 1.0 vì MediaPipe không giảm ms khi resize
     "detector_workers": None,           # SPEC 05C: Số worker song song (None = tự chọn theo CPU)
@@ -373,6 +379,8 @@ def speak_async(text: str) -> bool:
 # =============================================================================
 # 3. BỘ LỌC LÀM MƯỢT TỌA ĐỘ CỔ TAY (1€ FILTER) & HÌNH THÁI HỌC DIP V2.0
 # =============================================================================
+
+from spotter_gate import OneShotLock, Spotter, make_spotter   # KHÓA MỘT LẦN (--one-shot), import nhẹ
 
 # Tái xuất từ pipeline_common (nguồn sự thật duy nhất) để giữ tương thích ngược 100%
 from pipeline_common import (
@@ -1036,8 +1044,17 @@ def run_sentence_builder(
     width_blend: Optional[float] = None,
     dedupe_frames: Optional[bool] = None,
     confirm_enroll: bool = True,
+    teach_words: Optional[List[str]] = None,
+    teach_per_word: int = 3,
+    enroll_save_path: Optional[str] = None,
     dl_model_path: Optional[str] = None,
     dl_conf_threshold: Optional[float] = None,
+    one_shot: bool = False,
+    lock_min_gap: float = 1.2,
+    lock_soft_prob: float = 0.25,
+    spotter_kind: str = "rule",
+    spotter_model_path: str = "spotter_model.pth",
+    video_clock: bool = False,
     start_sec: Optional[float] = None,
     end_sec: Optional[float] = None,
     events_path: Optional[str] = None,
@@ -1079,6 +1096,12 @@ def run_sentence_builder(
                    --test_signer none (train_dynamic_dl.py) - các checkpoint LOSO (best_gesture_model_
                    <Ten>.pth) CỐ Ý giấu 1 người, không phải model để chạy thật.
     dl_conf_threshold: ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận (None = dl_fusion.DEFAULT_CONF_THRESHOLD).
+    one_shot: KHÓA MỘT LẦN (spotter_gate.py): mỗi khoảng "đang ký" chỉ commit tối đa MỘT từ. Mặc định False = hành vi cũ.
+    spotter_kind: loại spotter cấp tín hiệu "đang ký" cho one_shot: "rule" (luật vận tốc) hoặc "dl" (CNN nhỏ, spotter_dl.py;
+                  chế độ NGHIÊM: stroke ngoài khoảng "đang ký" bị chặn => loại từ vu vơ). Bỏ qua khi one_shot=False.
+    spotter_model_path: checkpoint cho spotter "dl" (train_spotter.py --save).
+    video_clock: khi chạy từ --video, dùng ĐỒNG HỒ CỦA VIDEO (khung n tại n/fps) thay cho giờ máy làm mốc thời gian khung, để các ngưỡng
+                 theo giây và đặc trưng vận tốc đúng như lúc thu dù xử lý nhanh hơn thời gian thật. Mặc định False = như cũ.
     """
     print("=" * 75)
     print("  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)")
@@ -1275,7 +1298,13 @@ def run_sentence_builder(
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
-    enroller: Optional[SessionEnroller] = SessionEnroller(dtw_engine) if confirm_enroll else None
+    enroller: Optional[SessionEnroller] = SessionEnroller(dtw_engine) if (confirm_enroll or teach_words) else None
+    # DẠY TỪ (hiệu chỉnh nhanh, --day-tu): mỗi cử chỉ hoàn chỉnh được lưu làm mẫu của từ đang dạy thay vì đem đi nhận diện;
+    # dạy xong thì tự chuyển sang nhận diện bình thường, bank đã có từ mới ngay (không train).
+    teach_plan: Optional[TeachPlan] = TeachPlan(teach_words, teach_per_word) if teach_words else None
+    if teach_plan is not None:
+        print(f"✓ Chế độ DẠY TỪ: {', '.join(teach_plan.words)} — mỗi từ {teach_plan.per_word} mẫu. Ký từ đang hiển thị, "
+              f"nghỉ giữa các lần ký; [z]=hoàn tác mẫu vừa lưu.")
     if enroller is not None:
         print("✓ Chế độ HỎI XÁC NHẬN: cử chỉ không chắc sẽ được hỏi lại. Phím [y]=đúng (gợi ý 1)  [2]=đúng (gợi ý 2)  [n]=bỏ  [z]=hoàn tác.")
 
@@ -1337,6 +1366,15 @@ def run_sentence_builder(
     lead_trim_history: List[float] = []   # Lưu lại tau của các từ đã commit trong phiên để in thống kê lúc thoát
     _commit_mode = "normal"
 
+    # KHÓA MỘT LẦN (--one-shot): mặc định TẮT (one_shot_lock = None) => mọi nhánh bên dưới bị bỏ qua, hành vi như cũ.
+    one_shot_lock: Optional[OneShotLock] = None
+    one_shot_spotter: Optional[Spotter] = None
+    if one_shot:
+        one_shot_spotter = make_spotter(spotter_kind, v_stop_ratio=float(segmenter.v_stop_ratio), model_path=spotter_model_path)
+        one_shot_lock = OneShotLock(strict=(spotter_kind == "dl"), min_gap_sec=lock_min_gap, soft_prob=lock_soft_prob)
+        print(f"[OneShot] BẬT khóa một lần (spotter={spotter_kind}"
+              f"{', NGHIÊM: chặn stroke ngoài khoảng đang ký' if spotter_kind == 'dl' else ''}): mỗi khoảng ký chỉ chốt tối đa 1 từ.")
+
     # Khởi tạo bộ làm mượt tọa độ cổ tay (R3 Guard 1) - 1€ Filter thích ứng đa tần số
     wrist_smoother = make_wrist_smoother()
     lk_fallback = LKInertialFallback()
@@ -1372,6 +1410,12 @@ def run_sentence_builder(
     banner_subtitle = ""
     banner_color = (0, 255, 0)
     banner_expire = 0.0
+    if teach_plan is not None and enroller is not None and teach_plan.current(enroller) is not None:
+        _tw0, _tk0, _tn0 = teach_plan.current(enroller)
+        banner_title = f"TEACH: sign '{_tw0}' ({_tk0}/{_tn0})"
+        banner_subtitle = "Sign it, then pause. [Z] undo"
+        banner_color = (0, 200, 255)
+        banner_expire = 1e12
 
     # Panel bên/dưới thay thế HUD đè lên camera + log sự kiện thay terminal (xem ui_side_panel.py)
     event_log = ui_side_panel.EventLog(maxlen=30)
@@ -1404,6 +1448,19 @@ def run_sentence_builder(
         detect_scale = float(CONFIG.get("detect_scale", 1.0))
     detect_scale = max(0.1, min(1.0, float(detect_scale)))
 
+    # Bộ lọc dáng tay (mặc định tắt). Lỗi nạp => tắt lặng lẽ, KHÔNG làm hỏng pipeline.
+    shape_gate = None
+    _sg_cfg = CONFIG.get("handshape_gate", {})
+    if _sg_cfg.get("enabled"):
+        try:
+            from handshape_gate import HandshapeGateRuntime
+            shape_gate = HandshapeGateRuntime(_sg_cfg["model"], _sg_cfg["table"],
+                                              conf_thresh=float(_sg_cfg.get("conf", 0.6)),
+                                              compat_thresh=float(_sg_cfg.get("compat", 0.15)))
+            print(f"[HandshapeGate] BẬT (model={_sg_cfg['model']}, bảng={_sg_cfg['table']})")
+        except Exception as _sg_err:
+            print(f"[HandshapeGate] Không nạp được, tắt: {_sg_err}")
+
     # Biến phục vụ tối ưu hóa xen kẽ suy luận DIP + CNN trên CPU
     frame_counter = 0
     cached_hand_shape = "Unknown" if not enable_static_shape_cnn else "B"
@@ -1423,6 +1480,9 @@ def run_sentence_builder(
 
     # Mở nguồn video hoặc Webcam — thử MSMF trước, rồi fallback sang DSHOW
     cap = None
+    _vclk_n = 0
+    _vclk_t0 = time.time()
+    _vclk_fps = 30.0
     if video_path is not None:
         if str(video_path).startswith(("http://", "https://")):
             print(f"[Video] Nhận diện nguồn là URL trực tuyến: {video_path}")
@@ -1448,6 +1508,9 @@ def run_sentence_builder(
             cap = None
         else:
             print(f"[Video] KẾT NỐI THÀNH CÔNG video file: {video_path}")
+            if video_clock:
+                _vclk_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+                print(f"[Video] Dùng ĐỒNG HỒ VIDEO ({_vclk_fps:.1f} fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0={_vclk_t0:.3f}")
     elif not headless:
         cap = open_camera(camera_index, prefer_mjpg=True)
 
@@ -1553,6 +1616,9 @@ def run_sentence_builder(
 
                 if ret and frame is not None:
                     capture_ts = vid_ts if video_path is not None else time.time()
+                    if video_clock and video_path is not None:
+                        _vclk_n += 1
+                        capture_ts = _vclk_t0 + _vclk_n / _vclk_fps
                     if cam_monitor is not None:
                         # Gọi MỖI lần đọc được khung (kể cả khung trùng), trước lật gương; tay chuyển động = v_norm khung trước
                         cam_monitor.update(frame, capture_ts, cam_last_v_norm >= cam_hand_moving_v)
@@ -1822,6 +1888,12 @@ def run_sentence_builder(
                     extra_motion=art_v
                 )
                 cam_last_v_norm = v_norm
+                if one_shot_lock is not None:
+                    # KHÓA MỘT LẦN: spotter nhận đúng v_norm của segmenter, lock ghi span theo thời gian.
+                    # landmarks chỉ hợp lệ ở khung MediaPipe thấy tay thật (hand_lost_frames == 0); khung LK-fallback => None.
+                    _os_gate = one_shot_spotter.update(
+                        curr_time, True, float(v_norm), landmarks if hand_lost_frames == 0 else None, (w_f, h_f))
+                    one_shot_lock.observe(curr_time, _os_gate, getattr(one_shot_spotter, "last_prob", None))
                 if force_stroke and force_flush and not force_done and seg_state == KineticState.RECORDING:
                     # Hết đoạn người dùng chọn: chốt toàn bộ bộ đệm thành MỘT cử chỉ.
                     force_done = True
@@ -1845,7 +1917,8 @@ def run_sentence_builder(
                     has_predicted_pending = False
 
                 # 3.5. Dự đoán tạm thời khi PENDING_COMMIT (Nhiệm vụ E)
-                if seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending:
+                if (seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending
+                        and not (teach_plan is not None and not teach_plan.finished(enroller))):
                     has_predicted_pending = True
                     temp_stroke = segmenter.buffer
                     if temp_stroke and len(temp_stroke) >= segmenter.effective_min_stroke_frames():
@@ -1972,7 +2045,26 @@ def run_sentence_builder(
                             stroke_normals_history.clear()
                             stroke_ext_history.clear()
                             match_result = None
-                            if early_pre is not None:
+                            if teach_plan is not None and not teach_plan.finished(enroller):
+                                # DẠY TỪ: lưu cử chỉ này làm mẫu của từ đang dạy (không nhận diện, không vào câu).
+                                _tw, _tk, _tn = teach_plan.current(enroller)
+                                _t_traj, _t_shp, _t_body, _ = build_segment_features(seg_records if seg_records is not None else raw_records)
+                                if _t_traj is not None:
+                                    _tk = enroller.add_taught(_tw, _t_traj, _t_shp, handedness_label, _t_body, stroke_duration)
+                                    _cur = teach_plan.current(enroller)
+                                    if _cur is not None:
+                                        banner_title = f"SAVED {_tw} ({_tk}/{_tn})" if _cur[0] == _tw else f"{_tw} done! Next: '{_cur[0]}'"
+                                        banner_subtitle = f"Sign '{_cur[0]}' ({_cur[1]}/{_cur[2]}). [Z] undo"
+                                    else:
+                                        banner_title = "TEACHING DONE"
+                                        banner_subtitle = "Now recognising with the new words"
+                                    banner_color = (0, 255, 100)
+                                    banner_expire = curr_time + (1e12 if _cur is not None else 4.0)
+                                    print(f"[DayTu] Lưu mẫu {_tk}/{_tn} cho '{_tw}' (stroke {stroke_duration:.2f}s)."
+                                          + ("" if _cur is not None else " Hoàn tất — chuyển sang nhận diện."))
+                                else:
+                                    print("[DayTu] Cử chỉ không dựng được đặc trưng, bỏ qua — hãy ký lại.")
+                            elif early_pre is not None:
                                 # Chốt sớm: dùng lại đặc trưng + kết quả match của dự đoán tạm (không tính lại).
                                 _ep_traj, _ep_shp, _ep_body, match_result, cur_lead_trim_sec, cur_lead_trim_tried = early_pre
                                 body_ok = _ep_body
@@ -1998,6 +2090,9 @@ def run_sentence_builder(
                                     if profile:
                                         _t_dtw += time.perf_counter() - _t0_dtw
 
+                            if match_result is not None and shape_gate is not None:
+                                match_result = shape_gate.apply(
+                                    match_result, seg_records if seg_records is not None else raw_records, handedness_label)
                             if match_result is not None:
                                 last_match_result = match_result
                                 if match_result.fusion_note:
@@ -2011,12 +2106,42 @@ def run_sentence_builder(
 
                                     # R3 Layer 3 / Debouncing: Chống bắn lặp từ trong 0.8s
                                     is_repeat = (en_phrase == last_committed_word and (curr_time - last_commit_time) < 0.8)
-                                    if not is_repeat:
+                                    # KHÓA MỘT LẦN: stroke này đã được FSM chốt (kể cả early commit qua force_commit) nên
+                                    # không thể chốt lần hai ở đường normal; ở đây chỉ quyết định có COMMIT TỪ hay không.
+                                    # Chỉ hỏi khóa khi không phải is_repeat (is_repeat vẫn do cơ chế cũ xử lý, không tốn lượt của span).
+                                    _os_blocked = False
+                                    if one_shot_lock is not None and not is_repeat:
+                                        _os_ok, _os_reason = one_shot_lock.allow_commit(float(completed_stroke[0].timestamp), word_key)
+                                        _os_blocked = not _os_ok
+                                    if _os_blocked:
+                                        hud_toast = _make_toast("suppressed", [word_key], None, curr_time, 1.0)
+                                        _os_why = ("ngoài khoảng đang ký (spotter báo không ký)" if _os_reason == "no_span"
+                                                   else "đã có từ được chốt trong khoảng ký này")
+                                        print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): {_os_why}. (p tối đa trong stroke = {one_shot_lock.last_pmax:.2f})")
+                                        if session_writer is not None:
+                                            session_writer.writerow([
+                                                time.strftime("%Y-%m-%d %H:%M:%S"), "SUPPRESSED_DUP", word_key, round(match_result.best_distance, 4),
+                                                "", "", 0.0, round(stroke_duration, 3), n_stroke, body_ok, round(fps, 1),
+                                                round(match_result.best_confidence, 4), round(match_result.match_quality, 2), round(match_result.r_ratio, 4), round(curr_time, 3), _commit_mode, round(completed_stroke[0].timestamp, 3),
+                                                round(cur_lead_trim_sec, 3), cur_lead_trim_tried
+                                            ])
+                                            session_file.flush()
+                                    elif not is_repeat:
+                                        if sentence_words and sentence_finalized:
+                                            # Câu trước đã chốt (hạ tay > 1,8 s hoặc đủ từ): từ mới mở CÂU MỚI, không nối vào câu cũ.
+                                            sentence_words.clear()
+                                            sentence_keys.clear()
                                         sentence_words.append(en_phrase)
                                         sentence_keys.append(word_key)
                                         last_commit_time = curr_time
                                         last_committed_word = en_phrase
                                         sentence_finalized = False
+                                        _max_sw = int(CONFIG.get("max_sentence_words", 8))
+                                        if _max_sw > 0 and len(sentence_words) >= _max_sw:
+                                            # Ký liên tục không hạ tay: chốt câu khi đủ số từ để câu không dài vô hạn.
+                                            sentence_finalized = True
+                                            hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
+                                            print(f"[SentenceBuilder] ✓ ĐỦ {_max_sw} TỪ, CHỐT CÂU: {' '.join(sentence_words)} .")
                                         lead_trim_history.append(cur_lead_trim_sec)
 
                                         # Điểm độ khớp (SPEC 04B: Do khop thay vì xác suất)
@@ -2045,10 +2170,11 @@ def run_sentence_builder(
                                         print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' (Do khop: {do_khop:.0f}){trim_str} | Câu: {' '.join(sentence_words)}")
                                         event_log.push(f"Nhận từ: {en_phrase} (Khớp {do_khop:.0f}%, nguồn {match_result.result_source})", ui_side_panel.COL_OK)
 
-                                    _emit_event("ACCEPTED", match_result, completed_stroke, stroke_duration, _commit_mode,
-                                            records=(seg_records if seg_records is not None else raw_records))
-                                    # Ghi CSV Session Log
-                                    if session_writer is not None:
+                                    if not _os_blocked:
+                                        _emit_event("ACCEPTED", match_result, completed_stroke, stroke_duration, _commit_mode,
+                                                records=(seg_records if seg_records is not None else raw_records))
+                                    # Ghi CSV Session Log (bị khóa một lần thì đã ghi dòng SUPPRESSED_DUP ở trên)
+                                    if session_writer is not None and not _os_blocked:
                                         c2_k = match_result.candidates[1].word_key if len(match_result.candidates) >= 2 else ""
                                         c2_d = round(match_result.candidates[1].distance, 4) if len(match_result.candidates) >= 2 else ""
                                         m_val = round(((match_result.candidates[1].distance - match_result.best_distance) / max(match_result.best_distance, 1e-4)) * 100.0, 2) if len(match_result.candidates) >= 2 else 100.0
@@ -2160,6 +2286,9 @@ def run_sentence_builder(
                     draw_hand_skeleton_features(display_frame, landmarks, current_angles, w_f, h_f, handedness=handedness_label)
                 if profile:
                     _t_draw += time.perf_counter() - _t0_draw_box
+            elif one_shot_lock is not None:
+                # KHÓA MỘT LẦN: mất tay -> spotter đóng span (v_norm = 0).
+                one_shot_lock.observe(curr_time, one_shot_spotter.update(curr_time, False, 0.0))
 
             if profile:
                 _t0_draw_hud = time.perf_counter()
@@ -2357,6 +2486,14 @@ def run_sentence_builder(
             ui_side_panel.draw_bottom_panel(canvas, 0, h_f, w_f, ui_side_panel.BOTTOM_H, panel_state)
             display_frame = canvas
 
+            if one_shot_lock is not None and not headless:
+                # Chỉ báo spotter (gỡ lỗi): xanh = đang ký (gate mở), xám = không ký; kèm xác suất nếu là spotter DL.
+                _g_open = bool(one_shot_spotter.gate.is_open if hasattr(one_shot_spotter, "gate") else one_shot_spotter.is_open)
+                _g_p = getattr(one_shot_spotter, "last_prob", None)
+                _g_txt = f"SPOTTER {'KY' if _g_open else '--'}" + (f" p={_g_p:.2f}" if _g_p is not None else "")
+                cv2.putText(display_frame, _g_txt, (max(10, display_frame.shape[1] - 230), 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 0) if _g_open else (150, 150, 150), 2, lineType=cv2.LINE_AA)
+
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -2481,6 +2618,10 @@ def run_sentence_builder(
 
     finally:
         speech_service.shutdown()
+        if one_shot_lock is not None:
+            print(f"[OneShot] Cả phiên: cho phép {one_shot_lock.stats['allowed']} lần commit, "
+                  f"chặn {one_shot_lock.stats['suppressed']} lần trùng trong cùng span "
+                  f"(tổng {len(one_shot_lock.spans)} span gần nhất đang giữ).")
         if cam_monitor is not None:
             _cam_sum = cam_monitor.session_summary()
             if _cam_sum:
@@ -2490,7 +2631,19 @@ def run_sentence_builder(
             try:
                 _is_production_bank = os.path.abspath(templates_file) == os.path.abspath(
                     CONFIG.get("templates_path", "webcam_templates.json"))
-                if _is_production_bank:
+                _is_temp_merged = os.path.basename(templates_file).startswith("_gop_")
+                if enroll_save_path:
+                    # Chạy bằng bank GỘP tạm (Đạt + hồ sơ): mẫu mới ghi vào HỒ SƠ CÁ NHÂN thật, không bao giờ vào file gộp tạm
+                    # (file đó bị dựng lại mỗi lần chạy nên mẫu sẽ mất) và không vào bank Đạt.
+                    _n = enroller.merge_into_file(enroll_save_path, enrolled_cap=6)
+                    print(f"[XacNhan] Cả phiên: đã lưu {_n} mẫu ({enroller.summary()}) vào hồ sơ '{enroll_save_path}' — "
+                          f"lần sau tự dùng lại (bank gộp Đạt + hồ sơ).")
+                elif _is_temp_merged:
+                    _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
+                    _n = enroller.save(_enr_path)
+                    print(f"[XacNhan] Cả phiên: thêm {_n} mẫu ({enroller.summary()}) -> {_enr_path} "
+                          f"(bank gộp tạm không lưu được; hãy chạy với --luu-ho-so profiles/<tên>.json để tích lũy).")
+                elif _is_production_bank:
                     # AN TOAN: khong bao gio tu dong ghi/gop vao bank san xuat chinh.
                     # Chi khi chay voi --templates profiles/<ten>.json (ho so ca nhan) moi tich luy duoc.
                     _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
@@ -2568,6 +2721,9 @@ if __name__ == "__main__":
     parser.add_argument("--detector-workers", type=int, default=None, help="Số luồng làm việc song song cho MediaPipe (mặc định None = tự chọn min(3, max(1, CPU//4))).")
     parser.add_argument("--video", type=str, default=None, help="Đường dẫn file video đầu vào thay vì webcam")
     parser.add_argument("--log-session", "-l", type=str, default=None, help="Đường dẫn file CSV lưu log kết quả từng cử chỉ live (phục vụ test Phiên 3)")
+    parser.add_argument("--video-clock", action="store_true", default=False,
+                        help="Với --video: dùng đồng hồ của video (khung n tại n/fps) làm mốc thời gian, để phát lại nhanh hơn thời gian thật "
+                             "mà các ngưỡng theo giây vẫn đúng như lúc thu.")
     parser.add_argument("--headless", action="store_true", default=False, help="Chạy không mở cửa sổ đồ họa OpenCV (dùng cho đo benchmark/test).")
     parser.add_argument("--max-frames", type=int, default=None, help="Dừng sau số khung hình nhất định (dùng cho benchmark/test).")
     parser.add_argument("--threshold-mode", type=str, choices=["legacy", "scale_k"], default=None, help="Chế độ ngưỡng: 'scale_k' (ngưỡng theo độ rộng nội lớp) hoặc 'legacy' (cố định).")
@@ -2584,6 +2740,12 @@ if __name__ == "__main__":
                         help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận "
                              "thêm vào bank (phím y/2/n/z). MẶC ĐỊNH BẬT (đã đo: đây là đòn bẩy lớn nhất cho "
                              "người lạ, xem eval_enroll.py) — dùng --no-confirm-enroll để tắt.")
+    parser.add_argument("--day-tu", nargs="+", default=None, metavar="TU",
+                        help="HIỆU CHỈNH NHANH: dạy các từ này (từ có sẵn hoặc HOÀN TOÀN MỚI), mỗi từ --day-so-mau mẫu, rồi tự chuyển "
+                             "sang nhận diện — dùng được ngay, không train. Ví dụ: --day-tu HUNGRY SORRY")
+    parser.add_argument("--day-so-mau", type=int, default=3, help="Số mẫu mỗi từ khi dạy (mặc định 3; 1-2 vẫn dùng được nhưng yếu hơn).")
+    parser.add_argument("--luu-ho-so", type=str, default=None,
+                        help="Lưu mẫu xác nhận/dạy của phiên vào hồ sơ cá nhân này (dip.py tự truyền khi chạy bank gộp Đạt + hồ sơ).")
     parser.add_argument("--width-blend", type=float, default=None, help="Pha trộn độ rộng chuẩn hóa ngưỡng 0..1 (0 = độ rộng riêng từng từ, 1 = thang chung). Mặc định lấy CONFIG['width_blend'] (0.0).")
     parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
@@ -2596,6 +2758,9 @@ if __name__ == "__main__":
     parser.add_argument("--lead-trim", action=argparse.BooleanOptionalAction, default=None,
                         help="SPEC 08B: Bật/tắt cắt thích ứng phần dẫn đầu (adaptive lead trimming). "
                              "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (BẬT). Dùng --no-lead-trim để tắt. Phím [k] đổi lúc chạy.")
+    parser.add_argument("--handshape-gate", action=argparse.BooleanOptionalAction, default=None,
+                        help="Bật/tắt bộ lọc ứng viên theo dáng tay (handshape_gate.py). Mặc định tắt. Cần letter_landmark_model_image.pt "
+                             "và handshape_gate_table.json (py build_handshape_table.py).")
     parser.add_argument("--dl", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt tầng DL dự phòng (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md). "
                              "Mặc định None = TỰ ĐỘNG bật nếu tìm thấy 'best_gesture_model_none.pth' (hoặc file chỉ "
@@ -2607,6 +2772,18 @@ if __name__ == "__main__":
     parser.add_argument("--dl-conf-threshold", type=float, default=None,
                         help="Ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận khi DTW không ACCEPTED. "
                              "Mặc định 0.38 (chọn giữa miền ổn định qua nested CV 4 người lạ, xem dl_fusion.py).")
+    parser.add_argument("--lock-min-gap", type=float, default=1.2,
+                        help="(nâng cao) Khóa một lần: khoảng tối thiểu (s) giữa hai từ KHÁC nhau cùng span; số rất lớn = tắt cho phép ký nhanh.")
+    parser.add_argument("--lock-soft-prob", type=float, default=0.25,
+                        help="(nâng cao) Khóa nghiêm (spotter dl): stroke ngoài span vẫn được chốt nếu p >= ngưỡng này; >1 = tắt.")
+    parser.add_argument("--one-shot", action="store_true", default=False,
+                        help="KHÓA MỘT LẦN: mỗi khoảng 'đang ký' (span do spotter báo) chỉ commit tối đa MỘT từ; "
+                             "các stroke còn lại trong cùng span bị chặn (SUPPRESSED_DUP). Mặc định TẮT = hành vi cũ.")
+    parser.add_argument("--spotter", type=str, choices=["rule", "dl"], default="rule",
+                        help="Bộ spotter cấp tín hiệu 'đang ký' cho --one-shot: 'rule' = luật vận tốc (chỉ chặn từ trùng), "
+                             "'dl' = CNN nhỏ (chặn cả từ vu vơ ngoài khoảng đang ký). Chỉ có tác dụng khi bật --one-shot.")
+    parser.add_argument("--spotter-model", type=str, default="spotter_model.pth",
+                        help="Checkpoint spotter DL (train_spotter.py --save). Chỉ dùng khi --spotter dl.")
     parser.add_argument("--start", type=float, default=None, help="Chỉ với --video: nhảy tới giây này của video trước khi nhận diện.")
     parser.add_argument("--end", type=float, default=None, help="Chỉ với --video: dừng khi quá giây này của video.")
     parser.add_argument("--events", type=str, default=None, help="Ghi mỗi cử chỉ thành một dòng JSON (JSONL) kèm nguồn DTW/DL (dùng cho bản web).")
@@ -2641,6 +2818,8 @@ if __name__ == "__main__":
     enable_cnn = True if args.with_cnn else None
     if args.time_norm is not None:
         CONFIG["time_norm"]["enabled"] = bool(args.time_norm)
+    if args.handshape_gate is not None:
+        CONFIG["handshape_gate"]["enabled"] = bool(args.handshape_gate)
     run_sentence_builder(
         camera_index=selected_cam,
         headless=args.headless,
@@ -2666,8 +2845,17 @@ if __name__ == "__main__":
         width_blend=args.width_blend,
         dedupe_frames=args.dedupe_frames,
         confirm_enroll=args.confirm_enroll,
+        teach_words=args.day_tu,
+        teach_per_word=args.day_so_mau,
+        enroll_save_path=args.luu_ho_so,
         dl_model_path=eff_dl_model_path,
         dl_conf_threshold=args.dl_conf_threshold,
+        one_shot=args.one_shot,
+        lock_min_gap=args.lock_min_gap,
+        lock_soft_prob=args.lock_soft_prob,
+        spotter_kind=args.spotter,
+        spotter_model_path=args.spotter_model,
+        video_clock=args.video_clock,
         start_sec=args.start,
         end_sec=args.end,
         events_path=args.events,

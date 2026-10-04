@@ -204,6 +204,11 @@ cython_debug/
 
 # CodeGraph index (sinh tu dong)
 /.codegraph/
+/web_uploads
+/continuous_data
+/scratch
+/letter_landmarks
+/letter_landmarks_backup
 
 # Bản web: video tải lên tạm thời
 web_uploads/

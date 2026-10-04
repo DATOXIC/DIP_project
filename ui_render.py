@@ -49,6 +49,7 @@ UI_STRINGS: Dict[str, Dict[str, str]] = {
         "match": "Độ khớp {q}%",
         "uncertain": "Ý bạn là: {a} hay {b}?",
         "rejected": "Chưa nhận ra cử chỉ",
+        "suppressed": "Bỏ qua (trùng trong cùng lần ký)",
         "deleted": "Đã xóa: {word}",
         "empty": "Câu đang trống",
         "committed": "Đã chốt câu",
@@ -93,6 +94,7 @@ UI_STRINGS: Dict[str, Dict[str, str]] = {
         "match": "Match {q}%",
         "uncertain": "Did you mean: {a} or {b}?",
         "rejected": "Gesture not recognised",
+        "suppressed": "Skipped (duplicate in same sign)",
         "deleted": "Removed: {word}",
         "empty": "Sentence is empty",
         "committed": "Sentence committed",
@@ -655,9 +657,11 @@ class DemoHUD:
             self.text.queue(text, cx, top + (ph - th) // 2, fs, TEXT_OLD, anchor="c", alpha=0.85 * fade)
             return
 
-        if kind in ("rejected", "empty", "cleared", "deleted", "committed"):
+        if kind in ("rejected", "suppressed", "empty", "cleared", "deleted", "committed"):
             if kind == "rejected":
                 text, accent = tr(lang, "rejected"), None
+            elif kind == "suppressed":
+                text, accent = tr(lang, "suppressed"), None
             elif kind == "empty":
                 text, accent = tr(lang, "empty"), None
             elif kind == "cleared":

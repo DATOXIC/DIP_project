@@ -262,6 +262,11 @@ def draw_bottom_panel(canvas: np.ndarray, x0: int, y0: int, w: int, h: int, st: 
         if st.sentence_finalized:
             sentence_str += " ."
         sentence_display = f"CAU: \"{sentence_str}\""
+        # Câu quá dài: bỏ dần từ CŨ NHẤT (giữ từ mới) và thêm "..." đầu câu, thay vì co chữ tới mức tràn khỏi panel.
+        _tail = list(st.sentence_words)
+        while len(_tail) > 1 and cv2.getTextSize(sentence_display, FONT, 0.55, 2)[0][0] > w - 2 * pad:
+            _tail.pop(0)
+            sentence_display = f"CAU: \"... {' '.join(_tail)}{' .' if st.sentence_finalized else ''}\""
     else:
         sentence_display = "CAU: (dang cho cu chi dau tien...)"
 

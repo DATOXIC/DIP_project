@@ -1,7 +1,7 @@
 """
 Đo nhanh: mẫu ASL Citizen (24D, đã cắt) so với bank Đạt bằng pipeline hiện tại (cấu hình G1p90). Chỉ để ĐO, không chỉnh gì.
 Từ trùng với bank Đạt -> nhận đúng / nhận sai / từ chối; từ ngoài bank -> tỉ lệ bị nhận nhầm (ACCEPTED).
-Cách dùng:  py eval_citizen.py     Kết quả: results/baselines/citizen.json
+Cách dùng:  py eval_citizen.py [bank.json] [kết_quả.json]   (mặc định webcam_templates.json -> results/baselines/citizen.json)
 """
 import json
 import os
@@ -20,7 +20,9 @@ if sys.platform == "win32":
 
 
 def main() -> None:
-    dat, _ = load_bank("webcam_templates.json")
+    bank_path = sys.argv[1] if len(sys.argv) > 1 else "webcam_templates.json"
+    out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join("results", "baselines", "citizen.json")
+    dat, _ = load_bank(bank_path)
     cfg, _ = validate_and_hash_config("configs/G1p90.json")
     with open("asl_citizen_templates_24d.json", "r", encoding="utf-8") as f:
         cit = json.load(f)["vocabulary"]
@@ -48,8 +50,8 @@ def main() -> None:
     fa = sum(r[1] == "ACCEPTED" for r in ro)
     print(f"Từ ngoài bank ({len(set(q['w'] for q in oov))} từ): {len(oov)} mẫu, nhận nhầm {fa} ({100*fa/max(1,len(oov)):.1f}%)")
     print("  nhận nhầm thành:", dict(Counter(r[0] for r in ro if r[1] == 'ACCEPTED')))
-    os.makedirs("results/baselines", exist_ok=True)
-    with open("results/baselines/citizen.json", "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"n_in": n, "top1": top1 / n, "acc_ok": ok / n, "acc_wrong": bad / n, "uncertain": unc / n,
                    "n_oov": len(oov), "oov_false_accept": fa / max(1, len(oov)), "per_word": per}, f, ensure_ascii=False, indent=1)
 
