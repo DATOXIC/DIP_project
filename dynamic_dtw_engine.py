@@ -28,7 +28,7 @@ import math
 import hashlib
 from enum import Enum
 from collections import deque
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from typing import List, Dict, Tuple, Optional, Any
 import numpy as np
 
@@ -325,6 +325,12 @@ class MatchResult:
     match_quality: float = 0.0   # SPEC 04B: Điểm độ khớp [0, 100]
     r_ratio: float = 0.0         # SPEC 04B: Tỉ lệ chuẩn hóa d1 / độ_rộng[top1]
     fusion_note: str = ""        # Khác rỗng nếu handshape_fusion đã ghi đè top1 (xem handshape_fusion.py)
+    # --- Truy vết nguồn quyết định cho UI demo (xem dl_fusion.py, panel "Nguồn DTW/DL") ---
+    dtw_status: str = ""         # status của DTW TRƯỚC khi dl_fusion can thiệp (rỗng = chưa qua match())
+    dtw_word: Optional[str] = None      # top_word của DTW trước khi dl_fusion can thiệp
+    dl_word: Optional[str] = None       # từ DL dự đoán, None nếu DL không được hỏi (DTW đã ACCEPTED / chưa bật DL)
+    dl_confidence: float = -1.0         # độ tin cậy softmax của dl_word; -1 = DL không được hỏi
+    result_source: str = "DTW"          # "DTW" hoặc "DL" — bên nào quyết định top_word cuối cùng
 
 
 # =============================================================================
@@ -516,7 +522,8 @@ class KineticPauseSegmenter:
         palm_len: float,
         hand_shape: str = "Unknown",
         timestamp: Optional[float] = None,
-        hand_shape_conf: Optional[float] = None
+        hand_shape_conf: Optional[float] = None,
+        extra_motion: Optional[float] = None
     ) -> Tuple[KineticState, Optional[List[GestureFrame]], bool, float]:
         """
         Cập nhật từng khung hình camera.
@@ -553,6 +560,10 @@ class KineticPauseSegmenter:
         if self.time_normalized:
             # Quy về "mỗi khung ở ref_fps": v_mỗi_giây / ref_fps = v_mỗi_khung * (1/ref_fps) / dt_ước_lượng.
             v_norm *= max(self.v_scale_min, (1.0 / self.ref_fps) / self._dt_estimate())
+
+        if extra_motion is not None:
+            # Chuyển động của các ngón so với cổ tay (đã chuẩn hóa theo lòng bàn tay): cử chỉ nhẹ, cổ tay gần đứng yên vẫn có v > 0.
+            v_norm = max(v_norm, float(extra_motion))
 
         curr_frame.v_norm = v_norm
         self.prev_wrist = (wrist_x, wrist_y)
@@ -2217,6 +2228,9 @@ class GoldenTriadDTWMatcher:
         result = handshape_fusion.apply_drink_water_veto(
             result, query_traj_9d, self._get_fusion_reference()
         )
+        # Ghi lại trạng thái DTW THUẦN TÚY trước khi dl_fusion có cơ hội can thiệp, để UI demo
+        # (panel "Nguồn DTW/DL") luôn biết DTW tự đưa ra gì, bất kể DL có được hỏi hay không.
+        result = replace(result, dtw_status=result.status, dtw_word=result.top_word, result_source="DTW")
         bundle = self._get_dl_bundle()
         if bundle is not None:
             canon_traj, _ = canonicalize_chirality(query_traj_9d, handedness=handedness, flip_body_x=self.flip_body_x)

@@ -127,3 +127,20 @@ SPEC 06B  (TÙY CHỌN) DBA + bank mở rộng                        [AGENT, 3-
   `separate_volunteer_raw.py`, `check_volunteer_data.py`, `--exclude-session-prefix` cho rebuild (vì collector ghi chung `raw_strokes/` và rebuild không lọc phiên). Rồi 12C leave-signer-out (luật DP1 đặt trước),
   12A (ablation, đường cong theo số mẫu DTW/kNN/mạng nhỏ, mô phỏng tự thêm mẫu có 10% nhãn sai, phụ thuộc người theo nhóm đặc trưng), 12E (E3 thang chuẩn hóa), 12B (mô phỏng khung/s và điều kiện tối/chói/xa).
   **Quyết định 2026-09-21: bỏ hẳn ASL Citizen** (kể cả làm tập kiểm tra); nguồn đa dạng = tình nguyện viên + điều kiện của Đạt. Phiếu thu: `PHIEU_THU_TINH_NGUYEN_VIEN.md` (5 lần/từ).
+
+## Giai đoạn mở rộng chức năng (2026-10-02)
+
+Hai chức năng mới cho sentence builder (đánh số 14, 15), **chạy tuần tự 14 -> 15** (cùng sửa `predict_sentence_webcam.py` và `ui_side_panel.py`).
+Nguyên tắc: không sửa `train.py`, `improved_dip_pipeline.py`, `best_model*.pth`; chỉ cộng thêm, tắt được, mặc định giữ hành vi cũ.
+**Trước khi code mỗi spec, phải đối chiếu lại với code hiện tại** (đồng đội thường xuyên đẩy thay đổi mới, xem `git log`).
+
+- **SPEC 14** `SPEC_14_gloss_thanh_cau.md`: chuỗi gloss -> câu hoàn chỉnh EN/VI bằng luật offline (không LLM),
+  module thuần `sentence_composer.py`; gloss gốc luôn giữ, câu tự nhiên là dòng thêm, đọc câu khi chốt. Không cần dữ liệu mới.
+- **SPEC 15** `SPEC_15_danh_van_chu_cai.md`: chế độ đánh vần (phím `s`) bằng CNN DIP mở rộng cho 12 chữ tĩnh + lớp NONE,
+  model mới `fingerspell_v1.pth` (không đụng model 5 lớp), chia dữ liệu **theo phiên**. 3 giai đoạn: 15A (agent) ->
+  Bước 15 (NGƯỜI thu ~1 giờ) -> 15B (agent: huấn luyện, cổng GO/NO-GO, đo thật).
+
+| Spec | File chính bị sửa/tạo |
+|---|---|
+| SPEC 14 | `sentence_composer.py` (mới), `predict_sentence_webcam.py`, `ui_side_panel.py`, `tests/test_sentence_composer.py` |
+| SPEC 15 | `fingerspell.py`, `collect_fingerspell.py`, `train_fingerspell.py`, `fingerspell_letters.json` (mới), `predict_sentence_webcam.py`, `ui_side_panel.py` |

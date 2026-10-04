@@ -209,3 +209,6 @@ cython_debug/
 /scratch
 /letter_landmarks
 /letter_landmarks_backup
+
+# Bản web: video tải lên tạm thời
+web_uploads/

@@ -120,6 +120,10 @@ def apply_dl_fallback(result: Any, query_traj_24d: Optional[np.ndarray], bundle:
     if pred is None:
         return result
     word, conf, _probs = pred
+    # Ghi lại đề xuất của DL ngay cả khi cuối cùng KHÔNG được nhận (dưới ngưỡng, hoặc trùng
+    # top1 rồi) — panel demo "Nguồn DTW/DL" cần thấy DL đã được hỏi và trả lời gì, không chỉ
+    # thấy im lặng khi nó bị từ chối.
+    result = dataclasses.replace(result, dl_word=word, dl_confidence=conf)
     if conf < conf_threshold:
         return result
 
@@ -141,6 +145,7 @@ def apply_dl_fallback(result: Any, query_traj_24d: Optional[np.ndarray], bundle:
         match_quality=chosen.match_quality,
         r_ratio=chosen.r_ratio,
         fusion_note=note,
+        result_source="DL",
     )
 
 

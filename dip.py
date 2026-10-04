@@ -687,6 +687,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     a = sub.add_parser("cham-mau-am", help="Chấm số lần báo nhầm mỗi phút trên phiên mẫu âm (có/không spotter)")
     a.add_argument("phien", nargs="?", default=None, help="Thư mục phiên; bỏ trống = phiên *_neg mới nhất")
     a.add_argument("--model", action="append", default=None, help="Model spotter để so sánh (lặp được)")
+    a = sub.add_parser("web", help="Bản web: nhận diện từ video, chọn mốc bắt đầu ngay trên trình phát (http://127.0.0.1:8000)")
+    a.add_argument("--port", type=int, default=8000)
+    a.add_argument("--khong-mo-trinh-duyet", action="store_true", help="Không tự mở trình duyệt")
     args = p.parse_args(argv)
 
     if args.lenh is None:
@@ -777,6 +780,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return chay(cmd_huan_luyen_spotter(args.bo_phien, args.ra, extra))
     if args.lenh == "cham-mau-am":
         return chay(cmd_cham_mau_am(args.phien, args.model, extra))
+    if args.lenh == "web":
+        return chay(["web_app.py", "--port", str(args.port)] + (["--no-browser"] if args.khong_mo_trinh_duyet else []))
     return 0
 
 
