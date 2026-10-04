@@ -8,11 +8,14 @@ DIP — một lệnh cho mọi việc của dự án nhận diện thủ ngữ.
                                     # chắc là MẶC ĐỊNH BẬT (đòn bẩy chính cho người lạ, xem eval_enroll.py);
                                     # tầng DL dự phòng cũng MẶC ĐỊNH BẬT nếu có best_gesture_model_none.pth
                                     # (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md; tắt bằng --tat-dl)
-    py dip.py nhan-dien --ho-so Mai   # mẫu xác nhận được CỘNG DỒN vào profiles/Mai.json qua nhiều lần dùng
+    py dip.py nhan-dien --ho-so Mai   # MẶC ĐỊNH dùng bank gộp Đạt + Mai (cấu hình tốt nhất đã đo); mẫu xác nhận được
+                                    # CỘNG DỒN vào profiles/Mai.json qua nhiều lần dùng (--khong-gop-dat: chỉ bank Mai)
+                                    # (chạy bằng bank Đạt trần thì mẫu xác nhận chỉ lưu riêng ở profiles/xacnhan_*.json)
     py dip.py nhan-dien --khong-xac-nhan   # tắt hỏi xác nhận (quay lại hành vi cũ)
     py dip.py nhan-dien --ho-so Mai --gop-dat   # bank gộp Đạt + CHÍNH Mai (đã đo: cách đúng, KHÔNG dùng
                                     # --gop <người khác> để gộp thêm người khác - đã đo là vô ích/có hại,
                                     # xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md)
+    py dip.py hieu-chinh --moi "Tên" --tu HUNGRY SORRY   # HIỆU CHỈNH NHANH: dạy từ (kể cả từ mới) bằng vài mẫu, dùng ngay, không train
     py dip.py thu --ho-so Phi      # thu dữ liệu cho hồ sơ có sẵn
     py dip.py thu --moi "Nguyễn An"   # tạo hồ sơ mới rồi thu luôn
     py dip.py thu --ho-so Đạt --dieu-kien dark   # Đạt thu điều kiện môi trường (không đụng bank sản xuất)
@@ -32,6 +35,7 @@ Quy ước dữ liệu:
 
 import argparse
 import csv
+import glob
 import os
 import subprocess
 import sys
@@ -94,7 +98,8 @@ def build_merged_bank(pid: str, gop_dat: bool, gop: Optional[List[str]] = None) 
     for x in ([people.OWNER_ID] if gop_dat else []) + list(gop or []) + [pid]:
         if x not in order:
             order.append(x)
-    merged = merge_banks([people.profile_path(x) for x in order])
+    merged = merge_banks([people.profile_path(x) for x in order
+                          if os.path.exists(os.path.join(ROOT, people.profile_path(x)))])
     out = f"profiles/_gop_{pid}.json"
     with open(os.path.join(ROOT, out), "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False)
@@ -103,13 +108,41 @@ def build_merged_bank(pid: str, gop_dat: bool, gop: Optional[List[str]] = None) 
     return out
 
 
+SPOTTER_MODEL = "spotter_model.pth"
+
+
+def lenh_hieu_chinh(pid: str, words: List[str], so_mau: int = 3, tat_dl: bool = False,
+                    extra: Optional[List[str]] = None) -> List[str]:
+    """Lệnh HIỆU CHỈNH (dạy từ): bank gộp Đạt + hồ sơ người này, dạy `words` mỗi từ `so_mau` mẫu rồi nhận diện luôn."""
+    if pid == people.OWNER_ID:
+        raise ValueError("Bank của Đạt là bank sản xuất đã đóng băng. Hãy chọn hoặc tạo một người khác; "
+                         "từ dạy sẽ lưu vào hồ sơ của người đó, bank Đạt không bị đụng tới.")
+    ws = [w.strip().upper().replace(" ", "_") for w in words if w.strip()]
+    if not ws:
+        raise ValueError("Chưa có từ nào để dạy.")
+    print(f"\nHIỆU CHỈNH cho {people.display_name(pid)} ({pid}): dạy {', '.join(ws)} — mỗi từ {so_mau} mẫu.")
+    print(f"  Bank dùng: Đạt + hồ sơ này. Dạy xong tự chuyển sang nhận diện; mẫu lưu vào {people.profile_path(pid)}.")
+    return cmd_nhan_dien(pid, extra, build_merged_bank(pid, True), True, None, None, tat_dl, ws, so_mau)
+
+
 def cmd_nhan_dien(pid: str, extra: Optional[List[str]] = None, templates: Optional[str] = None,
                   xac_nhan: bool = True, dl_model: Optional[str] = None,
-                  dl_nguong: Optional[float] = None, tat_dl: bool = False) -> List[str]:
+                  dl_nguong: Optional[float] = None, tat_dl: bool = False,
+                  day_tu: Optional[List[str]] = None, so_mau: int = 3, spotter: bool = True) -> List[str]:
     args = ["predict_sentence_webcam.py"]
+    if spotter and os.path.exists(os.path.join(ROOT, SPOTTER_MODEL)):
+        # Mặc định BẬT khóa một lần + spotter DL (giảm báo nhầm 31 -> 9, hết đọc lặp; xem eval_replay_log.py). Tắt: --khong-spotter.
+        args += ["--one-shot", "--spotter", "dl"]
+    if day_tu:
+        args += ["--day-tu"] + list(day_tu) + ["--day-so-mau", str(int(so_mau))]
+    if templates and os.path.basename(templates).startswith("_gop_") and pid != people.OWNER_ID:
+        # Bank gộp là file TẠM (dựng lại mỗi lần chạy): mẫu mới phải ghi vào hồ sơ cá nhân thật, nếu không sẽ mất.
+        args += ["--luu-ho-so", people.profile_path(pid)]
     if not xac_nhan:
         args.append("--no-confirm-enroll")
-    if tat_dl:
+    if tat_dl or (pid == people.OWNER_ID and not dl_model and dl_nguong is None):
+        # Chủ bank (Đạt): tầng DL dự phòng ghi đè DTW không đạt thành ACCEPTED và chủ yếu sinh báo nhầm (phiên ký: báo nhầm 12 -> 6,
+        # mẫu âm 5 -> 2, mất 1/29 từ). Người khác giữ DL (thiết kế cho người lạ). Bật lại cho Đạt: --dl-model hoặc --dl-nguong.
         args.append("--no-dl")
     if dl_model:
         args += ["--dl-model", dl_model]
@@ -165,6 +198,35 @@ def cmd_danh_gia(kind: str, signer: Optional[str], extra: Optional[List[str]] = 
 
 def cmd_test(extra: Optional[List[str]] = None) -> List[str]:
     return ["-m", "pytest", "-q"] + list(extra or [])
+
+
+# ---- MẪU ÂM: quay video KHÔNG ký -> huấn luyện lại spotter (giữ lại một phiên để kiểm tra) -> chấm báo nhầm
+def cmd_quay_mau_am(pid: str, phut: float = 4.0, camera: Optional[int] = None, extra: Optional[List[str]] = None) -> List[str]:
+    signer = "Dat" if pid == people.OWNER_ID else pid
+    cmd = ["collect_continuous.py", "--signer", signer, "--negative", "--minutes", str(phut)]
+    if camera is not None:
+        cmd += ["--camera", str(camera)]
+    return cmd + list(extra or [])
+
+
+def cmd_huan_luyen_spotter(bo_phien: Optional[List[str]] = None, ra: str = "spotter_model_new.pth",
+                           extra: Optional[List[str]] = None) -> List[str]:
+    """Huấn luyện lại spotter trên mọi phiên trong continuous_data/ (trừ --bo-phien), ghi ra FILE MỚI (không đè spotter_model.pth)."""
+    a = ["train_spotter.py", "--models", "CNN", "--save", "--out", ra]
+    for x in (bo_phien or []):
+        a += ["--exclude", x]
+    return a + list(extra or [])
+
+
+def cmd_cham_mau_am(phien: Optional[str] = None, models: Optional[List[str]] = None,
+                    extra: Optional[List[str]] = None) -> List[str]:
+    if phien and not os.path.isdir(phien):
+        hit = sorted(glob.glob(os.path.join("continuous_data", "*", phien)))
+        phien = hit[-1] if hit else phien
+    a = ["eval_negative_session.py", phien or "--latest"]
+    for m in (models or []):
+        a += ["--model", m]
+    return a + list(extra or [])
 
 
 def cmd_camera(extra: Optional[List[str]] = None) -> List[str]:
@@ -445,6 +507,38 @@ def menu_danh_gia() -> None:
     chay(cmd_danh_gia(kind, signer))
 
 
+def menu_day_tu() -> None:
+    """Dạy từ qua menu chữ: chọn/tạo người (không phải Đạt), nhập các từ, rồi chạy."""
+    pid = chon_ho_so(cho_phep_moi=True, chi_tinh_nguyen_vien=True)
+    if not pid:
+        return
+    tu = _hoi("Các từ cần dạy, cách nhau bằng dấu cách (từ có sẵn như HUNGRY, hoặc từ mới như XIN_CHAO): ").split()
+    if not tu:
+        return
+    n = _hoi("Số mẫu mỗi từ [3]: ")
+    try:
+        chay(lenh_hieu_chinh(pid, tu, int(n) if n.isdigit() and int(n) > 0 else 3))
+    except ValueError as e:
+        print(f"  ! {e}")
+
+
+def menu_mau_am() -> None:
+    print("\nMẪU ÂM")
+    print("  1. Quay video KHÔNG ký (việc thường ngày) làm mẫu âm")
+    print("  2. Huấn luyện lại spotter (ghi file mới spotter_model_new.pth, không đè)")
+    print("  3. Chấm số lần báo nhầm mỗi phút trên phiên mẫu âm mới nhất")
+    print("  0. Quay lại")
+    s = _hoi("> ")
+    if s == "1":
+        n = _hoi("Số phút [4]: ")
+        chay(cmd_quay_mau_am(people.OWNER_ID, float(n) if n.replace(".", "", 1).isdigit() and float(n) > 0 else 4.0))
+    elif s == "2":
+        bo = _hoi("Giữ lại phiên để kiểm tra độc lập (nhập một phần tên phiên, vd _neg; để trống = dùng hết): ")
+        chay(cmd_huan_luyen_spotter([bo] if bo else None))
+    elif s == "3":
+        chay(cmd_cham_mau_am(None, ["spotter_model.pth"] + (["spotter_model_new.pth"] if os.path.exists(os.path.join(ROOT, "spotter_model_new.pth")) else [])))
+
+
 def menu() -> None:
     while True:
         print("\n" + "=" * 52)
@@ -458,6 +552,8 @@ def menu() -> None:
         print("  6. Tiến độ thu dữ liệu + danh sách hồ sơ")
         print("  7. Chạy kiểm thử")
         print("  8. Chẩn đoán camera")
+        print("  9. DẠY TỪ MỚI (hiệu chỉnh nhanh: dạy vài mẫu rồi dùng ngay, không train)")
+        print(" 10. MẪU ÂM (quay video không ký / huấn luyện lại spotter / chấm báo nhầm)")
         print("  0. Thoát")
         s = _hoi("> ")
         if s in ("0", "q", ""):
@@ -467,7 +563,7 @@ def menu() -> None:
         elif s == "2":
             pid = chon_ho_so(cho_phep_moi=False, can_du_lieu=True)
             if pid:
-                gop = pid != people.OWNER_ID and _co("Gộp bank của Đạt vào (khuyên dùng cho người lạ)?")
+                gop = pid != people.OWNER_ID and _co("Gộp bank của Đạt vào (khuyên dùng, đã đo là cấu hình tốt nhất)?")
                 chay(cmd_nhan_dien(pid, None, build_merged_bank(pid, True) if gop else None,
                                    _co("Bật hỏi xác nhận khi không chắc?")))
         elif s == "3":
@@ -497,6 +593,10 @@ def menu() -> None:
             chay(cmd_test())
         elif s == "8":
             chay(cmd_camera())
+        elif s == "9":
+            menu_day_tu()
+        elif s == "10":
+            menu_mau_am()
         else:
             print("Chọn lại nhé.")
 
@@ -540,8 +640,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                                                           "4 người lạ thật, xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md).")
     a.add_argument("--dl-model", default=None, help="Checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
     a.add_argument("--dl-nguong", type=float, default=None, help="Ngưỡng tin cậy softmax cho tầng DL (mặc định 0.38, xem dl_fusion.py).")
-    a.add_argument("--gop-dat", action="store_true", help="Gộp thêm bank của Đạt vào hồ sơ đang chọn")
+    a.add_argument("--khong-spotter", action="store_true", help="Tắt khóa một lần + spotter DL (mặc định BẬT nếu có spotter_model.pth)")
+    a.add_argument("--gop-dat", action="store_true", help="Gộp bank của Đạt vào hồ sơ đang chọn. MẶC ĐỊNH ĐÃ BẬT cho người không phải chủ (đã đo: Đạt + mẫu riêng là cấu hình tốt nhất, xem eval_enroll.py)")
+    a.add_argument("--khong-gop-dat", action="store_true", help="Chỉ dùng bank riêng của hồ sơ, không gộp bank Đạt (kém an toàn hơn: nhận nhầm nét âm nhiều hơn)")
     a.add_argument("--gop", nargs="+", default=None, metavar="HO_SO", help="Gộp thêm các hồ sơ khác, ví dụ --gop Phi Đạt")
+    a = sub.add_parser("hieu-chinh", help="HIỆU CHỈNH NHANH: dạy từ (có sẵn hoặc HOÀN TOÀN MỚI) bằng vài mẫu rồi nhận diện ngay, không train")
+    a.add_argument("--ho-so", default=None, help="Hồ sơ người ký (không phải Đạt); bỏ trống thì chọn trong danh sách")
+    a.add_argument("--moi", default=None, help="Tạo hồ sơ mới với tên này")
+    a.add_argument("--tu", nargs="+", required=True, help="Các từ cần dạy, ví dụ: --tu HUNGRY SORRY XIN_CHAO")
+    a.add_argument("--so-mau", type=int, default=3, help="Số mẫu mỗi từ (mặc định 3)")
+    a.add_argument("--tat-dl", action="store_true", help="Tắt tầng DL dự phòng")
     a = sub.add_parser("tinh-nguyen", help="MỘT lệnh cho cả buổi thu: chọn/tạo người, thu, kiểm tra, thử nhận diện")
     a.add_argument("--ho-so", default=None)
     a.add_argument("--moi", default=None, help="Tạo hồ sơ mới với tên này rồi thu")
@@ -564,6 +672,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     a.add_argument("--moi", default=None)
     sub.add_parser("test", help="Chạy kiểm thử")
     sub.add_parser("camera", help="Chẩn đoán camera")
+    a = sub.add_parser("quay-mau-am", help="Quay video KHÔNG ký (việc thường ngày) làm mẫu âm cho spotter")
+    a.add_argument("--ho-so", default=None, help="Người quay (mặc định Đạt)")
+    a.add_argument("--phut", type=float, default=4.0, help="Số phút (mặc định 4)")
+    a.add_argument("--camera", type=int, default=None, help="Chỉ số camera (mặc định 0)")
+    a = sub.add_parser("huan-luyen-spotter", help="Huấn luyện lại spotter từ continuous_data/ (ghi ra file mới, không đè)")
+    a.add_argument("--bo-phien", nargs="+", default=None, help="Giữ lại các phiên có tên chứa chuỗi này để KIỂM TRA độc lập")
+    a.add_argument("--ra", default="spotter_model_new.pth", help="File model đầu ra (mặc định spotter_model_new.pth)")
+    a = sub.add_parser("cham-mau-am", help="Chấm số lần báo nhầm mỗi phút trên phiên mẫu âm (có/không spotter)")
+    a.add_argument("phien", nargs="?", default=None, help="Thư mục phiên; bỏ trống = phiên *_neg mới nhất")
+    a.add_argument("--model", action="append", default=None, help="Model spotter để so sánh (lặp được)")
     args = p.parse_args(argv)
 
     if args.lenh is None:
@@ -577,6 +695,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             raise SystemExit(f"Hồ sơ '{pid}' chưa có dữ liệu. Thu trước: py dip.py thu --ho-so {pid}")
         others = [_tim(x) for x in (args.gop or [])]
         templates = None
+        if pid != people.OWNER_ID and not args.khong_gop_dat:
+            args.gop_dat = True
         if args.gop_dat or others:
             if pid == people.OWNER_ID:
                 raise SystemExit("Hồ sơ Đạt là bank gốc; hãy chọn --ho-so của một người khác để gộp.")
@@ -584,7 +704,24 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if x != people.OWNER_ID and people.profile_stats(x)["mau"] == 0:
                     raise SystemExit(f"Hồ sơ '{x}' chưa có dữ liệu.")
             templates = build_merged_bank(pid, args.gop_dat, others)
-        return chay(cmd_nhan_dien(pid, extra, templates, not args.khong_xac_nhan, args.dl_model, args.dl_nguong, args.tat_dl))
+        return chay(cmd_nhan_dien(pid, extra, templates, not args.khong_xac_nhan, args.dl_model, args.dl_nguong, args.tat_dl,
+                                  spotter=not args.khong_spotter))
+    if args.lenh == "hieu-chinh":
+        if args.moi:
+            try:
+                pid = tao_ho_so(args.moi)
+            except ValueError as e:
+                raise SystemExit(str(e))
+        elif args.ho_so:
+            pid = _tim(args.ho_so)
+        else:
+            pid = chon_ho_so(cho_phep_moi=True, chi_tinh_nguyen_vien=True)
+            if not pid:
+                return 1
+        try:
+            return chay(lenh_hieu_chinh(pid, args.tu, args.so_mau, args.tat_dl, extra))
+        except ValueError as e:
+            raise SystemExit(str(e))
     if args.lenh == "tinh-nguyen":
         return phien_tinh_nguyen(_tim(args.ho_so) if args.ho_so else None, args.moi)
     if args.lenh == "tien-do":
@@ -629,6 +766,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return chay(cmd_test(extra))
     if args.lenh == "camera":
         return chay(cmd_camera(extra))
+    if args.lenh == "quay-mau-am":
+        return chay(cmd_quay_mau_am(_tim(args.ho_so), args.phut, args.camera, extra))
+    if args.lenh == "huan-luyen-spotter":
+        return chay(cmd_huan_luyen_spotter(args.bo_phien, args.ra, extra))
+    if args.lenh == "cham-mau-am":
+        return chay(cmd_cham_mau_am(args.phien, args.model, extra))
     return 0
 
 

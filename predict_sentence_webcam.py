@@ -97,7 +97,7 @@ import speech_service
 from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail
 from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
-from session_enroll import SessionEnroller
+from session_enroll import SessionEnroller, TeachPlan
 
 # =============================================================================
 # 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
@@ -1028,9 +1028,14 @@ def run_sentence_builder(
     width_blend: Optional[float] = None,
     dedupe_frames: Optional[bool] = None,
     confirm_enroll: bool = True,
+    teach_words: Optional[List[str]] = None,
+    teach_per_word: int = 3,
+    enroll_save_path: Optional[str] = None,
     dl_model_path: Optional[str] = None,
     dl_conf_threshold: Optional[float] = None,
     one_shot: bool = False,
+    lock_min_gap: float = 1.2,
+    lock_soft_prob: float = 0.25,
     spotter_kind: str = "rule",
     spotter_model_path: str = "spotter_model.pth",
     video_clock: bool = False,
@@ -1178,7 +1183,13 @@ def run_sentence_builder(
     else:
         print(f"✓ Đã nạp {len(dtw_engine.vocabulary)} từ vựng cử chỉ mẫu từ {templates_file} (Golden Triad Engine).")
 
-    enroller: Optional[SessionEnroller] = SessionEnroller(dtw_engine) if confirm_enroll else None
+    enroller: Optional[SessionEnroller] = SessionEnroller(dtw_engine) if (confirm_enroll or teach_words) else None
+    # DẠY TỪ (hiệu chỉnh nhanh, --day-tu): mỗi cử chỉ hoàn chỉnh được lưu làm mẫu của từ đang dạy thay vì đem đi nhận diện;
+    # dạy xong thì tự chuyển sang nhận diện bình thường, bank đã có từ mới ngay (không train).
+    teach_plan: Optional[TeachPlan] = TeachPlan(teach_words, teach_per_word) if teach_words else None
+    if teach_plan is not None:
+        print(f"✓ Chế độ DẠY TỪ: {', '.join(teach_plan.words)} — mỗi từ {teach_plan.per_word} mẫu. Ký từ đang hiển thị, "
+              f"nghỉ giữa các lần ký; [z]=hoàn tác mẫu vừa lưu.")
     if enroller is not None:
         print("✓ Chế độ HỎI XÁC NHẬN: cử chỉ không chắc sẽ được hỏi lại. Phím [y]=đúng (gợi ý 1)  [2]=đúng (gợi ý 2)  [n]=bỏ  [z]=hoàn tác.")
 
@@ -1216,7 +1227,7 @@ def run_sentence_builder(
     one_shot_spotter: Optional[Spotter] = None
     if one_shot:
         one_shot_spotter = make_spotter(spotter_kind, v_stop_ratio=float(segmenter.v_stop_ratio), model_path=spotter_model_path)
-        one_shot_lock = OneShotLock(strict=(spotter_kind == "dl"))
+        one_shot_lock = OneShotLock(strict=(spotter_kind == "dl"), min_gap_sec=lock_min_gap, soft_prob=lock_soft_prob)
         print(f"[OneShot] BẬT khóa một lần (spotter={spotter_kind}"
               f"{', NGHIÊM: chặn stroke ngoài khoảng đang ký' if spotter_kind == 'dl' else ''}): mỗi khoảng ký chỉ chốt tối đa 1 từ.")
 
@@ -1247,6 +1258,12 @@ def run_sentence_builder(
     banner_subtitle = ""
     banner_color = (0, 255, 0)
     banner_expire = 0.0
+    if teach_plan is not None and enroller is not None and teach_plan.current(enroller) is not None:
+        _tw0, _tk0, _tn0 = teach_plan.current(enroller)
+        banner_title = f"TEACH: sign '{_tw0}' ({_tk0}/{_tn0})"
+        banner_subtitle = "Sign it, then pause. [Z] undo"
+        banner_color = (0, 200, 255)
+        banner_expire = 1e12
 
     # Giao diện demo song ngữ: toast có cấu trúc, ngôn ngữ, loa, bảng trợ giúp
     ui_mode = (ui_mode if ui_mode is not None else CONFIG.get("ui_mode", "demo"))
@@ -1597,7 +1614,8 @@ def run_sentence_builder(
                     has_predicted_pending = False
 
                 # 3.5. Dự đoán tạm thời khi PENDING_COMMIT (Nhiệm vụ E)
-                if seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending:
+                if (seg_state == KineticState.PENDING_COMMIT and not has_predicted_pending
+                        and not (teach_plan is not None and not teach_plan.finished(enroller))):
                     has_predicted_pending = True
                     temp_stroke = segmenter.buffer
                     if temp_stroke and len(temp_stroke) >= segmenter.effective_min_stroke_frames():
@@ -1722,7 +1740,26 @@ def run_sentence_builder(
                             stroke_normals_history.clear()
                             stroke_ext_history.clear()
                             match_result = None
-                            if early_pre is not None:
+                            if teach_plan is not None and not teach_plan.finished(enroller):
+                                # DẠY TỪ: lưu cử chỉ này làm mẫu của từ đang dạy (không nhận diện, không vào câu).
+                                _tw, _tk, _tn = teach_plan.current(enroller)
+                                _t_traj, _t_shp, _t_body, _ = build_segment_features(seg_records if seg_records is not None else raw_records)
+                                if _t_traj is not None:
+                                    _tk = enroller.add_taught(_tw, _t_traj, _t_shp, handedness_label, _t_body, stroke_duration)
+                                    _cur = teach_plan.current(enroller)
+                                    if _cur is not None:
+                                        banner_title = f"SAVED {_tw} ({_tk}/{_tn})" if _cur[0] == _tw else f"{_tw} done! Next: '{_cur[0]}'"
+                                        banner_subtitle = f"Sign '{_cur[0]}' ({_cur[1]}/{_cur[2]}). [Z] undo"
+                                    else:
+                                        banner_title = "TEACHING DONE"
+                                        banner_subtitle = "Now recognising with the new words"
+                                    banner_color = (0, 255, 100)
+                                    banner_expire = curr_time + (1e12 if _cur is not None else 4.0)
+                                    print(f"[DayTu] Lưu mẫu {_tk}/{_tn} cho '{_tw}' (stroke {stroke_duration:.2f}s)."
+                                          + ("" if _cur is not None else " Hoàn tất — chuyển sang nhận diện."))
+                                else:
+                                    print("[DayTu] Cử chỉ không dựng được đặc trưng, bỏ qua — hãy ký lại.")
+                            elif early_pre is not None:
                                 # Chốt sớm: dùng lại đặc trưng + kết quả match của dự đoán tạm (không tính lại).
                                 _ep_traj, _ep_shp, _ep_body, match_result, cur_lead_trim_sec, cur_lead_trim_tried = early_pre
                                 body_ok = _ep_body
@@ -2282,7 +2319,19 @@ def run_sentence_builder(
             try:
                 _is_production_bank = os.path.abspath(templates_file) == os.path.abspath(
                     CONFIG.get("templates_path", "webcam_templates.json"))
-                if _is_production_bank:
+                _is_temp_merged = os.path.basename(templates_file).startswith("_gop_")
+                if enroll_save_path:
+                    # Chạy bằng bank GỘP tạm (Đạt + hồ sơ): mẫu mới ghi vào HỒ SƠ CÁ NHÂN thật, không bao giờ vào file gộp tạm
+                    # (file đó bị dựng lại mỗi lần chạy nên mẫu sẽ mất) và không vào bank Đạt.
+                    _n = enroller.merge_into_file(enroll_save_path, enrolled_cap=6)
+                    print(f"[XacNhan] Cả phiên: đã lưu {_n} mẫu ({enroller.summary()}) vào hồ sơ '{enroll_save_path}' — "
+                          f"lần sau tự dùng lại (bank gộp Đạt + hồ sơ).")
+                elif _is_temp_merged:
+                    _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
+                    _n = enroller.save(_enr_path)
+                    print(f"[XacNhan] Cả phiên: thêm {_n} mẫu ({enroller.summary()}) -> {_enr_path} "
+                          f"(bank gộp tạm không lưu được; hãy chạy với --luu-ho-so profiles/<tên>.json để tích lũy).")
+                elif _is_production_bank:
                     # AN TOAN: khong bao gio tu dong ghi/gop vao bank san xuat chinh.
                     # Chi khi chay voi --templates profiles/<ten>.json (ho so ca nhan) moi tich luy duoc.
                     _enr_path = os.path.join("profiles", f"xacnhan_{time.strftime('%Y%m%d_%H%M%S')}.json")
@@ -2366,6 +2415,12 @@ if __name__ == "__main__":
                         help="Chế độ hỏi xác nhận: cử chỉ không chắc/bị từ chối được hỏi lại, mẫu được xác nhận "
                              "thêm vào bank (phím y/2/n/z). MẶC ĐỊNH BẬT (đã đo: đây là đòn bẩy lớn nhất cho "
                              "người lạ, xem eval_enroll.py) — dùng --no-confirm-enroll để tắt.")
+    parser.add_argument("--day-tu", nargs="+", default=None, metavar="TU",
+                        help="HIỆU CHỈNH NHANH: dạy các từ này (từ có sẵn hoặc HOÀN TOÀN MỚI), mỗi từ --day-so-mau mẫu, rồi tự chuyển "
+                             "sang nhận diện — dùng được ngay, không train. Ví dụ: --day-tu HUNGRY SORRY")
+    parser.add_argument("--day-so-mau", type=int, default=3, help="Số mẫu mỗi từ khi dạy (mặc định 3; 1-2 vẫn dùng được nhưng yếu hơn).")
+    parser.add_argument("--luu-ho-so", type=str, default=None,
+                        help="Lưu mẫu xác nhận/dạy của phiên vào hồ sơ cá nhân này (dip.py tự truyền khi chạy bank gộp Đạt + hồ sơ).")
     parser.add_argument("--width-blend", type=float, default=None, help="Pha trộn độ rộng chuẩn hóa ngưỡng 0..1 (0 = độ rộng riêng từng từ, 1 = thang chung). Mặc định lấy CONFIG['width_blend'] (0.0).")
     parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
@@ -2389,6 +2444,10 @@ if __name__ == "__main__":
     parser.add_argument("--dl-conf-threshold", type=float, default=None,
                         help="Ngưỡng tin cậy softmax tối thiểu để tầng DL được nhận khi DTW không ACCEPTED. "
                              "Mặc định 0.38 (chọn giữa miền ổn định qua nested CV 4 người lạ, xem dl_fusion.py).")
+    parser.add_argument("--lock-min-gap", type=float, default=1.2,
+                        help="(nâng cao) Khóa một lần: khoảng tối thiểu (s) giữa hai từ KHÁC nhau cùng span; số rất lớn = tắt cho phép ký nhanh.")
+    parser.add_argument("--lock-soft-prob", type=float, default=0.25,
+                        help="(nâng cao) Khóa nghiêm (spotter dl): stroke ngoài span vẫn được chốt nếu p >= ngưỡng này; >1 = tắt.")
     parser.add_argument("--one-shot", action="store_true", default=False,
                         help="KHÓA MỘT LẦN: mỗi khoảng 'đang ký' (span do spotter báo) chỉ commit tối đa MỘT từ; "
                              "các stroke còn lại trong cùng span bị chặn (SUPPRESSED_DUP). Mặc định TẮT = hành vi cũ.")
@@ -2438,9 +2497,14 @@ if __name__ == "__main__":
         width_blend=args.width_blend,
         dedupe_frames=args.dedupe_frames,
         confirm_enroll=args.confirm_enroll,
+        teach_words=args.day_tu,
+        teach_per_word=args.day_so_mau,
+        enroll_save_path=args.luu_ho_so,
         dl_model_path=eff_dl_model_path,
         dl_conf_threshold=args.dl_conf_threshold,
         one_shot=args.one_shot,
+        lock_min_gap=args.lock_min_gap,
+        lock_soft_prob=args.lock_soft_prob,
         spotter_kind=args.spotter,
         spotter_model_path=args.spotter_model,
         video_clock=args.video_clock,

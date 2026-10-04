@@ -182,7 +182,8 @@ class OneShotLock:
     """
 
     def __init__(self, max_spans: int = 50, tolerance_sec: float = 0.5, max_gap_sec: float = 1.0, strict: bool = False,
-                 min_gap_sec: float = 0.5, soft_prob: float = 0.25):
+                 min_gap_sec: float = 1.2, soft_prob: float = 0.25):
+        # min_gap_sec = 1.2 chọn theo phát lại (eval_replay_log.py): 0.5 và 0.8 làm tụt từ đúng 25 -> 23 và sinh chốt lặp; 1.2 giữ nguyên kết quả khóa nghiêm.
         self.soft_prob = float(soft_prob)           # strict: stroke khong co span nhung p >= nguong nay van duoc cho qua
         self._probs: List[Tuple[float, float]] = [] # (t, p) gan day, de xem p trong luc stroke
         self.min_gap_sec = float(min_gap_sec)       # khoang toi thieu giua hai lan chot (hai tu khac nhau) trong cung span

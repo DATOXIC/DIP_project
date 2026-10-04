@@ -286,9 +286,10 @@ def test_one_shot_fast_signing_allows_different_word_in_same_span():
     lk.observe(0.0, True)
     assert lk.allow_commit(0.2, "A") == (True, "first")
     assert lk.allow_commit(0.4, "B") == (False, "dup_in_span")      # qua gan lan chot truoc
-    assert lk.allow_commit(1.0, "A") == (False, "dup_in_span")      # cung tu
-    assert lk.allow_commit(1.0, "B") == (True, "next_word")         # tu khac, du xa
-    assert lk.allow_commit(1.1, "B") == (False, "dup_in_span")
+    assert lk.allow_commit(1.0, "B") == (False, "dup_in_span")      # van chua du min_gap_sec (1.2 s)
+    assert lk.allow_commit(1.5, "A") == (False, "dup_in_span")      # cung tu
+    assert lk.allow_commit(1.5, "B") == (True, "next_word")         # tu khac, du xa
+    assert lk.allow_commit(1.6, "B") == (False, "dup_in_span")
 
 
 def test_one_shot_strict_soft_prob_lets_weak_spotter_through():

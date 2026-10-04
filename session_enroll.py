@@ -20,6 +20,36 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
+class TeachPlan:
+    """
+    Kịch bản DẠY TỪ: danh sách từ cần dạy, mỗi từ `per_word` mẫu. Tiến độ suy ra từ SessionEnroller.added (nên [z] hoàn tác tự
+    lùi đúng), không giữ trạng thái riêng.
+    """
+
+    def __init__(self, words: List[str], per_word: int = 3):
+        seen: List[str] = []
+        for w in words:
+            w = str(w).strip().upper().replace(" ", "_")
+            if w and w not in seen:
+                seen.append(w)
+        self.words = seen
+        self.per_word = max(1, int(per_word))
+
+    def counts(self, enroller: "SessionEnroller") -> Dict[str, int]:
+        return {w: sum(1 for a in enroller.added if a["word"] == w and a.get("taught")) for w in self.words}
+
+    def current(self, enroller: "SessionEnroller") -> Optional[tuple]:
+        """(từ, số mẫu đã có, số mẫu cần) của từ đầu tiên chưa đủ; None nếu đã dạy xong tất cả."""
+        c = self.counts(enroller)
+        for w in self.words:
+            if c[w] < self.per_word:
+                return w, c[w], self.per_word
+        return None
+
+    def finished(self, enroller: "SessionEnroller") -> bool:
+        return self.current(enroller) is None
+
+
 class SessionEnroller:
     def __init__(self, engine: Any, cap_per_word: int = 3, ttl_sec: float = 8.0):
         self.engine = engine
@@ -76,6 +106,28 @@ class SessionEnroller:
         self.pending = None
         return word
 
+    # ------------------------------------------------------------------ DẠY TỪ (hiệu chỉnh nhanh)
+    def add_taught(self, word: str, traj: Any, shapes: List[str], handedness: Optional[str], body_ok: bool,
+                   duration: float) -> int:
+        """
+        DẠY MỘT TỪ: thêm ngay một mẫu có nhãn do người dùng chỉ định (từ có sẵn hoặc HOÀN TOÀN MỚI) vào bank phiên rồi dựng lại
+        — không train gì cả, dùng được ngay ở cử chỉ kế tiếp. Trả số mẫu của từ này đã dạy trong phiên.
+        """
+        vocab = self.engine.vocabulary
+        if word not in vocab:
+            vocab[word] = {"display_name": word, "threshold": 1.25, "samples": [], "num_samples": 0, "taught_new": True}
+        sid = self._next_id
+        sample = {"traj_features": np.asarray(traj, dtype=np.float32).tolist(), "hand_shapes": list(shapes),
+                  "handedness": handedness, "chirality_canonical": False, "body_anchor_valid": bool(body_ok),
+                  "rep_count": None, "duration_sec": float(duration), "is_original": True, "session_added": sid,
+                  "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        vocab[word].setdefault("samples", []).append(sample)
+        vocab[word]["num_samples"] = len(vocab[word]["samples"])
+        self._rebuild()
+        self._next_id += 1
+        self.added.append({"word": word, "id": sid, "taught": True})
+        return sum(1 for a in self.added if a["word"] == word and a.get("taught"))
+
     def undo(self) -> Optional[str]:
         if not self.added:
             return None
@@ -114,7 +166,7 @@ class SessionEnroller:
                        "vocabulary": voc}, f, ensure_ascii=False)
         return sum(len(d["samples"]) for d in voc.values())
 
-    def merge_into_file(self, path: str) -> int:
+    def merge_into_file(self, path: str, enrolled_cap: Optional[int] = None) -> int:
         """
         Cộng dồn các mẫu đã xác nhận TRONG PHIÊN NÀY vào file hồ sơ <path> (tạo mới nếu
         chưa có), để lợi ích tích lũy qua nhiều lần dùng thay vì mất khi tắt chương trình
@@ -127,6 +179,10 @@ class SessionEnroller:
         `self.cap` được diễn giải lại thành cap TÍCH LŨY (đếm cả mẫu đã có sẵn trong file
         từ các phiên trước), không phải cap riêng phiên này — để hồ sơ không phình to vô
         hạn qua nhiều lần dùng.
+
+        enrolled_cap (khi lưu vào hồ sơ CÁ NHÂN đầy đủ, vd profiles/Mai.json): cap chỉ đếm các mẫu đã được ghi bằng hàm này
+        (có cờ "enrolled") chứ không đếm mẫu thu bình thường — nếu không, hồ sơ đã có hàng chục mẫu sẽ không bao giờ nhận thêm
+        mẫu xác nhận nào. Mẫu dạy (taught) luôn được ghi, không bị cap.
         """
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
@@ -152,11 +208,16 @@ class SessionEnroller:
             if s is None:
                 continue
             w = a["word"]
-            entry = voc.setdefault(w, {"samples": []})
+            if w not in voc:
+                info = {k: v for k, v in self.engine.vocabulary.get(w, {}).items() if k != "samples"}
+                voc[w] = dict(info, samples=[])
+            entry = voc[w]
             existing = entry.setdefault("samples", [])
-            if len(existing) >= self.cap:
+            n_counted = len(existing) if enrolled_cap is None else sum(1 for x in existing if x.get("enrolled"))
+            if not a.get("taught") and n_counted >= (self.cap if enrolled_cap is None else enrolled_cap):
                 continue  # da du cap TICH LUY cho tu nay (tinh ca cac phien truoc), bo qua
-            existing.append({k: v for k, v in s.items() if k != "session_added"})
+            existing.append({**{k: v for k, v in s.items() if k != "session_added"},
+                             **({"enrolled": True} if enrolled_cap is not None else {})})
             entry["num_samples"] = len(existing)
             n_merged += 1
 

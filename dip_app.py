@@ -62,6 +62,10 @@ class App:
         adv.add_command(label="Miễn từ cho người đang chọn…", command=self.skip_dialog)
         adv.add_command(label="Hướng dẫn cho người ký", command=lambda: messagebox.showinfo("Hướng dẫn cho người ký", dip.HUONG_DAN_NGUOI_KY.strip(), parent=self.root))
         adv.add_separator()
+        adv.add_command(label="Quay mẫu âm (video KHÔNG ký, việc thường ngày)…", command=self.neg_record)
+        adv.add_command(label="Huấn luyện lại spotter (ghi file mới)…", command=self.neg_train)
+        adv.add_command(label="Chấm báo nhầm trên phiên mẫu âm mới nhất", command=self.neg_eval)
+        adv.add_separator()
         adv.add_command(label="Chẩn đoán camera", command=lambda: self.run(dip.cmd_camera(), "Chẩn đoán camera"))
         adv.add_command(label="Chạy toàn bộ kiểm thử  [~6 phút]", command=lambda: self.run(dip.cmd_test(), "Kiểm thử"))
         bar.add_cascade(label="Nâng cao", menu=adv)
@@ -101,6 +105,7 @@ class App:
         self.gop_cb.pack(anchor="w")
         ttk.Checkbutton(opts, text="Hỏi xác nhận khi không chắc", variable=self.xn).pack(anchor="w")
 
+        self.b_day = self._big(right, "✎  Dạy từ mới", "Hiệu chỉnh nhanh: dạy vài mẫu (từ có sẵn hoặc từ mới) rồi dùng ngay, không train.", self.teach)
         self.b_thu = self._big(right, "●  Thu dữ liệu", "Ghi chú → thu → tự kiểm tra → hỏi thử nhận diện.", self.collect)
         self.b_kt = self._big(right, "✓  Kiểm tra dữ liệu", "Xem còn thiếu từ nào, kiểm tra chất lượng chi tiết.", self.check_detail)
 
@@ -306,6 +311,50 @@ class App:
         if pid != people.OWNER_ID and self.gop.get():
             templates = dip.build_merged_bank(pid, True)
         self.run(dip.cmd_nhan_dien(pid, None, templates, self.xn.get()), f"Nhận diện ({people.display_name(pid)})")
+
+    def teach(self) -> None:
+        """Dạy từ: hỏi các từ + số mẫu, chạy hiệu chỉnh cho người đang chọn (Đạt thì dùng/tạo hồ sơ riêng, bank Đạt không bị sửa)."""
+        pid = self.pid
+        if pid == people.OWNER_ID:
+            ten = simpledialog.askstring("Dạy từ", "Bank của Đạt được giữ nguyên. Từ dạy sẽ lưu vào hồ sơ riêng.\nTên hồ sơ (ví dụ Demo):",
+                                         initialvalue="Demo", parent=self.root)
+            if not ten or not ten.strip():
+                return
+            pid = people.resolve(ten.strip()) or ""
+            if not pid:
+                try:
+                    pid = dip.tao_ho_so(ten.strip())
+                except ValueError as e:
+                    messagebox.showerror("Không tạo được", str(e), parent=self.root)
+                    return
+                self.refresh_people(select=pid)
+        txt = simpledialog.askstring("Dạy từ", "Các từ cần dạy, cách nhau bằng dấu cách\n(từ có sẵn như HUNGRY, hoặc từ mới như XIN_CHAO):", parent=self.root)
+        if not txt or not txt.split():
+            return
+        n = simpledialog.askinteger("Dạy từ", "Số mẫu mỗi từ:", initialvalue=3, minvalue=1, maxvalue=8, parent=self.root) or 3
+        try:
+            args = dip.lenh_hieu_chinh(pid, txt.split(), n)
+        except ValueError as e:
+            messagebox.showerror("Không dạy được", str(e), parent=self.root)
+            return
+        self.run(args, f"Dạy từ ({people.display_name(pid)})")
+
+    def neg_record(self) -> None:
+        n = simpledialog.askfloat("Quay mẫu âm", "Số phút (3–5). TUYỆT ĐỐI không ký trong lúc quay;\nlàm việc thường ngày theo gợi ý trên màn hình:",
+                                  initialvalue=4.0, minvalue=1.0, maxvalue=15.0, parent=self.root)
+        if n:
+            self.run(dip.cmd_quay_mau_am(self.pid, n), "Quay mẫu âm")
+
+    def neg_train(self) -> None:
+        bo = simpledialog.askstring("Huấn luyện lại spotter",
+                                    "Giữ lại phiên để kiểm tra độc lập: nhập một phần tên phiên (ví dụ tên phiên _neg mới nhất).\n"
+                                    "Để trống = dùng hết dữ liệu. Model mới ghi ra spotter_model_new.pth (không đè model đang dùng):",
+                                    parent=self.root)
+        self.run(dip.cmd_huan_luyen_spotter([bo.strip()] if bo and bo.strip() else None), "Huấn luyện lại spotter")
+
+    def neg_eval(self) -> None:
+        models = ["spotter_model.pth"] + (["spotter_model_new.pth"] if os.path.exists(os.path.join(dip.ROOT, "spotter_model_new.pth")) else [])
+        self.run(dip.cmd_cham_mau_am(None, models), "Chấm báo nhầm (mẫu âm)")
 
     def notes_dialog(self) -> Optional[Dict[str, str]]:
         d = tk.Toplevel(self.root)

@@ -41,8 +41,8 @@ def test_resolve_theo_ten_hoac_ma(tmp_path):
 
 
 def test_lenh_nhan_dien():
-    assert dip.cmd_nhan_dien("DAT") == ["predict_sentence_webcam.py"]
-    assert dip.cmd_nhan_dien("Mai", ["--time-norm"]) == ["predict_sentence_webcam.py", "--templates", "profiles/Mai.json", "--time-norm"]
+    assert dip.cmd_nhan_dien("DAT", spotter=False) == ["predict_sentence_webcam.py", "--no-dl"]
+    assert dip.cmd_nhan_dien("Mai", ["--time-norm"], spotter=False) == ["predict_sentence_webcam.py", "--templates", "profiles/Mai.json", "--time-norm"]
 
 
 def test_lenh_thu_tinh_nguyen_vien_ghi_vao_raw_volunteers():
@@ -144,12 +144,40 @@ def test_merge_banks_concatenates_samples(tmp_path, monkeypatch):
 
 def test_cmd_nhan_dien_templates_override():
     import dip
-    assert dip.cmd_nhan_dien("Mai", None, "profiles/_gop_Mai.json") == ["predict_sentence_webcam.py", "--templates", "profiles/_gop_Mai.json"]
+    # bank gộp là file TẠM => mẫu xác nhận phải được lưu vào hồ sơ cá nhân thật (--luu-ho-so), không vào file gộp
+    assert dip.cmd_nhan_dien("Mai", None, "profiles/_gop_Mai.json", spotter=False) == [
+        "predict_sentence_webcam.py", "--luu-ho-so", "profiles/Mai.json", "--templates", "profiles/_gop_Mai.json"]
+    assert "--luu-ho-so" not in dip.cmd_nhan_dien("Mai", None, "profiles/khac.json", spotter=False)
+
+
+def test_cmd_nhan_dien_day_tu():
+    a = dip.cmd_nhan_dien("Mai", None, None, True, None, None, False, ["HUNGRY", "SORRY"], 2, spotter=False)
+    assert a[:6] == ["predict_sentence_webcam.py", "--day-tu", "HUNGRY", "SORRY", "--day-so-mau", "2"]
+
+
+def test_build_merged_bank_ho_so_chua_co_file(tmp_path, monkeypatch):
+    """Hồ sơ mới (chưa có file) vẫn dựng được bank gộp = chỉ bank Đạt."""
+    import json
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "webcam_templates.json").write_text(json.dumps({"metadata": {}, "vocabulary": {"HI": {"samples": [1]}}}))
+    monkeypatch.setattr(dip, "ROOT", str(tmp_path))
+    out = dip.build_merged_bank("Moi", True)
+    assert json.load(open(tmp_path / out))["vocabulary"]["HI"]["samples"] == [1]
 
 
 def test_cmd_nhan_dien_confirm_flag():
     import dip
-    assert dip.cmd_nhan_dien("DAT", None, None, True) == ["predict_sentence_webcam.py", "--confirm-enroll"]
+    # xác nhận đã BẬT MẶC ĐỊNH ở predict_sentence_webcam.py: bật = không thêm cờ, tắt = --no-confirm-enroll
+    assert dip.cmd_nhan_dien("DAT", None, None, True, spotter=False) == ["predict_sentence_webcam.py", "--no-dl"]
+    assert dip.cmd_nhan_dien("DAT", None, None, False, spotter=False) == ["predict_sentence_webcam.py", "--no-confirm-enroll", "--no-dl"]
+
+
+def test_cmd_nhan_dien_dl_fusion_off_for_owner_only():
+    import dip
+    assert "--no-dl" in dip.cmd_nhan_dien("DAT", None, None, True, spotter=False)
+    assert "--no-dl" not in dip.cmd_nhan_dien("V01", None, None, True, spotter=False)
+    assert "--no-dl" not in dip.cmd_nhan_dien("DAT", None, None, True, "m.pth", None, spotter=False)
+    assert "--no-dl" not in dip.cmd_nhan_dien("DAT", None, None, True, None, 0.5, spotter=False)
 
 
 def test_session_enroller_adds_and_undoes():
@@ -215,3 +243,91 @@ def test_app_window_builds_and_streams_subprocess():
         a.stop()
     finally:
         root.destroy()
+
+
+def _teach_engine():
+    import json
+    from dynamic_dtw_engine import GoldenTriadDTWMatcher
+    bank = json.load(open("webcam_templates.json", encoding="utf-8"))
+    # sign_weights_path="" = trọng số toàn cục như cấu hình thật của predict_sentence_webcam.py (ASL-LEX sẽ từ chối từ mới)
+    return GoldenTriadDTWMatcher(templates_dict=bank, threshold_mode="scale_k", threshold_k=1.9, uncertainty_k=2.5,
+                                 width_blend=1.0, sign_weights_path="")
+
+
+def test_teach_plan_progress_follows_undo():
+    from session_enroll import SessionEnroller, TeachPlan
+    m = _teach_engine()
+    e = SessionEnroller(m)
+    plan = TeachPlan(["newword", "YOU", "newword"], per_word=2)
+    assert plan.words == ["NEWWORD", "YOU"]
+    s = m.vocabulary["EAT"]["samples"][0]
+    args = (s["traj_features"], s["hand_shapes"], "Left", True, 1.0)
+    assert e.add_taught("NEWWORD", *args) == 1
+    assert plan.current(e) == ("NEWWORD", 1, 2)
+    e.add_taught("NEWWORD", *args)
+    assert plan.current(e) == ("YOU", 0, 2)
+    assert e.undo() == "NEWWORD"                       # hoàn tác lùi tiến độ đúng
+    assert plan.current(e) == ("NEWWORD", 1, 2)
+    assert "NEWWORD" in m.vocabulary and len(m.vocabulary["NEWWORD"]["samples"]) == 1
+
+
+def test_teach_new_word_is_recognised_immediately_and_saved_to_profile(tmp_path):
+    import json
+    import numpy as np
+    from session_enroll import SessionEnroller
+    m = _teach_engine()
+    e = SessionEnroller(m)
+    src = m.vocabulary["EAT"]["samples"]
+    for s in src[:3]:
+        e.add_taught("NEWWORD", s["traj_features"], s["hand_shapes"], s.get("handedness"), True, 1.0)
+    q = src[5]
+    r = m.match(np.asarray(q["traj_features"], dtype=np.float32), q["hand_shapes"], handedness=q.get("handedness"), query_has_body=True)
+    assert "NEWWORD" in [c.word_key for c in r.candidates[:3]]          # dùng được ngay, không train
+    path = str(tmp_path / "Moi.json")
+    assert e.merge_into_file(path, enrolled_cap=6) == 3
+    saved = json.load(open(path, encoding="utf-8"))["vocabulary"]["NEWWORD"]
+    assert len(saved["samples"]) == 3 and saved["display_name"] == "NEWWORD" and all(x["enrolled"] for x in saved["samples"])
+    assert e.merge_into_file(path, enrolled_cap=6) == 3                  # mẫu dạy luôn được ghi (không bị cap)
+
+
+def test_merge_into_full_profile_counts_only_enrolled_samples(tmp_path):
+    """Hồ sơ đã có nhiều mẫu thu thường: cap xác nhận chỉ đếm mẫu 'enrolled', nên vẫn nhận thêm mẫu xác nhận."""
+    import json
+    from session_enroll import SessionEnroller
+    m = _teach_engine()
+    s = m.vocabulary["YOU"]["samples"][0]
+    path = tmp_path / "Mai.json"
+    path.write_text(json.dumps({"metadata": {}, "vocabulary": {"YOU": {"samples": [dict(s) for _ in range(10)]}}}))
+    e = SessionEnroller(m, cap_per_word=3)
+    sid = e._next_id
+    s2 = dict(s, session_added=sid)
+    m.vocabulary["YOU"]["samples"].append(s2)
+    e.added.append({"word": "YOU", "id": sid})
+    e._next_id += 1
+    assert e.merge_into_file(str(path)) == 0                             # cap kiểu cũ: 10 >= 3 nên bỏ
+    assert e.merge_into_file(str(path), enrolled_cap=6) == 1
+
+
+def test_nhan_dien_mac_dinh_bat_spotter_neu_co_model(monkeypatch):
+    monkeypatch.setattr(dip.os.path, "exists", lambda p: True)
+    a = dip.cmd_nhan_dien("DAT", None, None, True)
+    assert a[:4] == ["predict_sentence_webcam.py", "--one-shot", "--spotter", "dl"]
+    monkeypatch.setattr(dip.os.path, "exists", lambda p: False)
+    assert "--one-shot" not in dip.cmd_nhan_dien("DAT", None, None, True)           # không có model => không bật
+    assert "--one-shot" not in dip.cmd_nhan_dien("DAT", None, None, True, spotter=False)
+
+
+def test_lenh_hieu_chinh_tu_choi_chu_du_an_va_danh_sach_rong():
+    with pytest.raises(ValueError):
+        dip.lenh_hieu_chinh(people.OWNER_ID, ["HUNGRY"])
+    with pytest.raises(ValueError):
+        dip.lenh_hieu_chinh("Mai", ["  "])
+
+
+def test_lenh_mau_am():
+    assert dip.cmd_quay_mau_am(people.OWNER_ID, 4.0) == ["collect_continuous.py", "--signer", "Dat", "--negative", "--minutes", "4.0"]
+    assert dip.cmd_quay_mau_am("Mai", 3)[:3] == ["collect_continuous.py", "--signer", "Mai"]
+    a = dip.cmd_huan_luyen_spotter(["_neg"], "x.pth")
+    assert a == ["train_spotter.py", "--models", "CNN", "--save", "--out", "x.pth", "--exclude", "_neg"]
+    assert "spotter_model.pth" not in dip.cmd_huan_luyen_spotter()                  # mặc định KHÔNG đè model đang dùng
+    assert dip.cmd_cham_mau_am(None, ["a.pth", "b.pth"]) == ["eval_negative_session.py", "--latest", "--model", "a.pth", "--model", "b.pth"]

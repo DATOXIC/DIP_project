@@ -104,6 +104,11 @@ STRINGS = {
         "hint_hands_up_down": "đưa tay lên xuống", "hint_rest_chin": "chống cằm",
         "hint_rub_hands": "xoa hai tay", "hint_point_around": "chỉ trỏ vu vơ",
         "hint_hold_phone": "cầm điện thoại", "hint_stretch": "vươn vai", "hint_light_clap": "vỗ tay nhẹ",
+        "hint_talk_gesture": "vừa nói vừa múa tay (KHÔNG ký)", "hint_reach_item": "vươn tay lấy đồ trên bàn",
+        "hint_hands_in_out": "đưa tay vào rồi ra khỏi khung hình", "hint_cross_arms": "khoanh tay rồi buông",
+        "hint_adjust_glasses": "chỉnh kính / sờ cổ áo", "hint_tidy_desk": "dọn / xếp đồ trên bàn",
+        "hint_scratch_arm": "gãi tay, xoa cổ", "hint_lean_on_hand": "tì tay lên má", "hint_open_bottle": "mở nắp chai, rót nước",
+        "hint_hold_pen": "cầm bút viết", "hint_pat_knee": "gõ tay lên đùi", "hint_phone_scroll": "lướt điện thoại",
     },
     "en": {
         "title_rest": "Lower your hands and rest",
@@ -130,6 +135,12 @@ STRINGS = {
         "hint_hands_up_down": "raise and lower hands", "hint_rest_chin": "rest your chin on your hand",
         "hint_rub_hands": "rub your hands", "hint_point_around": "point at things idly",
         "hint_hold_phone": "hold a phone", "hint_stretch": "stretch", "hint_light_clap": "clap lightly",
+        "hint_talk_gesture": "talk while gesturing (NOT signing)", "hint_reach_item": "reach for something on the desk",
+        "hint_hands_in_out": "move hands into then out of the frame", "hint_cross_arms": "cross arms then drop them",
+        "hint_adjust_glasses": "adjust glasses / touch your collar", "hint_tidy_desk": "tidy things on the desk",
+        "hint_scratch_arm": "scratch your arm, rub your neck", "hint_lean_on_hand": "rest your cheek on your hand",
+        "hint_open_bottle": "open a bottle, pour water", "hint_hold_pen": "hold a pen and write",
+        "hint_pat_knee": "tap your hand on your knee", "hint_phone_scroll": "scroll a phone",
     },
 }
 
@@ -210,6 +221,40 @@ def build_script(vocab: Sequence[str], pairs: int = DEFAULT_PAIRS, seed: int = D
     if not units:
         script.append(wander(0))
     script.append(wander(1))
+    for i, p in enumerate(script):
+        p["index"] = i
+    return script
+
+
+# Phiên CHỈ MẪU ÂM: mọi giây đều KHÔNG ký -> cả phiên là nhãn âm (WANDER/REST), không cần gán nhãn từng đoạn.
+NEG_HINT_SETS = [
+    ["scratch_face", "fix_hair", "hold_cup", "type_keyboard", "rest_chin", "stretch"],
+    ["talk_gesture", "reach_item", "hands_in_out", "cross_arms", "adjust_glasses", "tidy_desk"],
+    ["scratch_arm", "lean_on_hand", "open_bottle", "hold_pen", "pat_knee", "phone_scroll"],
+    ["hold_phone", "rub_hands", "hands_up_down", "point_around", "light_clap", "fix_hair"],
+]
+
+
+def build_negative_script(minutes: float = 4.0, seed: int = DEFAULT_SEED, wander_sec: float = WANDER_SEC,
+                          rest_sec: float = REST_SEC) -> List[Dict[str, Any]]:
+    """
+    Kịch bản chỉ gồm WANDER (30 s, đổi gợi ý đều) xen REST ngắn, xáo thứ tự bộ gợi ý theo seed. Thời gian ~ `minutes`
+    (mỗi đơn vị WANDER+REST ~ 38,5 s kể cả chuẩn bị). Tối thiểu 2 đơn vị.
+    """
+    rng = random.Random(seed)
+    unit = wander_sec + WANDER_PREP_SEC + rest_sec + REST_PREP_SEC
+    n = max(2, int(round(minutes * 60.0 / unit)))
+    order: List[int] = []
+    while len(order) < n:
+        block = list(range(len(NEG_HINT_SETS)))
+        rng.shuffle(block)
+        order.extend(block)
+    script: List[Dict[str, Any]] = []
+    for k in order[:n]:
+        hints = list(NEG_HINT_SETS[k])
+        rng.shuffle(hints)
+        script.append({"type": P_WANDER, "words": [], "duration_sec": float(wander_sec), "hints": hints})
+        script.append({"type": P_REST, "words": [], "duration_sec": float(rest_sec), "hints": []})
     for i, p in enumerate(script):
         p["index"] = i
     return script
@@ -869,7 +914,8 @@ _KEYMAP = {32: " ", 13: "n", 10: "n", ord("n"): "n", ord("m"): "m", ord("x"): "x
 
 
 def run_session(signer: str, out_dir: str, camera_index: int, lang: str, no_video: bool, pairs: int,
-                seed: int) -> int:
+                seed: int, script: Optional[List[Dict[str, Any]]] = None, suffix: str = "",
+                extra_meta: Optional[Dict[str, Any]] = None) -> int:
     """Vòng thu webcam thật. Mỗi khung: đọc -> gửi detector 2 tay -> (theo thứ tự) ghi landmark/mặt/độ sáng/video."""
     import cv2
     import mediapipe as mp
@@ -877,13 +923,14 @@ def run_session(signer: str, out_dir: str, camera_index: int, lang: str, no_vide
     from dynamic_features import CachedFaceDetector
     from camera_health import CameraHealthMonitor
 
-    vocab = cp.load_vocab_keys(cp.DEFAULT_TEMPLATES)
-    script = build_script(vocab, pairs=pairs, seed=seed)
+    if script is None:
+        vocab = cp.load_vocab_keys(cp.DEFAULT_TEMPLATES)
+        script = build_script(vocab, pairs=pairs, seed=seed)
     print(f"[Script] {len(script)} prompt, ước tính ~{estimate_duration_sec(script) / 60:.1f} phút.")
     if not os.path.exists(HAND_MODEL_PATH):
         print(f"[!] Thiếu {HAND_MODEL_PATH} (chạy collect_dynamic_templates.py một lần để tự tải).")
         return 1
-    session_id = time.strftime("%Y%m%d_%H%M%S")
+    session_id = time.strftime("%Y%m%d_%H%M%S") + suffix
     session_dir = os.path.join(out_dir, signer, session_id)
     os.makedirs(session_dir, exist_ok=True)
 
@@ -995,6 +1042,7 @@ def run_session(signer: str, out_dir: str, camera_index: int, lang: str, no_vide
             "timestamp_clock": "time.perf_counter() - t0 (giây, cùng trục với events.json)",
             "video": None if no_video else "session.mp4 (khung i == chỉ số i trong frames.npz)",
         }
+        meta_out.update(extra_meta or {})
         paths = save_session(session_dir, recorder, runner.events, meta_out, script)
         print(f"[Lưu] {paths['frames']}\n[Lưu] {paths['events']}")
     print(summarize(session_dir))
@@ -1018,6 +1066,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-video", action="store_true", help="Không ghi session.mp4.")
     p.add_argument("--pairs", type=int, default=DEFAULT_PAIRS, help=f"Số prompt PAIR (mặc định {DEFAULT_PAIRS}).")
     p.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Seed xáo kịch bản.")
+    p.add_argument("--negative", action="store_true",
+                   help="Phiên CHỈ MẪU ÂM: làm việc thường ngày, TUYỆT ĐỐI không ký (cả phiên là nhãn âm, thư mục có hậu tố _neg).")
+    p.add_argument("--minutes", type=float, default=4.0, help="Thời lượng phiên mẫu âm (phút, mặc định 4).")
     p.add_argument("--synthetic", action="store_true", help="Người ký giả lập, không webcam, vẫn ghi file.")
     p.add_argument("--dry-run", action="store_true", help="Như --synthetic nhưng KHÔNG ghi file, chỉ in thống kê.")
     p.add_argument("--summary", type=str, default=None, help="In thống kê khung/giây mỗi lớp của thư mục phiên rồi thoát.")
@@ -1033,9 +1084,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.signer:
         print("[!] Thiếu --signer <mã>.")
         return 2
+    if args.negative and not (args.synthetic or args.dry_run):
+        script = build_negative_script(args.minutes, args.seed)
+        return run_session(args.signer, args.out, args.camera, args.lang, args.no_video, args.pairs, args.seed,
+                           script=script, suffix="_neg", extra_meta={"negative_only": True})
     if args.synthetic or args.dry_run:
-        vocab = cp.load_vocab_keys(cp.DEFAULT_TEMPLATES)
-        script = build_script(vocab, pairs=args.pairs, seed=args.seed)
+        if args.negative:
+            script = build_negative_script(args.minutes, args.seed)
+        else:
+            vocab = cp.load_vocab_keys(cp.DEFAULT_TEMPLATES)
+            script = build_script(vocab, pairs=args.pairs, seed=args.seed)
         runner, rec = simulate_session(script, fps=30.0, seed=args.seed, bad_every=7)
         arrs = rec.arrays()
         labels = derive_frame_labels(arrs["t"], runner.events, args.margin)

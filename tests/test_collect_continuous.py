@@ -254,3 +254,46 @@ def test_derive_labels_pair_two_marks_and_missing_marks():
     assert at(5.0) == cc.SIGN                                   # từ 2
     # PAIR không bấm m: bỏ cả đoạn (IGNORE) thay vì gán nhầm SIGN
     assert set(np.unique(lab[(t >= 10.0) & (t <= 15.0)])) == {cc.IGNORE}
+
+
+def test_negative_script_only_non_signing_prompts_and_all_hints_have_text():
+    import collect_continuous as cc
+    sc = cc.build_negative_script(minutes=4.0, seed=1)
+    assert {p["type"] for p in sc} == {cc.P_WANDER, cc.P_REST}
+    assert [p["index"] for p in sc] == list(range(len(sc)))
+    assert 3.0 * 60 <= cc.estimate_duration_sec(sc) <= 5.5 * 60
+    assert sc == cc.build_negative_script(minutes=4.0, seed=1)                # xác định theo seed
+    for lang in ("vi", "en"):
+        for p in sc:
+            for h in p["hints"]:
+                assert cc.STRINGS[lang]["hint_" + h]                          # mọi gợi ý đều có chữ hiển thị
+    assert len(cc.build_negative_script(minutes=0.1)) >= 4                   # tối thiểu 2 đơn vị
+
+
+def test_negative_session_labels_have_no_sign_or_transition():
+    import numpy as np
+    import collect_continuous as cc
+    sc = cc.build_negative_script(minutes=1.5, seed=2)
+    runner, rec = cc.simulate_session(sc, fps=30.0, seed=2)
+    arr = rec.arrays()
+    lab = cc.derive_frame_labels(arr["t"], runner.events)
+    assert not np.isin(lab, [cc.SIGN, cc.TRANSITION]).any()
+    assert (lab == cc.WANDER).sum() > 0 and (lab == cc.REST).sum() > 0
+
+
+def test_negative_eval_scores_only_labelled_negative_frames():
+    import numpy as np
+    import collect_continuous as cc
+    from eval_negative_session import score_rows
+    t = np.arange(0, 20, 1 / 30.0) + 5.0
+    lab = np.zeros(len(t), dtype=np.uint8)
+    lab[(t >= 5.0) & (t < 15.0)] = cc.WANDER
+    t0 = 1000.0                                                     # t_start - t0 + t_first - 1/30 = truc phien
+    rows = [
+        {"event": "ACCEPTED", "predicted_word": "YOU", "t_start": str(t0 + 2.0), "duration_sec": "1.0"},   # trong WANDER
+        {"event": "ACCEPTED", "predicted_word": "ME", "t_start": str(t0 + 17.0), "duration_sec": "1.0"},    # ngoai nhan
+        {"event": "SUPPRESSED_DUP", "predicted_word": "YOU", "t_start": str(t0 + 3.0), "duration_sec": "0.8"},
+    ]
+    r = score_rows(rows, t0, t, lab)
+    assert r["count"]["ACCEPTED"] == 1 and r["count"]["SUPPRESSED_DUP"] == 1 and r["count"]["ngoai_nhan"] == 1
+    assert dict(r["words"]) == {"YOU": 1}

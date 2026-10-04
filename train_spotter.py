@@ -328,9 +328,15 @@ def main() -> None:
     p.add_argument("--close-hold", type=float, default=0.20)
     p.add_argument("--save", action="store_true", help="Sau khi do, huan luyen CNN tren TOAN BO du lieu va luu spotter_model.pth")
     p.add_argument("--out", default="spotter_model.pth")
+    p.add_argument("--exclude", action="append", default=[], metavar="TEN_PHIEN",
+                   help="Bo cac phien co duong dan chua chuoi nay (lap duoc) - de GIU LAI phien kiem tra doc lap (xem eval_negative_session.py)")
     args = p.parse_args()
 
     dirs = [d for d in find_session_dirs(args.root) if os.path.exists(os.path.join(d, "frames.npz"))]
+    if args.exclude:
+        left_out = [d for d in dirs if any(x in d for x in args.exclude)]
+        dirs = [d for d in dirs if d not in left_out]
+        print(f"[du lieu] giu lai (KHONG dung de huan luyen): {[os.path.basename(d) for d in left_out] or 'khong khop phien nao'}")
     if not dirs:
         print(f"[!] Khong thay phien nao trong '{args.root}'.")
         sys.exit(1)
