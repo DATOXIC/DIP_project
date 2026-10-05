@@ -41,8 +41,8 @@ def test_resolve_theo_ten_hoac_ma(tmp_path):
 
 
 def test_lenh_nhan_dien():
-    assert dip.cmd_nhan_dien("DAT", spotter=False) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-dl"]
-    assert dip.cmd_nhan_dien("Mai", ["--time-norm"], spotter=False, dang_tay=False) == ["predict_sentence_webcam.py", "--templates", "profiles/Mai.json", "--time-norm"]
+    assert dip.cmd_nhan_dien("DAT", spotter=False, giao_dien=None) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-dl"]
+    assert dip.cmd_nhan_dien("Mai", ["--time-norm"], spotter=False, dang_tay=False, giao_dien=None) == ["predict_sentence_webcam.py", "--templates", "profiles/Mai.json", "--time-norm"]
 
 
 def test_lenh_thu_tinh_nguyen_vien_ghi_vao_raw_volunteers():
@@ -145,13 +145,13 @@ def test_merge_banks_concatenates_samples(tmp_path, monkeypatch):
 def test_cmd_nhan_dien_templates_override():
     import dip
     # bank gộp là file TẠM => mẫu xác nhận phải được lưu vào hồ sơ cá nhân thật (--luu-ho-so), không vào file gộp
-    assert dip.cmd_nhan_dien("Mai", None, "profiles/_gop_Mai.json", spotter=False, dang_tay=False) == [
+    assert dip.cmd_nhan_dien("Mai", None, "profiles/_gop_Mai.json", spotter=False, dang_tay=False, giao_dien=None) == [
         "predict_sentence_webcam.py", "--luu-ho-so", "profiles/Mai.json", "--templates", "profiles/_gop_Mai.json"]
     assert "--luu-ho-so" not in dip.cmd_nhan_dien("Mai", None, "profiles/khac.json", spotter=False)
 
 
 def test_cmd_nhan_dien_day_tu():
-    a = dip.cmd_nhan_dien("Mai", None, None, True, None, None, False, ["HUNGRY", "SORRY"], 2, spotter=False, dang_tay=False)
+    a = dip.cmd_nhan_dien("Mai", None, None, True, None, None, False, ["HUNGRY", "SORRY"], 2, spotter=False, dang_tay=False, giao_dien=None)
     assert a[:6] == ["predict_sentence_webcam.py", "--day-tu", "HUNGRY", "SORRY", "--day-so-mau", "2"]
 
 
@@ -168,8 +168,8 @@ def test_build_merged_bank_ho_so_chua_co_file(tmp_path, monkeypatch):
 def test_cmd_nhan_dien_confirm_flag():
     import dip
     # xác nhận đã BẬT MẶC ĐỊNH ở predict_sentence_webcam.py: bật = không thêm cờ, tắt = --no-confirm-enroll
-    assert dip.cmd_nhan_dien("DAT", None, None, True, spotter=False) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-dl"]
-    assert dip.cmd_nhan_dien("DAT", None, None, False, spotter=False) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-confirm-enroll", "--no-dl"]
+    assert dip.cmd_nhan_dien("DAT", None, None, True, spotter=False, giao_dien=None) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-dl"]
+    assert dip.cmd_nhan_dien("DAT", None, None, False, spotter=False, giao_dien=None) == ["predict_sentence_webcam.py", "--handshape-gate", "--no-confirm-enroll", "--no-dl"]
 
 
 def test_cmd_nhan_dien_dl_fusion_off_for_owner_only():
@@ -183,7 +183,7 @@ def test_cmd_nhan_dien_dl_fusion_off_for_owner_only():
 def test_cmd_nhan_dien_handshape_gate_default_and_opt_out():
     import dip
     assert "--handshape-gate" in dip.cmd_nhan_dien("V01", None, None, True, spotter=False)
-    assert "--handshape-gate" not in dip.cmd_nhan_dien("V01", None, None, True, spotter=False, dang_tay=False)
+    assert "--handshape-gate" not in dip.cmd_nhan_dien("V01", None, None, True, spotter=False, dang_tay=False, giao_dien=None)
 
 
 def test_moi_lenh_con_in_duoc_help():
@@ -193,6 +193,13 @@ def test_moi_lenh_con_in_duoc_help():
         with pytest.raises(SystemExit) as e:
             dip.main([lenh, "--help"])
         assert e.value.code == 0, lenh
+
+
+def test_cmd_nhan_dien_giao_dien_mac_dinh_debug():
+    import dip
+    assert dip.cmd_nhan_dien("DAT", spotter=False)[-2:] == ["--ui", "debug"]
+    assert dip.cmd_nhan_dien("DAT", spotter=False, giao_dien="demo")[-2:] == ["--ui", "demo"]
+    assert "--ui" not in dip.cmd_nhan_dien("DAT", spotter=False, giao_dien=None)
 
 
 def test_session_enroller_adds_and_undoes():
