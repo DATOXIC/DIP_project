@@ -229,7 +229,7 @@ def test_canonical_key_consistency():
 
     with open("ASL_ALEX_2.0/sign_weights_asllex.json", "r", encoding="utf-8") as f:
         weights_data = json.load(f)
-    with open("dynamic_templates.json", "r", encoding="utf-8") as f:
+    with open("tests/fixtures/legacy_canonical_templates.json", "r", encoding="utf-8") as f:
         template_data = json.load(f)
 
     weight_keys = set(weights_data.keys())
@@ -321,7 +321,7 @@ def test_global_weights_mode_when_none():
 def test_template_migration_preservation():
     """Kiem tra 34 mau 12D ban dau khong bi mat sau qua trinh di tru sang 15 Canonical Keys."""
     import json
-    with open("dynamic_templates.json", "r", encoding="utf-8") as f:
+    with open("tests/fixtures/legacy_canonical_templates.json", "r", encoding="utf-8") as f:
         data = json.load(f)
 
     vocab = data["vocabulary"]

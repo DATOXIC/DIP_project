@@ -173,7 +173,7 @@ def test_tier1_spotting_pause_counter_reset_on_reacceleration():
 
 def test_tier1_spotting_sub_minimum_stroke_discard():
     """TC2.4: Gestures shorter than min_stroke_frames are silently discarded."""
-    seg = KineticPauseSegmenter(min_stroke_frames=8, pause_frames=5)
+    seg = KineticPauseSegmenter(min_stroke_frames=8, pause_frames=5, grace_window_sec=0.0)
     seg.update(100.0, 100.0, 50.0, timestamp=0.0)
     # Only 2 motion frames
     seg.update(110.0, 100.0, 50.0, timestamp=0.033)
@@ -184,6 +184,11 @@ def test_tier1_spotting_sub_minimum_stroke_discard():
         st, comp, _, _ = seg.update(120.0 + i * 0.1, 100.0, 50.0, timestamp=0.10 + i * 0.033)
         if comp is not None:
             completed = comp
+
+    # Hết cửa sổ chờ (grace) thì cử chỉ mới được chốt/loại: nạp thêm một khung sau đó.
+    st, comp, _, _ = seg.update(121.0, 100.0, 50.0, timestamp=1.0)
+    if comp is not None:
+        completed = comp
 
     # Total frames in buffer was 7 < 8 -> silently dropped
     assert completed is None
@@ -346,7 +351,7 @@ def test_tier1_hud_asl_vocab_map_coverage():
     assert get_asl_phrase("cam_on", "en") == "Thank You"
     assert get_asl_phrase("toi", "en") == "Me"
     assert get_asl_phrase("ban", "en") == "You"
-    assert get_asl_phrase("tam_biet", "en") == "Goodbye"
+    assert get_asl_phrase("tam_biet", "en") == "Bye"   # từ điển hiện dùng "Bye" cho BYE
     assert get_asl_phrase("unregistered_key", "en", default="CustomDefault") == "CustomDefault"
 
 

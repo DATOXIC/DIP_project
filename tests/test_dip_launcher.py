@@ -186,6 +186,15 @@ def test_cmd_nhan_dien_handshape_gate_default_and_opt_out():
     assert "--handshape-gate" not in dip.cmd_nhan_dien("V01", None, None, True, spotter=False, dang_tay=False)
 
 
+def test_moi_lenh_con_in_duoc_help():
+    import dip, pytest
+    for lenh in ["nhan-dien", "hieu-chinh", "tinh-nguyen", "tien-do", "thu", "kiem-tra", "bo-qua", "danh-gia", "ho-so", "test",
+                 "camera", "quay-mau-am", "huan-luyen-spotter", "cham-mau-am", "web"]:
+        with pytest.raises(SystemExit) as e:
+            dip.main([lenh, "--help"])
+        assert e.value.code == 0, lenh
+
+
 def test_session_enroller_adds_and_undoes():
     import numpy as np
     from dynamic_dtw_engine import GoldenTriadDTWMatcher

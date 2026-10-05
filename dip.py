@@ -640,7 +640,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     a.add_argument("--ho-so", default=None, help="Tên/mã hồ sơ (mặc định: Đạt)")
     a.add_argument("--khong-xac-nhan", action="store_true", help="TẮT hỏi xác nhận khi cử chỉ không chắc (mặc định đã BẬT — đòn bẩy chính giúp nhận đúng người lạ, xem eval_enroll.py). Bật lại bằng cách không truyền cờ này.")
     a.add_argument("--tat-dl", action="store_true", help="TẮT tầng DL dự phòng (xem dl_fusion.py). Mặc định đã BẬT tự động nếu "
-                                                          "tìm thấy 'best_gesture_model_none.pth' (đã đo: nested CV 96.6% trung bình "
+                                                          "tìm thấy 'best_gesture_model_none.pth' (đã đo: nested CV 96.6%% trung bình "
                                                           "4 người lạ thật, xem docs/BAO_CAO_DEEP_LEARNING_HYBRID.md).")
     a.add_argument("--dl-model", default=None, help="Checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
     a.add_argument("--dl-nguong", type=float, default=None, help="Ngưỡng tin cậy softmax cho tầng DL (mặc định 0.38, xem dl_fusion.py).")

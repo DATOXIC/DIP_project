@@ -268,7 +268,8 @@ class HeadlessPipelineSimulator:
             max_stroke_frames=60,
             swipe_threshold=-0.80,
             swipe_ratio=2.5,
-            swipe_cooldown_sec=1.0
+            swipe_cooldown_sec=1.0,
+            grace_window_sec=0.0,   # test cũ mô phỏng chốt NGAY sau khi khựng (không chờ gộp đa pha)
         )
         self.dtw_engine = HybridDTWEngine(templates_path=templates_path)
         self.sentence_words: List[str] = []

@@ -83,7 +83,8 @@ def test_verification_step2_segmenter_fsm():
         v_stop_ratio=0.035,
         pause_frames=11,
         min_stroke_frames=8,
-        max_stroke_frames=60
+        max_stroke_frames=60,
+        grace_window_sec=0.0,
     )
 
     states_observed = []
