@@ -88,11 +88,22 @@ class SidePanelState:
     composed_sentence: Optional[str] = None
 
 
+_CANVAS_BASE: dict = {}
+
+
 def compose_canvas(frame: np.ndarray, panel_w: int = PANEL_W, bottom_h: int = BOTTOM_H,
                     bg: Tuple[int, int, int] = BG_COLOR) -> Tuple[np.ndarray, int, int]:
     """Canvas lớn hơn khung camera, dán khung camera NGUYÊN VẸN ở góc trên-trái."""
     h_f, w_f = frame.shape[:2]
-    canvas = np.full((h_f + bottom_h, w_f + panel_w, 3), bg, dtype=np.uint8)
+    # np.full với màu 3 kênh tốn ~10 ms/khung (đo trên 1120x620); dựng nền MỘT lần rồi chỉ sao chép (~0,3 ms), kết quả y hệt.
+    key = (h_f + bottom_h, w_f + panel_w, tuple(int(c) for c in bg))
+    base = _CANVAS_BASE.get(key)
+    if base is None:
+        base = np.empty((key[0], key[1], 3), dtype=np.uint8)
+        base[:] = np.array(key[2], dtype=np.uint8)
+        _CANVAS_BASE.clear()          # chỉ giữ một kích thước (kích thước camera hiếm khi đổi)
+        _CANVAS_BASE[key] = base
+    canvas = base.copy()
     canvas[0:h_f, 0:w_f] = frame
     return canvas, w_f, h_f
 
