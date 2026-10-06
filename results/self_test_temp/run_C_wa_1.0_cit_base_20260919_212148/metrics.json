@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 68,
+  "top1": 0.9705882352941176,
+  "top1_count": 66,
+  "clean_accept": 0.9705882352941176,
+  "clean_accept_count": 66,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.029411764705882353,
+  "uncertain_count": 2,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": 0.47164123777311473,
+  "margin_worst_word": {
+    "word": "YOU",
+    "margin": 0.14433408248315466
+  },
+  "num_negative_samples": 0,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 224.61242058831405,
+  "metadata": {
+    "run_id": "run_C_wa_1.0_cit_base_20260919_212148",
+    "timestamp": "20260919_212148",
+    "config_path": "results\\self_test_temp\\cfg_wa_1.json",
+    "config_name": "C_wa_1.0",
+    "config_hash": "310379c6f2de1eadd4acdd61f2d64962c0cb58d01d219e810717f0a82208e56a",
+    "bank_path": "results\\self_test_temp\\citizen_10words.json",
+    "bank_hash": "4e53ab00a1cd968dba01456f1ad484842d9a2b081d528a8c55513034d768f521",
+    "neg_path": "none",
+    "neg_hash": "none",
+    "split_mode": "block_half",
+    "num_folds": 2,
+    "git_commit": "7e56f10da1cd720b3bea7f1114e987f1ffc6ef79",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

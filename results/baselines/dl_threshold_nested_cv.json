@@ -1,0 +1,32 @@
+{
+ "per_target": {
+  "Dang": {
+   "n": 42,
+   "nested_threshold": 0.26,
+   "accuracy_at_nested_threshold": 0.9523809523809523,
+   "accuracy_at_global_default": 0.9523809523809523
+  },
+  "Mai": {
+   "n": 100,
+   "nested_threshold": 0.18,
+   "accuracy_at_nested_threshold": 0.95,
+   "accuracy_at_global_default": 0.95
+  },
+  "Phi": {
+   "n": 48,
+   "nested_threshold": 0.18,
+   "accuracy_at_nested_threshold": 1.0,
+   "accuracy_at_global_default": 1.0
+  },
+  "Vuong": {
+   "n": 52,
+   "nested_threshold": 0.18,
+   "accuracy_at_nested_threshold": 0.9615384615384616,
+   "accuracy_at_global_default": 0.9615384615384616
+  }
+ },
+ "summary": {
+  "mean_accuracy_nested_cv": 0.9659798534798535,
+  "mean_accuracy_global_default": 0.9659798534798535
+ }
+}

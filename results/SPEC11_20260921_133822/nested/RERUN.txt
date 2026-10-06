@@ -1,0 +1,1 @@
+py weight_learning.py --bank results/SPEC11_20260921_133822/bank_frozen.json --neg results/SPEC11_20260921_133822/neg_frozen.json --out results/SPEC11_20260921_133822/nested --modes B0 L5 L8 --lambdas 0.0 0.3 3.0 --seed 20260919

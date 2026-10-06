@@ -1,0 +1,89 @@
+{
+ "meta": {
+  "bank": "scratch/bank_snapshot_clean.json",
+  "bank_sha256": "10fb1ae8db7e40fbd20953deb420d2fae9cbd15073c69ac0b9951e0d28a4fc31",
+  "n_words": 203,
+  "n_mapped": 141,
+  "fps": 30.0,
+  "seed": 20260920,
+  "n": 5,
+  "mode": "realistic",
+  "fast_cfg": {
+   "enabled": true,
+   "chain_window_sec": 0.0,
+   "pause_sec": 0.12,
+   "grace_window_sec": 0.05,
+   "min_stroke_sec": 0.1,
+   "early_commit": true,
+   "early_min_quality": 70,
+   "early_min_margin": 0.25,
+   "multi_phase_words": null,
+   "tail_pad_sec": 0.45,
+   "ready_stable_sec": 0.1,
+   "transition_lockout_sec": 0.0,
+   "lead_trim": {
+    "enabled": false,
+    "max_sec": 0.45,
+    "max_variants": 6,
+    "good_r": 0.8,
+    "trim_penalty_per_sec": 0.3,
+    "min_gain": 0.1,
+    "min_gain_other_word": 0.25,
+    "min_after_trim_sec": 0.3,
+    "max_trim_fraction": 0.4
+   }
+  },
+  "multi_phase": [
+   "EAT",
+   "WATER",
+   "YES"
+  ],
+  "threshold_k": 1.75,
+  "uncertainty_k": 2.35,
+  "exclude_prefix": [],
+  "hold_dest": 0.0,
+  "dup_frac": 0.0
+ },
+ "aggregates": [
+  {
+   "sentences": 5,
+   "words": 11,
+   "acc": 0.0,
+   "word_acc": 0.18181818181818177,
+   "lost": 9,
+   "extra": 0,
+   "lat_median": -0.03333333333335986,
+   "lat_p90": 0.09999999999998864,
+   "lat_p95": 0.11666666666665718,
+   "head_mean": 5.666666666666667,
+   "head_frac": 0.3333333333333333,
+   "no_stroke": 5,
+   "merged": 2,
+   "swipes": 0,
+   "early_n": 2,
+   "early_wrong": 0,
+   "mp_words": 4,
+   "mp_bad": 0,
+   "mp_rate": 0.0,
+   "prem_any": 6,
+   "prem_any_rate": 0.5454545454545454,
+   "leadin_contam": 1,
+   "leadin_contam_rate": 0.09090909090909091,
+   "head_loss_words": 2,
+   "head_loss_rate": 0.18181818181818182,
+   "start_err_median": 0.0,
+   "start_err_p90": 0.5666666666666629,
+   "hitch_mean_ms": 0.0,
+   "hitch_p95_ms": 0.0,
+   "hitch_max_ms": 0.0,
+   "outcomes": {
+    "UNCERTAIN": 1,
+    "REJECTED": 5,
+    "ACCEPTED": 2
+   },
+   "g": 0.2
+  }
+ ],
+ "min_wait_sec": null,
+ "elapsed_sec": 4.62296724319458
+}

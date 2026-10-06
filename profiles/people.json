@@ -1,0 +1,55 @@
+{
+  "DAT": {
+    "ten": "Đạt",
+    "vai_tro": "chu_du_an"
+  },
+  "Mai": {
+    "ten": "Mai",
+    "vai_tro": "tinh_nguyen_vien",
+    "bo_qua_tu": [
+      "BAD",
+      "YES",
+      "YOU"
+    ]
+  },
+  "Phi": {
+    "ten": "Phi",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Dang": {
+    "ten": "Đăng",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Thanh": {
+    "ten": "Thành",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Vuong": {
+    "ten": "Vương",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Viet": {
+    "ten": "Việt",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Thomas": {
+    "ten": "Thomas",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Elise": {
+    "ten": "Elise",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "David": {
+    "ten": "David",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "Madam": {
+    "ten": "Madam",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "John": {
+    "ten": "John",
+    "vai_tro": "tinh_nguyen_vien"
+  }
+}

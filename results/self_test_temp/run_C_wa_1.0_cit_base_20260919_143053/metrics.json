@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 68,
+  "top1": 0.8970588235294118,
+  "top1_count": 61,
+  "clean_accept": 0.8970588235294118,
+  "clean_accept_count": 61,
+  "wrong_accept": 0.058823529411764705,
+  "wrong_accept_count": 4,
+  "uncertain_rate": 0.04411764705882353,
+  "uncertain_count": 3,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": 0.4051233213256289,
+  "margin_worst_word": {
+    "word": "DRINK",
+    "margin": 0.08193660092066242
+  },
+  "num_negative_samples": 0,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 219.3661632353563,
+  "metadata": {
+    "run_id": "run_C_wa_1.0_cit_base_20260919_143053",
+    "timestamp": "20260919_143053",
+    "config_path": "results\\self_test_temp\\cfg_wa_1.json",
+    "config_name": "C_wa_1.0",
+    "config_hash": "310379c6f2de1eadd4acdd61f2d64962c0cb58d01d219e810717f0a82208e56a",
+    "bank_path": "results\\self_test_temp\\citizen_10words.json",
+    "bank_hash": "4e53ab00a1cd968dba01456f1ad484842d9a2b081d528a8c55513034d768f521",
+    "neg_path": "none",
+    "neg_hash": "none",
+    "split_mode": "block_half",
+    "num_folds": 2,
+    "git_commit": "3d450be20fc5cf14f959169d27395fbbfd01c23c",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

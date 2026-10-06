@@ -1,0 +1,60 @@
+
+========================================================
+  SCOREBOARD RUN: G1p90
+========================================================
+Cấu hình     : configs/G1p90.json (SHA-256: 7135d017cabe...)
+Bank         : webcam_templates.json (SHA-256: c9a9235e6279...)
+Kiểu chia    : LOSO (18 vòng fold)
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 200 template: lật 0, bỏ qua 200 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 202 template: lật 0, bỏ qua 202 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 184 template: lật 0, bỏ qua 184 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 193 template: lật 0, bỏ qua 193 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 201 template: lật 0, bỏ qua 201 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 208 template: lật 0, bỏ qua 208 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 210 template: lật 0, bỏ qua 210 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 175 template: lật 0, bỏ qua 175 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 141 template: lật 0, bỏ qua 141 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 207 template: lật 0, bỏ qua 207 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 207 template: lật 0, bỏ qua 207 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 209 template: lật 0, bỏ qua 209 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 206 template: lật 0, bỏ qua 206 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 209 template: lật 0, bỏ qua 209 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 209 template: lật 0, bỏ qua 209 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 209 template: lật 0, bỏ qua 209 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 210 template: lật 0, bỏ qua 210 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 207 template: lật 0, bỏ qua 207 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ [DTW] Đã nạp thành công 27 bộ trọng số Per-Sign từ 'ASL_ALEX_2.0/sign_weights_asllex.json'.
+[Chirality] Đã chuẩn hóa 211 template: lật 0, bỏ qua 211 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+
+---------------------- BẢNG CHỈ SỐ KẾT QUẢ ----------------------
+  Mã lần chạy      : run_G1p90_new_bank_20261003_135227
+  Số truy vấn      : 211
+  Top-1 Accuracy   : 99.53% (210/211)
+  Clean Accept     : 85.31% (180/211) [Chấp nhận đúng]
+  Wrong Accept     : 0.47% (1/211) [Lỗi nặng]
+  Uncertain Rate   : 11.37% (24)
+  Reject Rate      : 2.84% (6)
+  Margin Mean      : +0.4892
+  Worst Word Margin: +0.2920 (Từ: 'WATER')
+  False Accept Neg : 26.83% (11/41)
+  Latency TB       : 22.35 ms
+----------------------------------------------------------------
+

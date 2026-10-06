@@ -1,0 +1,163 @@
+{
+  "decision": "KEEP_HAND_WEIGHTS",
+  "reason": "Không có phương án nào vượt qua các cổng chấp nhận định lượng khắt khe đã đặt trước. L5: Cận dưới KTC95 Delta margin <= 0 ([-0.0094, +0.0008]); L8: Cận dưới KTC95 Delta margin <= 0 ([-0.0028, +0.0091]); L8: Trọng số không ổn định qua các fold (CV > 0.5); L8: Tăng false_accept_neg",
+  "comparison_results": {
+    "L5": {
+      "mode": "L5",
+      "delta_margin_mean": -0.004185181515076367,
+      "ci_lower": -0.009446494286273015,
+      "ci_upper": 0.0008461573789483793,
+      "gate_ci_lower_gt_0": false,
+      "gate_wrong_accept_not_increased": true,
+      "gate_false_accept_neg_not_increased": true,
+      "gate_word_retention": true,
+      "lost_words": {},
+      "gate_stability": true,
+      "cv_by_group": [
+        0.11749964452506488,
+        0.193786950348597,
+        0.06753569320115474,
+        0.24130497069413087,
+        0.10324044984739153,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mcnemar_clean_p": 1.0,
+      "mcnemar_b": 3,
+      "mcnemar_c": 4,
+      "latency_base_ms": 4.979361904844505,
+      "latency_mode_ms": 4.738677056609337,
+      "latency_rel_change_pct": -4.83364842392761,
+      "gate_latency_rel_under_20pct": true,
+      "gate_latency_abs_under_10ms": true,
+      "passed_all_gates": false
+    },
+    "L8": {
+      "mode": "L8",
+      "delta_margin_mean": 0.0032959102946734545,
+      "ci_lower": -0.0027993869362100444,
+      "ci_upper": 0.009094215388330199,
+      "gate_ci_lower_gt_0": false,
+      "gate_wrong_accept_not_increased": true,
+      "gate_false_accept_neg_not_increased": false,
+      "gate_word_retention": true,
+      "lost_words": {},
+      "gate_stability": false,
+      "cv_by_group": [
+        0.11544716686188089,
+        0.03305117337711686,
+        0.028051972635584288,
+        0.10250472294609662,
+        0.06648164814901787,
+        2.4494819101617895,
+        0.969946792270406,
+        1.4448762653544167
+      ],
+      "mcnemar_clean_p": 0.7265625,
+      "mcnemar_b": 5,
+      "mcnemar_c": 3,
+      "latency_base_ms": 4.979361904844505,
+      "latency_mode_ms": 4.688761688173432,
+      "latency_rel_change_pct": -5.8360935040359845,
+      "gate_latency_rel_under_20pct": true,
+      "gate_latency_abs_under_10ms": true,
+      "passed_all_gates": false
+    }
+  },
+  "handshape_analysis": {
+    "HELLO_BYE": {
+      "pair": [
+        "HELLO",
+        "BYE"
+      ],
+      "b0_confusions": 0,
+      "L5_confusions": 0,
+      "L8_confusions": 1
+    },
+    "YOU_YES": {
+      "pair": [
+        "YOU",
+        "YES"
+      ],
+      "b0_confusions": 0,
+      "L5_confusions": 0,
+      "L8_confusions": 0
+    },
+    "ME_HUNGRY": {
+      "pair": [
+        "ME",
+        "HUNGRY"
+      ],
+      "b0_confusions": 0,
+      "L5_confusions": 0,
+      "L8_confusions": 0
+    }
+  },
+  "learned_weights": {
+    "L5": {
+      "mean": [
+        0.6794439747041838,
+        1.1050131202400404,
+        0.41013980725011506,
+        0.698846228715697,
+        0.7065568690899644,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "std": [
+        0.07983442561993842,
+        0.2141371228602919,
+        0.027699076259560206,
+        0.1686350689812501,
+        0.0729452491108529,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "cv": [
+        0.11749964452506488,
+        0.193786950348597,
+        0.06753569320115474,
+        0.24130497069413087,
+        0.10324044984739153,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "L8": {
+      "mean": [
+        0.6461363481888421,
+        0.9993735469954085,
+        0.38990544664166965,
+        0.7522651064716646,
+        0.7156672035981974,
+        0.0003127282425998419,
+        0.07989865469958359,
+        0.016440965162035193
+      ],
+      "std": [
+        0.07459461092033079,
+        0.033030468403300664,
+        0.01093761694770936,
+        0.07711072642339857,
+        0.04757873528788854,
+        0.0007660246225269105,
+        0.0774974448025287,
+        0.023755161787019745
+      ],
+      "cv": [
+        0.11544716686188089,
+        0.03305117337711686,
+        0.028051972635584288,
+        0.10250472294609662,
+        0.06648164814901787,
+        2.4494819101617895,
+        0.969946792270406,
+        1.4448762653544167
+      ]
+    }
+  }
+}

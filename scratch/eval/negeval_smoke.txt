@@ -1,0 +1,8 @@
+Phiên 20261003_102346: 7s không ký có nhãn (WANDER 0s, REST 7s). Phát lại 2 cấu hình song song (vài phút)...
+
+cau hinh                     chot NHAM   /phut  khong chac  tu choi  bi chan   tu bi chot nham
+khong spotter                        0     0.0           0        0        0   -
+spotter_model.pth                    0     0.0           0        0        0   -
+
+'chot NHAM' thap la tot (cả phiên không ký). 'bi chan' = spotter chan, khong vao cau.
+Luu y: so chi co gia tri neu model khong duoc huan luyen tren chinh phien nay.

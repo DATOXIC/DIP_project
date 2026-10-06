@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 175,
+  "top1": 1.0,
+  "top1_count": 175,
+  "clean_accept": 0.8857142857142857,
+  "clean_accept_count": 155,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.10857142857142857,
+  "uncertain_count": 19,
+  "reject_rate": 0.005714285714285714,
+  "reject_count": 1,
+  "margin_mean": 0.5382582656726723,
+  "margin_worst_word": {
+    "word": "HUNGRY",
+    "margin": 0.3991472326104302
+  },
+  "num_negative_samples": 41,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 3.5795555555119387,
+  "metadata": {
+    "run_id": "run_C11_base_chk_C11_base_20260928_085622",
+    "timestamp": "20260928_085622",
+    "config_path": "configs/C11_base.json",
+    "config_name": "C11_base",
+    "config_hash": "da462e79f6e6120e30b156867163b8a12abac9b265c80115fe52af69c61edddd",
+    "bank_path": "results/aug_eval/bank_ids_only.json",
+    "bank_hash": "70fe9842ce70e2d3408a9778033978b408f6c9feace1c086d08c52f1a5f94e50",
+    "neg_path": "negative_strokes.json",
+    "neg_hash": "2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42",
+    "split_mode": "loso",
+    "num_folds": 7,
+    "git_commit": "2206e161e01cb58c536d87d1837984e71c7da1b9",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

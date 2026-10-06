@@ -1,0 +1,7 @@
+k,config,n_query,top1,clean_accept,wrong_accept,uncertain,reject,false_accept_neg,n_neg,margin_mean,lowo_false_accept,lowo_n,lowo_uncertain,lowo_reject,mcnemar_clean_p_vs_1.6,mcnemar_clean_b_new_only,mcnemar_clean_c_base_only,mcnemar_lowo_p_vs_1.6,lowo_b,lowo_c
+1.5,K1p50,73,73,45,0,26,2,0,8,0.5648,0,106,9,97,0.1250,0,4,1.0000,0,0
+1.6,K1p60,73,73,49,0,23,1,0,8,0.5648,0,106,14,92,1.0000,0,0,1.0000,0,0
+1.75,K1p75,73,73,59,0,14,0,0,8,0.5648,0,106,22,84,0.0020,10,0,1.0000,0,0
+2.0,K2p00,73,73,68,0,5,0,0,8,0.5648,1,106,33,72,0.0000,19,0,1.0000,1,0
+2.5,K2p50,73,73,71,0,2,0,1,8,0.5648,16,106,41,49,0.0000,22,0,0.0000,16,0
+3.0,K3p00,73,73,72,0,1,0,4,8,0.5648,35,106,40,31,0.0000,23,0,0.0000,35,0

@@ -1,0 +1,49 @@
+{
+  "out": "C:\\DIP\\DIP_project\\results\\SPEC11_20260921_124428",
+  "bank_sha256": "34705041cf481a994a5a5583683223288ac2d9f5b18a649a4d257591b5bf5a1c",
+  "neg_sha256": "2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42",
+  "total_samples": 175,
+  "samples_by_word": {
+    "HELLO": 14,
+    "BYE": 13,
+    "ME": 16,
+    "YOU": 17,
+    "THANK_YOU": 16,
+    "EAT": 11,
+    "DRINK": 14,
+    "WATER": 11,
+    "SORRY": 10,
+    "PLEASE": 10,
+    "YES": 15,
+    "BAD": 13,
+    "HUNGRY": 15
+  },
+  "samples_by_session": {
+    "phien2": 70,
+    "20260920_094150": 9,
+    "20260921_112100": 18,
+    "phien1": 36,
+    "20260920_100121": 27,
+    "20260920_093435": 11,
+    "quan_coffee": 4
+  },
+  "negative_samples": 41,
+  "git_commit": "5e4d4ba4813815895e57134294ac15c7e31bb643",
+  "baseline_words": [
+    "BAD",
+    "BYE",
+    "DRINK",
+    "EAT",
+    "HELLO",
+    "HUNGRY",
+    "ME",
+    "PLEASE",
+    "SORRY",
+    "THANK_YOU",
+    "WATER",
+    "YES",
+    "YOU"
+  ],
+  "baseline_rows": 175,
+  "rerun_command": "py scratch/spec11_step0.py"
+}

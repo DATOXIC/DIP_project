@@ -1,0 +1,43 @@
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+[chain_replay] bank=C:\Users\TOPHUO~1\AppData\Local\Temp\claude\C--DIP-DIP-project\7e077625-6739-41a5-b49d-32ee37f404e0\scratchpad\snap08\bank_frozen.json sha256=e47fdb55543d9d64 | từ=13 mẫu=106 | stroke thô=142 (ánh xạ bank: 96) | k=1.75, unc_k=2.35
+[chain_replay] chế độ=PRODUCTION (mốc) | từ nhiều pha: ['EAT', 'WATER']
+[grid] 180 cấu hình x g=0.20 x 15 Hz x 150 câu, 6 tiến trình
+  [10/180] 21s
+  [20/180] 25s
+  [30/180] 28s
+  [40/180] 33s
+  [50/180] 38s
+  [60/180] 41s
+  [70/180] 45s
+  [80/180] 50s
+  [90/180] 53s
+  [100/180] 58s
+  [110/180] 62s
+  [120/180] 70s
+  [130/180] 80s
+  [140/180] 88s
+  [150/180] 97s
+  [160/180] 105s
+  [170/180] 112s
+  [180/180] 120s
+[grid] xong 121s -> C:\DIP\DIP_project\results\chain_replay_20260920_spec08

@@ -1,0 +1,164 @@
+##### base
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 89) [trim: 0.08s, 3 tried] | Câu: Sorry Hungry
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 94) [trim: 0.06s, 6 tried] | Câu: Sorry Hungry Yes
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Sorry Hungry Yes Eat
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 56) [trim: 0.23s, 5 tried] | Câu: Sorry Hungry Yes Eat Yes
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 92) | Câu: Sorry Hungry Yes Eat Yes Yes
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 73) | Câu: Sorry Hungry Yes Eat Yes Yes Drink
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 100) [trim: 0.16s, 6 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 87) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 99) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 51) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 0) [trim: 0.22s, 6 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 49) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 97) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.18s, 6 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.33s, 6 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Drink Drink
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 75) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 46) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Bye
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 48) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 77) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 77) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Sorry
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 54) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat
+[SentenceBuilder] Nhận từ: 'Bad' (Do khop: 0) [trim: 0.05s, 4 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 94) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 83) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 100) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Water
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 76) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Eat
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 0) [trim: 0.21s, 4 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Eat Water
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.14s, 4 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Eat Water Sorry
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.14s, 4 tried] | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Eat Water Sorry Sorry
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Hungry Yes Eat Yes Yes Drink Please Hello Hello Bye You Bye You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink Thank You Drink Bye Eat You You You You You You You You You Eat Eat Bad Hungry Hungry Eat Water You
+##### rule
+[OneShot] BẬT khóa một lần (spotter=rule): mỗi khoảng ký chỉ chốt tối đa 1 từ.
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 44) | Câu: Water
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Water Sorry
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 94) [trim: 0.07s, 2 tried] | Câu: Water Sorry Hungry
+[OneShot] Chặn 'Yes' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 82) [trim: 0.40s, 6 tried] | Câu: Water Sorry Hungry Sorry
+[SentenceBuilder] Nhận từ: 'Me' (Do khop: 69) [trim: 0.10s, 3 tried] | Câu: Water Sorry Hungry Sorry Me
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 93) [trim: 0.08s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 100) [trim: 0.24s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.20s, 4 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 70) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 100) [trim: 0.23s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 89) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 46) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 0) [trim: 0.21s, 5 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 49) [trim: 0.07s, 3 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 99) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.34s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.27s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink
+[OneShot] Chặn 'Drink' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.33s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Drink Drink
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 75) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Drink
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 50) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Bye
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.11s, 4 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.13s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You You
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 81) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 77) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Sorry
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 53) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat
+[OneShot] Chặn 'Bad' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 82) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 100) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Water
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 76) | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 0) [trim: 0.13s, 4 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat Water
+[OneShot] Chặn 'Bad' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 45) [trim: 0.13s, 3 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat Water Eat
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.06s, 2 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat Water Eat Sorry
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) [trim: 0.23s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat Water Eat Yes
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.37s, 6 tried] | Câu: Water Sorry Hungry Sorry Me Eat Yes Please Drink Drink Please Hello Hello You Bye You You Thank You Hello Bye You Yes Yes Sorry Drink Thank You Bye Eat You You You Eat Eat Hungry Hungry Eat Water Eat Yes You
+[OneShot] Cả phiên: cho phép 48 lần commit, chặn 6 lần trùng trong cùng span (tổng 50 span gần nhất đang giữ).
+##### dl
+[OneShot] BẬT khóa một lần (spotter=dl, NGHIÊM: chặn stroke ngoài khoảng đang ký): mỗi khoảng ký chỉ chốt tối đa 1 từ.
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry
+[OneShot] Chặn 'Hungry' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 72) | Câu: Sorry Yes
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 62) | Câu: Sorry Yes Sorry
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 0) [trim: 0.08s, 6 tried] | Câu: Sorry Yes Sorry Eat
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 66) | Câu: Sorry Yes Sorry Eat Yes Drink
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 73) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 96) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 42) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You
+[OneShot] Chặn 'Hello' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 50) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye You
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 92) [trim: 0.07s, 6 tried] | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye You Yes
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 73) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Drink
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 52) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Bye
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.10s, 5 tried] | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 78) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 72) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Sorry
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) [trim: 0.11s, 3 tried] | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Eat
+[SentenceBuilder] Nhận từ: 'Bad' (Do khop: 0) [trim: 0.11s, 3 tried] | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Eat Bad
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Eat Bad Hungry
+[OneShot] Chặn 'Hungry' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 100) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Eat Bad Hungry Water
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 75) | Câu: Sorry Yes Sorry Eat Yes Drink Please Hello Bye You Bye Thank You Bye Thank You Bye Eat You You Eat Eat Bad Hungry Eat
+[OneShot] Chặn 'Bad' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'Bad' (dup_in_span): đã có từ được chốt trong khoảng ký này.
+[OneShot] Chặn 'Eat' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Chặn 'You' (no_span): ngoài khoảng đang ký (spotter báo không ký).
+[OneShot] Cả phiên: cho phép 29 lần commit, chặn 22 lần trùng trong cùng span (tổng 45 span gần nhất đang giữ).

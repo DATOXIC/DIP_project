@@ -1,0 +1,135 @@
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1791021153.770662   20072 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.786023    6636 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.795151   28784 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.818995   27148 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.834263   28784 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.835790    8584 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791021153.863323   23212 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+W0000 00:00:1791021154.172012   24504 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+===========================================================================
+  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)
+===========================================================================
+✓ Đang ghi log phiên cử chỉ vào: 'scratch\negeval\20261003_163235_neg_0.csv'
+✓ Đã nạp ParallelHandDetector (3 workers, max_in_flight=4).
+✓ Đã nạp Two-Stream CNN (vsl_dataset/models/best_model_v2.pth): ['A', 'B', 'C', 'L', 'V']
+ℹ️ [DTW] Chế độ trọng số: Toàn cục (Global Weights từ CONFIG).
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 189 template: lật 0, bỏ qua 189 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+ℹ️ [DL] Tầng dự phòng BẬT: best_gesture_model_none.pth (ngưỡng=0.38).
+✓ Đã nạp bộ dò mặt (mốc cơ thể) có cache.
+✓ Đã nạp 13 từ vựng cử chỉ mẫu từ webcam_templates.json (Golden Triad Engine).
+⚡ [FastChain] BẬT: pause=0.12s, grace=0.05s, cửa sổ nối=0.0s, lockout=0.0s, lead_trim=BẬT, chốt sớm=True (chất lượng>=70, margin>=0.25), kéo đuôi=0.45s. Từ nhiều pha (không chốt sớm): ['EAT', 'WATER', 'YES', 'YOU']
+[Video] KẾT NỐI THÀNH CÔNG video file: continuous_data/Dat/20261003_163235_neg\session.mp4
+[Video] Dùng ĐỒNG HỒ VIDEO (30.0 fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0=1791021154.196
+
+[HƯỚNG DẪN SỬ DỤNG]
+  - Múa cử chỉ rõ ràng, nghỉ nhẹ ~0.2s giữa hai từ (chế độ KÝ NHANH mặc định). Nếu tắt bằng [j], phải dừng ~0.55s.
+  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).
+  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).
+  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.
+  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát
+  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp
+  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)
+
+  Giao diện: demo | Ngôn ngữ: en
+
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.52, Do khop: 0)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Me (d1=0.37, Do khop=36) vs Sorry (d2=0.69) | Margin: 85.9%
+[Fusion] dl_fallback:SORRY(0.77)<-ME
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.33s, 4 tried] | Câu: Sorry
+[Fusion] dl_fallback:SORRY(0.42)<-YOU
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.27s, 6 tried] | Câu: Sorry Sorry
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry .
+[Fusion] handshape_veto:DRINK(3/3)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 39) [trim: 0.13s, 3 tried] | Câu: Sorry Sorry Drink
+[Fusion] dl_fallback:YES(0.87)<-YOU
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) [trim: 0.10s, 3 tried] | Câu: Sorry Sorry Drink Yes
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes .
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Sorry (d1=0.42, Do khop=17) vs Me (d2=0.50) | Margin: 17.1%
+[Fusion] dl_fallback:SORRY(0.75)<-YOU
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.92, Do khop: 0)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry .
+[Fusion] dl_fallback:YOU(0.45)<-DRINK
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You .
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.56, Do khop: 0)
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 77) [trim: 0.13s, 2 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water
+[Fusion] dl_fallback:BAD(0.91)<-YOU
+[SentenceBuilder] Nhận từ: 'Bad' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad
+[Fusion] handshape_veto:DRINK(3/3)<-ME
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink
+[Fusion] dl_fallback:BAD(0.79)<-YOU
+[SentenceBuilder] Nhận từ: 'Bad' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad
+[Fusion] dl_fallback:YES(0.77)<-YOU
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) [trim: 0.23s, 6 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes
+[Fusion] handshape_veto:DRINK(2/3)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink
+[Fusion] dl_fallback:PLEASE(0.86)<-YOU
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please .
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.20s, 3 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Drink
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Drink .
+[SentenceBuilder] Swipe-Left: Đã xóa 'Drink' | Còn lại: ['Sorry', 'Sorry', 'Drink', 'Yes', 'Sorry', 'You', 'Water', 'Bad', 'Drink', 'Bad', 'Yes', 'Drink', 'Please']
+[Fusion] dl_fallback:WATER(0.51)<-PLEASE
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 0) [trim: 0.20s, 3 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.61, Do khop: 0)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Please (d1=0.42, Do khop=18) vs Me (d2=0.64) | Margin: 51.0%
+[Fusion] dl_fallback:THANK_YOU(0.79)<-PLEASE
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 0) [trim: 0.20s, 5 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You
+[Fusion] dl_fallback:HUNGRY(0.55)<-SORRY
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 0) [trim: 0.13s, 4 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.66, Do khop: 0)
+[Fusion] handshape_veto:DRINK(2/3)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.33s, 6 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink .
+[SentenceBuilder] Swipe-Left: Đã xóa 'Drink' | Còn lại: ['Sorry', 'Sorry', 'Drink', 'Yes', 'Sorry', 'You', 'Water', 'Bad', 'Drink', 'Bad', 'Yes', 'Drink', 'Please', 'Water', 'Thank You', 'Hungry']
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry .
+[Fusion] handshape_veto:DRINK(2/3)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink
+[Fusion] dl_fallback:SORRY(0.40)<-WATER
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry
+[Fusion] dl_fallback:SORRY(0.54)<-BAD
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.20s, 4 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry
+[Fusion] handshape_veto:DRINK(2/3)<-EAT
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.20s, 3 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink
+[Fusion] handshape_veto:DRINK(3/3)<-YES
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.43s, 6 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink
+[Fusion] dl_fallback:SORRY(0.90)<-ME
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.20s, 3 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry
+[Fusion] dl_fallback:YOU(0.59)<-HUNGRY
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.27s, 6 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 49) [trim: 0.13s, 3 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry
+[SentenceBuilder] Nhận từ: 'Me' (Do khop: 40) [trim: 0.20s, 4 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me
+[Fusion] dl_fallback:SORRY(0.90)<-ME
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 22) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.48, Do khop: 0)
+[Fusion] handshape_veto:DRINK(3/3)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.17s, 6 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink
+[Fusion] dl_fallback:YES(0.82)<-DRINK
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes
+[Fusion] dl_fallback:SORRY(0.77)<-YOU
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry
+[Fusion] dl_fallback:SORRY(0.73)<-ME
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry
+[Fusion] dl_fallback:HUNGRY(0.78)<-ME
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry Hungry
+[Fusion] dl_fallback:SORRY(0.64)<-YOU
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.20s, 5 tried] | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry Hungry Sorry
+[Fusion] dl_fallback:HUNGRY(0.44)<-YOU
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry Hungry Sorry Hungry
+[Fusion] dl_fallback:SORRY(0.91)<-ME
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry Hungry Sorry Hungry Sorry
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Sorry (d1=0.42, Do khop=18) vs Me (d2=0.48) | Margin: 12.8%
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.52, Do khop: 0)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Drink Yes Sorry You Water Bad Drink Bad Yes Drink Please Water Thank You Hungry Drink Sorry Sorry Drink Drink Sorry You Hungry Me Sorry Drink Yes Sorry Sorry Hungry Sorry Hungry Sorry .
+[Camera] Cả phiên: 9427 khung / 314.2s | vòng lặp 30.0 khung/s | khung mới thật 30.0/s | trùng y hệt 0.0% | gần-trùng 22.1%
+[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.
+[SessionLogger] ✓ Đã lưu và đóng file log phiên: 'scratch\negeval\20261003_163235_neg_0.csv'
+
+[LeadTrim] Thống kê cắt dẫn đầu phiên (36 từ đã chốt):
+  - Trung vị tau: 0.133s | p90 tau: 0.267s | Tỉ lệ tau > 0: 55.6%
+-> Đã đóng chương trình nhận diện ghép câu an toàn.

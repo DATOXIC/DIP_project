@@ -1,0 +1,64 @@
+{
+  "num_positive_queries": 175,
+  "top1": 1.0,
+  "top1_count": 175,
+  "clean_accept": 0.88,
+  "clean_accept_count": 154,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.11428571428571428,
+  "uncertain_count": 20,
+  "reject_rate": 0.005714285714285714,
+  "reject_count": 1,
+  "margin_mean": 0.5340730841575959,
+  "margin_worst_word": {
+    "word": "HUNGRY",
+    "margin": 0.39388779217137526
+  },
+  "num_negative_samples": 287,
+  "false_accept_neg_count": 1,
+  "false_accept_neg": 0.003484320557491289,
+  "latency_ms": 4.738677056609337,
+  "false_accept_neg_display": "1/287",
+  "weights_mean": [
+    0.6794439747041838,
+    1.1050131202400404,
+    0.41013980725011506,
+    0.698846228715697,
+    0.7065568690899644,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "weights_std": [
+    0.07983442561993842,
+    0.2141371228602919,
+    0.027699076259560206,
+    0.1686350689812501,
+    0.0729452491108529,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "weights_cv": [
+    0.11749964452506488,
+    0.193786950348597,
+    0.06753569320115474,
+    0.24130497069413087,
+    0.10324044984739153,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "unstable": false,
+  "selected_lambdas": [
+    0.3,
+    3.0,
+    0.0,
+    3.0,
+    0.0,
+    0.3,
+    0.3
+  ],
+  "mode": "L5"
+}

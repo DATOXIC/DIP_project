@@ -1,0 +1,35 @@
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] bank=C:\Users\TOPHUO~1\AppData\Local\Temp\claude\C--DIP-DIP-project\7e077625-6739-41a5-b49d-32ee37f404e0\scratchpad\snap08\bank_frozen.json sha256=e47fdb55543d9d64 | từ=13 mẫu=106 | stroke thô=171 (ánh xạ bank: 96) | k=1.75, unc_k=2.35
+[chain_replay] chế độ=FAST {"enabled": true, "chain_window_sec": 1.2, "pause_sec": 0.12, "grace_window_sec": 0.05, "min_stroke_sec": 0.1, "early_commit": true, "early_min_quality": 70, "early_min_margin": 0.25, "multi_phase_words": null, "tail_pad_sec": 0.45} | từ nhiều pha: ['EAT', 'WATER']
+  g=0.00: câu đúng 8.0% | mất 298 thừa 3 | trễ trung vị -0.017s | khung đầu mất TB 1.37 | chốt sớm 31
+  g=0.10: câu đúng 10.0% | mất 282 thừa 4 | trễ trung vị 0.000s | khung đầu mất TB 1.35 | chốt sớm 44
+  g=0.15: câu đúng 20.0% | mất 239 thừa 4 | trễ trung vị 0.067s | khung đầu mất TB 1.33 | chốt sớm 82
+  g=0.20: câu đúng 56.7% | mất 96 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.32 | chốt sớm 201
+  g=0.25: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 222
+  g=0.30: câu đúng 68.0% | mất 51 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 224
+  g=0.35: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 224
+  g=0.40: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 222
+  g=0.50: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 224
+  g=0.60: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 221
+  g=0.80: câu đúng 68.7% | mất 50 thừa 5 | trễ trung vị 0.133s | khung đầu mất TB 1.25 | chốt sớm 222
+
+### FAST | 30 Hz | hold | 150 câu/mức
+
+| g (s) | câu đúng | mất | thừa | trễ chốt trung vị (s) | p90 (s) | khung đầu mất TB | %từ mất >=1 khung | từ không có stroke | từ bị gộp | quẹt | chốt sớm | chốt sớm ra từ lạ | nhiều pha: chốt sớm khi chưa xong | từ bị cắt giữa chừng (mọi kiểu chốt) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.00 | 8.0% (12/150) | 298 | 3 | -0.017 | 0.167 | 1.37 | 7.4% | 116 | 190 | 0 | 31 | 1 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.10 | 10.0% (15/150) | 282 | 4 | 0.000 | 0.163 | 1.35 | 7.3% | 112 | 179 | 0 | 44 | 2 | 0/56 (0.0%) | 91/374 (24.3%) |
+| 0.15 | 20.0% (30/150) | 239 | 4 | 0.067 | 0.133 | 1.33 | 7.9% | 108 | 148 | 0 | 82 | 2 | 0/56 (0.0%) | 92/374 (24.6%) |
+| 0.20 | 56.7% (85/150) | 96 | 5 | 0.133 | 0.133 | 1.32 | 7.4% | 75 | 46 | 0 | 201 | 3 | 0/56 (0.0%) | 93/374 (24.9%) |
+| 0.25 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 222 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.30 | 68.0% (102/150) | 51 | 5 | 0.133 | 0.193 | 1.25 | 6.6% | 70 | 0 | 0 | 224 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.35 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 224 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.40 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 222 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.50 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 224 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.60 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 221 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+| 0.80 | 68.7% (103/150) | 50 | 5 | 0.133 | 0.200 | 1.25 | 6.6% | 70 | 0 | 0 | 222 | 3 | 0/56 (0.0%) | 90/374 (24.1%) |
+
+Thời gian chờ tối thiểu (g nhỏ nhất cho >= 90% câu đúng, mọi g lớn hơn cũng đạt): KHÔNG đạt ở mức nào
+
+[chain_replay] đã ghi C:\DIP\DIP_project\results\chain_replay_20260920_spec08 (37 s)

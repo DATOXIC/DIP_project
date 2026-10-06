@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 175,
+  "top1": 0.9942857142857143,
+  "top1_count": 174,
+  "clean_accept": 0.8628571428571429,
+  "clean_accept_count": 151,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.12571428571428572,
+  "uncertain_count": 22,
+  "reject_rate": 0.011428571428571429,
+  "reject_count": 2,
+  "margin_mean": 0.5270079086072564,
+  "margin_worst_word": {
+    "word": "HELLO",
+    "margin": 0.3630843076255782
+  },
+  "num_negative_samples": 41,
+  "false_accept_neg_count": 1,
+  "false_accept_neg": 0.024390243902439025,
+  "latency_ms": 4.912871296306144,
+  "metadata": {
+    "run_id": "run_C11_r_20260921_134925",
+    "timestamp": "20260921_134925",
+    "config_path": "configs/C11_r.json",
+    "config_name": "C11_r",
+    "config_hash": "76a3fa7838a8dae9aeb2b700bda0cbb3f1ede7481994d465d029144bd3b08e6a",
+    "bank_path": "results/SPEC11_20260921_133822/bank_frozen.json",
+    "bank_hash": "34705041cf481a994a5a5583683223288ac2d9f5b18a649a4d257591b5bf5a1c",
+    "neg_path": "results/SPEC11_20260921_133822/neg_frozen.json",
+    "neg_hash": "2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42",
+    "split_mode": "loso",
+    "num_folds": 7,
+    "git_commit": "5e4d4ba4813815895e57134294ac15c7e31bb643",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

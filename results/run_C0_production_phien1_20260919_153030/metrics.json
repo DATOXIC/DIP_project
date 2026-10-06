@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 40,
+  "top1": 0.5,
+  "top1_count": 20,
+  "clean_accept": 0.475,
+  "clean_accept_count": 19,
+  "wrong_accept": 0.4,
+  "wrong_accept_count": 16,
+  "uncertain_rate": 0.125,
+  "uncertain_count": 5,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": -0.3547846942671449,
+  "margin_worst_word": {
+    "word": "HELLO",
+    "margin": -1.6821982760087026
+  },
+  "num_negative_samples": 0,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 190.20949750265572,
+  "metadata": {
+    "run_id": "run_C0_production_phien1_20260919_153030",
+    "timestamp": "20260919_153030",
+    "config_path": "configs/C0_production.json",
+    "config_name": "C0_production",
+    "config_hash": "3181da36ba22637bb334a6b1df6ea173fe1554d2c468416ca8854d9fc845effc",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "e74d83694a050eda3bff417a3a2da908ee936f27de5e386e5407696d16518b2c",
+    "neg_path": "none",
+    "neg_hash": "none",
+    "split_mode": "block_half",
+    "num_folds": 2,
+    "git_commit": "3d450be20fc5cf14f959169d27395fbbfd01c23c",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

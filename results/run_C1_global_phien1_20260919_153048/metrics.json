@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 40,
+  "top1": 0.525,
+  "top1_count": 21,
+  "clean_accept": 0.5,
+  "clean_accept_count": 20,
+  "wrong_accept": 0.4,
+  "wrong_accept_count": 16,
+  "uncertain_rate": 0.1,
+  "uncertain_count": 4,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": -0.05457432174690271,
+  "margin_worst_word": {
+    "word": "YOU",
+    "margin": -0.9123580545768031
+  },
+  "num_negative_samples": 0,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 176.38300500257174,
+  "metadata": {
+    "run_id": "run_C1_global_phien1_20260919_153048",
+    "timestamp": "20260919_153048",
+    "config_path": "configs/C1_global.json",
+    "config_name": "C1_global",
+    "config_hash": "8276c2e113c75235c60c6a9a359072babd65666aed4b7ac7c9486efc89fc27d1",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "e74d83694a050eda3bff417a3a2da908ee936f27de5e386e5407696d16518b2c",
+    "neg_path": "none",
+    "neg_hash": "none",
+    "split_mode": "block_half",
+    "num_folds": 2,
+    "git_commit": "3d450be20fc5cf14f959169d27395fbbfd01c23c",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

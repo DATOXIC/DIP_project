@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 74,
+  "top1": 0.972972972972973,
+  "top1_count": 72,
+  "clean_accept": 0.9459459459459459,
+  "clean_accept_count": 70,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.05405405405405406,
+  "uncertain_count": 4,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": 0.5716075077442271,
+  "margin_worst_word": {
+    "word": "WATER",
+    "margin": 0.38379403197718054
+  },
+  "num_negative_samples": 8,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 442.6547182921218,
+  "metadata": {
+    "run_id": "run_C_current_20260919_205440",
+    "timestamp": "20260919_205440",
+    "config_path": "configs/C_current.json",
+    "config_name": "C_current",
+    "config_hash": "d076e87904f7dae63a57640dd1165d96274d8b1632faa6ccaffe578d5b7e23ab",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "ccb562cd96d0070350fec2f8ab45487c7c16efb9060ef12f4c10a79f5439b318",
+    "neg_path": "negative_strokes.json",
+    "neg_hash": "1e9d8a34de62e863315a4c0f8e5e31f0a89829bb54a25435e9059701eef23ba8",
+    "split_mode": "loso",
+    "num_folds": 2,
+    "git_commit": "3d450be20fc5cf14f959169d27395fbbfd01c23c",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

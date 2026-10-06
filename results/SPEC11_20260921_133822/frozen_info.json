@@ -1,0 +1,31 @@
+{
+  "sha_bank": "34705041cf481a994a5a5583683223288ac2d9f5b18a649a4d257591b5bf5a1c",
+  "sha_neg": "2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42",
+  "total_bank_samples": 175,
+  "total_neg_samples": 41,
+  "words": {
+    "HELLO": 14,
+    "BYE": 13,
+    "ME": 16,
+    "YOU": 17,
+    "THANK_YOU": 16,
+    "EAT": 11,
+    "DRINK": 14,
+    "WATER": 11,
+    "SORRY": 10,
+    "PLEASE": 10,
+    "YES": 15,
+    "BAD": 13,
+    "HUNGRY": 15
+  },
+  "sessions": {
+    "phien2": 70,
+    "20260920_094150": 9,
+    "20260921_112100": 18,
+    "phien1": 36,
+    "20260920_100121": 27,
+    "20260920_093435": 11,
+    "quan_coffee": 4
+  },
+  "git_commit": "5e4d4ba4813815895e57134294ac15c7e31bb643"
+}

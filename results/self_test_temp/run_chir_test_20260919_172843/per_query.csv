@@ -1,0 +1,3 @@
+query_id,true_word,pred_word,status,d_correct,d_wrong,margin,latency_ms,top1,clean_accept,wrong_accept
+chir_s1,HELLO,HELLO,ACCEPTED,0.0000,999.0000,1.0000,3.86,1,1,0
+chir_s2,HELLO,HELLO,ACCEPTED,0.0000,999.0000,1.0000,3.85,1,1,0

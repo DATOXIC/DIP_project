@@ -1,0 +1,7 @@
+tests/test_tier1_features.py::test_tier1_spotting_sub_minimum_stroke_discard
+tests/test_tier2_boundaries.py::test_tier2_duration_gate_super_maximum_discard
+tests/test_tier3_interactions.py::test_tier3_duplicate_word_debouncing
+tests/test_tier4_scenarios.py::test_tier4_multi_word_sentence_generation
+tests/test_tier4_scenarios.py::test_tier4_edit_and_correct_workflow
+tests/test_tier4_scenarios.py::test_tier4_mixed_noise_and_valid_gestures
+tests/test_tier4_scenarios.py::test_tier4_sustained_execution_stress_test

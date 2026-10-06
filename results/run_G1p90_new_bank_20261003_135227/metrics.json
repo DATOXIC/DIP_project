@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 211,
+  "top1": 0.995260663507109,
+  "top1_count": 210,
+  "clean_accept": 0.8530805687203792,
+  "clean_accept_count": 180,
+  "wrong_accept": 0.004739336492890996,
+  "wrong_accept_count": 1,
+  "uncertain_rate": 0.11374407582938388,
+  "uncertain_count": 24,
+  "reject_rate": 0.02843601895734597,
+  "reject_count": 6,
+  "margin_mean": 0.4892394694265479,
+  "margin_worst_word": {
+    "word": "WATER",
+    "margin": 0.2920433465392251
+  },
+  "num_negative_samples": 41,
+  "false_accept_neg_count": 11,
+  "false_accept_neg": 0.2682926829268293,
+  "latency_ms": 22.34615515899061,
+  "metadata": {
+    "run_id": "run_G1p90_new_bank_20261003_135227",
+    "timestamp": "20261003_135227",
+    "config_path": "configs/G1p90.json",
+    "config_name": "G1p90",
+    "config_hash": "7135d017cabefb6b92ac810ddbfd92c8e5949b8f981a0ccba440bc1f70c91826",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "c9a9235e62792030f1cd3efc506b323cd5ab713e2b5cbaf63f25a003f1b8ed1f",
+    "neg_path": "negative_strokes.json",
+    "neg_hash": "2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42",
+    "split_mode": "loso",
+    "num_folds": 18,
+    "git_commit": "69cf67be10ee95fdec0df999039aaf41ae32e9bb",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

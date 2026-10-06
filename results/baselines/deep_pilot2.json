@@ -1,0 +1,82 @@
+{
+ "dtw_config": "configs/G1p90.json",
+ "seeds": 5,
+ "n_citizen": 86,
+ "by_target": {
+  "Dat": {
+   "n_test": 185,
+   "dtw_others": {
+    "n": 185,
+    "top1": 0.6,
+    "acc_ok": 0.2648648648648649,
+    "acc_wrong": 0.0
+   },
+   "dtw_others_citizen": {
+    "n": 185,
+    "top1": 0.6432432432432432,
+    "acc_ok": 0.518918918918919,
+    "acc_wrong": 0.06486486486486487
+   },
+   "gru_others": {
+    "n": 185,
+    "top1_mean": 0.6140540540540541,
+    "top1_sd": 0.010592388076900234
+   },
+   "gru_others_citizen": {
+    "n": 185,
+    "top1_mean": 0.8605405405405404,
+    "top1_sd": 0.013415863401071173
+   }
+  },
+  "Mai": {
+   "n_test": 100,
+   "dtw_others": {
+    "n": 100,
+    "top1": 0.83,
+    "acc_ok": 0.7,
+    "acc_wrong": 0.02
+   },
+   "dtw_others_citizen": {
+    "n": 100,
+    "top1": 0.84,
+    "acc_ok": 0.77,
+    "acc_wrong": 0.09
+   },
+   "gru_others": {
+    "n": 100,
+    "top1_mean": 0.818,
+    "top1_sd": 0.045343136195018535
+   },
+   "gru_others_citizen": {
+    "n": 100,
+    "top1_mean": 0.85,
+    "top1_sd": 0.02966479394838265
+   }
+  },
+  "Phi": {
+   "n_test": 35,
+   "dtw_others": {
+    "n": 35,
+    "top1": 0.9714285714285714,
+    "acc_ok": 0.4857142857142857,
+    "acc_wrong": 0.0
+   },
+   "dtw_others_citizen": {
+    "n": 35,
+    "top1": 0.9714285714285714,
+    "acc_ok": 0.6857142857142857,
+    "acc_wrong": 0.0
+   },
+   "gru_others": {
+    "n": 35,
+    "top1_mean": 0.9771428571428572,
+    "top1_sd": 0.02138089935299396
+   },
+   "gru_others_citizen": {
+    "n": 35,
+    "top1_mean": 0.9485714285714286,
+    "top1_sd": 0.027994168488950616
+   }
+  }
+ }
+}

@@ -1,0 +1,122 @@
+{
+ "Dang": {
+  "0": {
+   "dtw_only_mean": 0.7380952380952381,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 0.9523809523809523,
+   "hybrid_sd": 0.0,
+   "n_queries_approx": 42
+  },
+  "1": {
+   "dtw_only_mean": 0.90625,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 0.98125,
+   "hybrid_sd": 0.015309310892394862,
+   "n_queries_approx": 32
+  },
+  "2": {
+   "dtw_only_mean": 0.9545454545454547,
+   "dtw_only_sd": 0.0406557814090871,
+   "hybrid_mean": 0.990909090909091,
+   "hybrid_sd": 0.018181818181818167,
+   "n_queries_approx": 22
+  },
+  "3": {
+   "dtw_only_mean": 1.0,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 1.0,
+   "hybrid_sd": 0.0,
+   "n_queries_approx": 12
+  }
+ },
+ "Mai": {
+  "0": {
+   "dtw_only_mean": 0.8699999999999999,
+   "dtw_only_sd": 1.1102230246251565e-16,
+   "hybrid_mean": 0.95,
+   "hybrid_sd": 0.0,
+   "n_queries_approx": 100
+  },
+  "1": {
+   "dtw_only_mean": 0.9844444444444445,
+   "dtw_only_sd": 0.005443310539518209,
+   "hybrid_mean": 0.9800000000000001,
+   "hybrid_sd": 0.012957670877434,
+   "n_queries_approx": 90
+  },
+  "2": {
+   "dtw_only_mean": 0.9875,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 0.9675,
+   "hybrid_sd": 0.006123724356957924,
+   "n_queries_approx": 80
+  },
+  "3": {
+   "dtw_only_mean": 0.9885714285714287,
+   "dtw_only_sd": 0.005714285714285694,
+   "hybrid_mean": 0.9657142857142856,
+   "hybrid_sd": 0.011428571428571429,
+   "n_queries_approx": 70
+  }
+ },
+ "Phi": {
+  "0": {
+   "dtw_only_mean": 1.0,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 1.0,
+   "hybrid_sd": 0.0,
+   "n_queries_approx": 48
+  },
+  "1": {
+   "dtw_only_mean": 0.9894736842105264,
+   "dtw_only_sd": 0.012892051277806186,
+   "hybrid_mean": 0.9894736842105264,
+   "hybrid_sd": 0.012892051277806186,
+   "n_queries_approx": 38
+  },
+  "2": {
+   "dtw_only_mean": 0.9928571428571429,
+   "dtw_only_sd": 0.01428571428571428,
+   "hybrid_mean": 0.9928571428571429,
+   "hybrid_sd": 0.01428571428571428,
+   "n_queries_approx": 28
+  },
+  "3": {
+   "dtw_only_mean": 1.0,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 1.0,
+   "hybrid_sd": 0.0,
+   "n_queries_approx": 18
+  }
+ },
+ "Vuong": {
+  "0": {
+   "dtw_only_mean": 0.8461538461538461,
+   "dtw_only_sd": 0.0,
+   "hybrid_mean": 0.9615384615384615,
+   "hybrid_sd": 1.1102230246251565e-16,
+   "n_queries_approx": 52
+  },
+  "1": {
+   "dtw_only_mean": 0.8930232558139535,
+   "dtw_only_sd": 0.03154572085174544,
+   "hybrid_mean": 0.9488372093023255,
+   "hybrid_sd": 0.027120706487652566,
+   "n_queries_approx": 43
+  },
+  "2": {
+   "dtw_only_mean": 0.9411764705882353,
+   "dtw_only_sd": 0.032218973970892135,
+   "hybrid_mean": 0.9705882352941175,
+   "hybrid_sd": 0.032218973970892135,
+   "n_queries_approx": 34
+  },
+  "3": {
+   "dtw_only_mean": 0.944,
+   "dtw_only_sd": 0.04799999999999999,
+   "hybrid_mean": 0.984,
+   "hybrid_sd": 0.03199999999999998,
+   "n_queries_approx": 25
+  }
+ }
+}

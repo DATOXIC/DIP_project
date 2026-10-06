@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 73,
+  "top1": 1.0,
+  "top1_count": 73,
+  "clean_accept": 0.6164383561643836,
+  "clean_accept_count": 45,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.3561643835616438,
+  "uncertain_count": 26,
+  "reject_rate": 0.0273972602739726,
+  "reject_count": 2,
+  "margin_mean": 0.5647806329569953,
+  "margin_worst_word": {
+    "word": "WATER",
+    "margin": 0.38756895088083343
+  },
+  "num_negative_samples": 8,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 4.445441974827123,
+  "metadata": {
+    "run_id": "run_K1p50_snap_20260920_093653",
+    "timestamp": "20260920_093653",
+    "config_path": "configs/K1p50.json",
+    "config_name": "K1p50",
+    "config_hash": "e97c321ba3e0977a48c5696c80d06cbba448ccc2a1ae49327f368df420da376d",
+    "bank_path": "results/threshold_sweep_20260920_093635/bank_snapshot.json",
+    "bank_hash": "a6b26bd7f7dbd83b3938e1f02e763659b2e70369a3905d4a55c6591784b26181",
+    "neg_path": "results/threshold_sweep_20260920_093635/negative_snapshot.json",
+    "neg_hash": "1e9d8a34de62e863315a4c0f8e5e31f0a89829bb54a25435e9059701eef23ba8",
+    "split_mode": "loso",
+    "num_folds": 2,
+    "git_commit": "7e56f10da1cd720b3bea7f1114e987f1ffc6ef79",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

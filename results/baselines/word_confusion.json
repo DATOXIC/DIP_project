@@ -1,0 +1,63 @@
+{
+ "mode": "loso",
+ "n_by_word": {
+  "YOU": 27,
+  "THANK_YOU": 16,
+  "HELLO": 14,
+  "BYE": 13,
+  "BAD": 13,
+  "ME": 16,
+  "EAT": 11,
+  "DRINK": 17,
+  "WATER": 12,
+  "PLEASE": 10,
+  "YES": 15,
+  "HUNGRY": 15,
+  "SORRY": 10
+ },
+ "confusion": {
+  "BAD": {
+   "BAD": 13
+  },
+  "BYE": {
+   "BYE": 13
+  },
+  "DRINK": {
+   "DRINK": 17
+  },
+  "EAT": {
+   "EAT": 11
+  },
+  "HELLO": {
+   "HELLO": 14
+  },
+  "HUNGRY": {
+   "HUNGRY": 15
+  },
+  "ME": {
+   "ME": 16
+  },
+  "PLEASE": {
+   "PLEASE": 10
+  },
+  "SORRY": {
+   "SORRY": 10
+  },
+  "THANK_YOU": {
+   "THANK_YOU": 16
+  },
+  "WATER": {
+   "WATER": 11,
+   "DRINK": 1
+  },
+  "YES": {
+   "YES": 15
+  },
+  "YOU": {
+   "YOU": 27
+  }
+ },
+ "wrong_pairs": {
+  "DRINK|WATER": 1
+ }
+}

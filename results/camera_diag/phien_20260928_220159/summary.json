@@ -1,0 +1,158 @@
+{
+  "label": "phien",
+  "timestamp": "2026-09-28 22:02:31",
+  "source": "camera",
+  "video": null,
+  "cam_index": 1,
+  "note_source": "",
+  "aborted": false,
+  "frame_size": [
+    640,
+    480
+  ],
+  "seconds_requested": 25.0,
+  "seconds_measured": 24.976012,
+  "phase_boundaries_sec": [
+    5.0,
+    17.0,
+    25.0
+  ],
+  "camera_props": {
+    "CAP_PROP_FPS": 30.0,
+    "CAP_PROP_FOURCC": 22.0,
+    "CAP_PROP_AUTO_EXPOSURE": 0.0,
+    "CAP_PROP_EXPOSURE": -6.0,
+    "CAP_PROP_GAIN": -1.0,
+    "CAP_PROP_BRIGHTNESS": 128.0,
+    "CAP_PROP_FRAME_WIDTH": 640.0,
+    "CAP_PROP_FRAME_HEIGHT": 480.0,
+    "fourcc_text": "\u0016\u0000\u0000\u0000",
+    "backend": "MSMF"
+  },
+  "n_frames": 747,
+  "loop": {
+    "fps": 29.86865957623659,
+    "mean_inv_dt_fps": 32.488941709009836,
+    "gap_ms": {
+      "n": 746,
+      "mean": 33.479910187667556,
+      "p50": 31.531,
+      "p95": 52.168,
+      "max": 82.677
+    },
+    "note": "fps = số lần read/giây; mean_inv_dt_fps = trung bình 1/dt (cái mà chỉ số FPS trên màn hình của predict hội tụ tới)"
+  },
+  "new_frames": {
+    "fps": 12.35367940822053,
+    "dup_rate": 0.643908969210174,
+    "n_dup": 481,
+    "n_new": 266,
+    "gap_ms": {
+      "n": 265,
+      "mean": 80.94754339622641,
+      "p50": 65.06199999999751,
+      "p95": 91.23640000000071,
+      "max": 2445.5840000000003
+    }
+  },
+  "pos_msec": {
+    "meaningful": true,
+    "span_sec": 24.966666000001133,
+    "clock_span_sec": 24.976012,
+    "drift_ratio": 0.9996258009485715,
+    "fps_by_posmsec": 29.879840584240046,
+    "new_gap_ms": {
+      "n": 265,
+      "mean": 80.88050188679459,
+      "p50": 66.66699999943376,
+      "p95": 100.0,
+      "max": 2433.3339999988675
+    }
+  },
+  "luma": {
+    "mean": 124.96217536813921,
+    "p5": 67.49203480589023,
+    "p95": 199.28159303882197,
+    "note": "mean = trung bình luma toàn khung qua các khung; p5/p95 = trung bình phân vị 5/95 của từng khung"
+  },
+  "hand": {
+    "rate_total": 0.5247657295850067,
+    "rate_hold": 0.815068493150685,
+    "rate_wave": 0.6786703601108033,
+    "rate_off": 0.11666666666666667,
+    "wave_loss_events": 43,
+    "wave_loss_run_len": {
+      "mean": 2.697674418604651,
+      "max": 5,
+      "runs": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        1,
+        4,
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        4,
+        4,
+        2,
+        2,
+        2,
+        2,
+        4,
+        4,
+        2,
+        2,
+        4,
+        4,
+        3,
+        5,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        2,
+        2,
+        2,
+        2
+      ]
+    }
+  },
+  "v_norm": {
+    "wave": {
+      "n": 202,
+      "median": 0.048255000000000006,
+      "p95": 0.180027,
+      "max": 0.29189
+    },
+    "hold_over_start": {
+      "threshold": 0.08,
+      "n_valid": 118,
+      "count": 7,
+      "rate": 0.059322033898305086,
+      "p95": 0.08066399999999999
+    },
+    "note": "v_norm = |Δcổ tay đã làm mượt (1€ filter như production)| / palm_len giữa hai khung LIÊN TIẾP đều có tay"
+  },
+  "detect_ms": {
+    "n": 747,
+    "mean": 19.076289156626505,
+    "p50": 22.19,
+    "p95": 26.14449999999999,
+    "max": 34.931
+  },
+  "out_dir": "results\\camera_diag\\phien_20260928_220159"
+}

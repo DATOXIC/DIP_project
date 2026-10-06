@@ -1,0 +1,20 @@
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 106 template: lật 0, bỏ qua 106 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+[chain_replay] nguyên liệu câu: 142/171 stroke nhận đúng khi đứng một mình (dùng --all-strokes để lấy hết)
+[chain_replay] bank=C:\Users\TOPHUO~1\AppData\Local\Temp\claude\C--DIP-DIP-project\7e077625-6739-41a5-b49d-32ee37f404e0\scratchpad\snap08\bank_frozen.json sha256=e47fdb55543d9d64 | từ=13 mẫu=106 | stroke thô=142 (ánh xạ bank: 96) | k=1.75, unc_k=2.35
+[chain_replay] chế độ=FAST {"enabled": true, "chain_window_sec": 1.2, "pause_sec": 0.12, "grace_window_sec": 0.05, "min_stroke_sec": 0.1, "early_commit": true, "early_min_quality": 70, "early_min_margin": 0.25, "multi_phase_words": null, "tail_pad_sec": null} | từ nhiều pha: ['EAT', 'WATER']
+  g=0.20: câu đúng 22.0% | mất 191 thừa 0 | trễ trung vị 0.133s | khung đầu mất TB 1.27 | chốt sớm 111
+  g=0.40: câu đúng 33.3% | mất 130 thừa 0 | trễ trung vị 0.133s | khung đầu mất TB 1.17 | chốt sớm 124
+  g=0.60: câu đúng 32.0% | mất 134 thừa 0 | trễ trung vị 0.133s | khung đầu mất TB 1.17 | chốt sớm 125
+
+### FAST | 30 Hz | hold | 150 câu/mức
+
+| g (s) | câu đúng | mất | thừa | trễ chốt trung vị (s) | p90 (s) | khung đầu mất TB | %từ mất >=1 khung | từ không có stroke | từ bị gộp | quẹt | chốt sớm | chốt sớm ra từ lạ | nhiều pha: chốt sớm khi chưa xong | từ bị cắt giữa chừng (mọi kiểu chốt) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.20 | 22.0% (33/150) | 191 | 0 | 0.133 | 0.200 | 1.27 | 8.4% | 77 | 76 | 0 | 111 | 0 | 0/56 (0.0%) | 95/374 (25.4%) |
+| 0.40 | 33.3% (50/150) | 130 | 0 | 0.133 | 0.200 | 1.17 | 6.6% | 69 | 0 | 0 | 124 | 0 | 0/56 (0.0%) | 89/374 (23.8%) |
+| 0.60 | 32.0% (48/150) | 134 | 0 | 0.133 | 0.200 | 1.17 | 6.6% | 69 | 0 | 0 | 125 | 0 | 0/56 (0.0%) | 89/374 (23.8%) |
+
+Thời gian chờ tối thiểu (g nhỏ nhất cho >= 90% câu đúng, mọi g lớn hơn cũng đạt): KHÔNG đạt ở mức nào
+
+[chain_replay] đã ghi C:\DIP\DIP_project\results\chain_replay_20260920_spec08 (9 s)

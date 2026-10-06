@@ -1,0 +1,130 @@
+{
+  "label": "toi",
+  "timestamp": "2026-09-20 09:02:06",
+  "source": "camera",
+  "video": null,
+  "cam_index": 1,
+  "note_source": "",
+  "aborted": false,
+  "frame_size": [
+    640,
+    480
+  ],
+  "seconds_requested": 25.0,
+  "seconds_measured": 24.976953,
+  "phase_boundaries_sec": [
+    5.0,
+    17.0,
+    25.0
+  ],
+  "camera_props": {
+    "CAP_PROP_FPS": 30.0,
+    "CAP_PROP_FOURCC": 22.0,
+    "CAP_PROP_AUTO_EXPOSURE": 0.0,
+    "CAP_PROP_EXPOSURE": -6.0,
+    "CAP_PROP_GAIN": -1.0,
+    "CAP_PROP_BRIGHTNESS": 128.0,
+    "CAP_PROP_FRAME_WIDTH": 640.0,
+    "CAP_PROP_FRAME_HEIGHT": 480.0,
+    "fourcc_text": "\u0016\u0000\u0000\u0000",
+    "backend": "MSMF"
+  },
+  "n_frames": 666,
+  "loop": {
+    "fps": 26.624544635208306,
+    "mean_inv_dt_fps": 29.373204592445042,
+    "gap_ms": {
+      "n": 665,
+      "mean": 37.55932481203008,
+      "p50": 34.067,
+      "p95": 67.0282,
+      "max": 111.084
+    },
+    "note": "fps = số lần read/giây; mean_inv_dt_fps = trung bình 1/dt (cái mà chỉ số FPS trên màn hình của predict hội tụ tới)"
+  },
+  "new_frames": {
+    "fps": 5.134266483592629,
+    "dup_rate": 0.8063063063063063,
+    "n_dup": 537,
+    "n_new": 129,
+    "gap_ms": {
+      "n": 128,
+      "mean": 194.76978906250002,
+      "p50": 100.30500000000053,
+      "p95": 210.88125000000042,
+      "max": 5746.0790000000015
+    }
+  },
+  "pos_msec": {
+    "meaningful": true,
+    "span_sec": 24.866666999995708,
+    "clock_span_sec": 24.976953,
+    "drift_ratio": 0.995584489428943,
+    "fps_by_posmsec": 26.742626987368865,
+    "new_gap_ms": {
+      "n": 128,
+      "mean": 193.75,
+      "p50": 100.0,
+      "p95": 200.0,
+      "max": 5766.6669999957085
+    }
+  },
+  "luma": {
+    "mean": 74.98540240240241,
+    "p5": 26.02252252252252,
+    "p95": 144.9563063063063,
+    "note": "mean = trung bình luma toàn khung qua các khung; p5/p95 = trung bình phân vị 5/95 của từng khung"
+  },
+  "hand": {
+    "rate_total": 0.5105105105105106,
+    "rate_hold": 0.25547445255474455,
+    "rate_wave": 0.8976897689768977,
+    "rate_off": 0.14601769911504425,
+    "wave_loss_events": 9,
+    "wave_loss_run_len": {
+      "mean": 3.4444444444444446,
+      "max": 6,
+      "runs": [
+        6,
+        2,
+        5,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "v_norm": {
+    "wave": {
+      "n": 263,
+      "median": 0.00222,
+      "p95": 0.09545099999999997,
+      "max": 0.17666
+    },
+    "hold_over_start": {
+      "threshold": 0.08,
+      "n_valid": 34,
+      "count": 1,
+      "rate": 0.029411764705882353,
+      "p95": 0.050698999999999994
+    },
+    "note": "v_norm = |Δcổ tay đã làm mượt (1€ filter như production)| / palm_len giữa hai khung LIÊN TIẾP đều có tay"
+  },
+  "detect_ms": {
+    "n": 666,
+    "mean": 22.177039039039038,
+    "p50": 23.4895,
+    "p95": 31.6015,
+    "max": 38.925
+  },
+  "out_dir": "results\\camera_diag\\toi_20260920_090135",
+  "record": {
+    "path": "results\\camera_diag\\toi_20260920_090135\\raw.avi",
+    "fps": 26.624544635208306,
+    "n_frames": 666,
+    "note": "Mọi khung camera trả về (kể cả khung trùng), nén JPEG q98 rồi ghi MJPG; fps = số lần đọc/giây đo được."
+  }
+}

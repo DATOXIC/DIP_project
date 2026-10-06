@@ -1,0 +1,176 @@
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1791023026.443594   27076 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.484445   17808 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.487460    5972 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.532322   29984 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.548015   17808 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.549948    5972 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791023026.593192   17048 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+W0000 00:00:1791023026.897790   25648 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+===========================================================================
+  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)
+===========================================================================
+✓ Đang ghi log phiên cử chỉ vào: 'scratch/spnew/new.csv'
+✓ Đã nạp ParallelHandDetector (3 workers, max_in_flight=4).
+✓ Đã nạp Two-Stream CNN (vsl_dataset/models/best_model_v2.pth): ['A', 'B', 'C', 'L', 'V']
+ℹ️ [DTW] Chế độ trọng số: Toàn cục (Global Weights từ CONFIG).
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 189 template: lật 0, bỏ qua 189 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+ℹ️ [DL] Tầng dự phòng BẬT: best_gesture_model_none.pth (ngưỡng=0.38).
+✓ Đã nạp bộ dò mặt (mốc cơ thể) có cache.
+✓ Đã nạp 13 từ vựng cử chỉ mẫu từ webcam_templates.json (Golden Triad Engine).
+⚡ [FastChain] BẬT: pause=0.12s, grace=0.05s, cửa sổ nối=0.0s, lockout=0.0s, lead_trim=BẬT, chốt sớm=True (chất lượng>=70, margin>=0.25), kéo đuôi=0.45s. Từ nhiều pha (không chốt sớm): ['EAT', 'WATER', 'YES', 'YOU']
+[OneShot] BẬT khóa một lần (spotter=dl, NGHIÊM: chặn stroke ngoài khoảng đang ký): mỗi khoảng ký chỉ chốt tối đa 1 từ.
+[Video] KẾT NỐI THÀNH CÔNG video file: continuous_data/Dat/20261003_103331/session.mp4
+[Video] Dùng ĐỒNG HỒ VIDEO (30.0 fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0=1791023026.934
+
+[HƯỚNG DẪN SỬ DỤNG]
+  - Múa cử chỉ rõ ràng, nghỉ nhẹ ~0.2s giữa hai từ (chế độ KÝ NHANH mặc định). Nếu tắt bằng [j], phải dừng ~0.55s.
+  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).
+  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).
+  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.
+  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát
+  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp
+  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)
+
+  Giao diện: demo | Ngôn ngữ: en
+
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 90) | Câu: Hungry
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.66, Do khop: 0)
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 87) [trim: 0.07s, 6 tried] | Câu: Hungry Yes
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes .
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 58) | Câu: Hungry Yes Sorry
+[Fusion] dl_fallback:SORRY(0.48)<-YOU
+[SentenceBuilder] Nhận từ: 'Me' (Do khop: 73) [trim: 0.20s, 3 tried] | Câu: Hungry Yes Sorry Me
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me .
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 100) | Câu: Hungry Yes Sorry Me Eat
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.50, Do khop: 0)
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 85) | Câu: Hungry Yes Sorry Me Eat Yes
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes .
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 92) | Câu: Hungry Yes Sorry Me Eat Yes Please
+[Fusion] handshape_veto:DRINK(3/3)<-YES
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 0) [trim: 0.20s, 5 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 100) [trim: 0.10s, 2 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink .
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 100) [trim: 0.10s, 6 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please .
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 73) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello .
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 99) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye
+[Fusion] dl_fallback:YOU(0.87)<-DRINK
+[OneShot] Chặn 'You' (dup_in_span): đã có từ được chốt trong khoảng ký này. (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 51) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You .
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye
+[Fusion] dl_fallback:YOU(0.84)<-BAD
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.20s, 3 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.58, Do khop: 0)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You .
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 99) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You
+[Fusion] dl_fallback:HELLO(0.67)<-BYE
+[OneShot] Chặn 'Hello' (dup_in_span): đã có từ được chốt trong khoảng ký này. (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Nhận từ: 'Bye' (Do khop: 100) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye .
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 53) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye You .
+[SentenceBuilder] Nhận từ: 'Yes' (Do khop: 81) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye You Yes
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye You Yes .
+[Fusion] handshape_veto:DRINK(3/3)<-WATER
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Drink (d1=0.43, Do khop=14) vs Water (d2=0.46) | Margin: 6.7%
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.30, Do khop: 0)
+[OneShot] Chặn 'Eat' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:DRINK(0.51)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:EAT(0.66)<-ME
+[OneShot] Chặn 'Eat' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.47)<-ME
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[OneShot] Chặn 'Hungry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YES(0.81)<-YOU
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YES(0.82)<-DRINK
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Yes' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You', 'Bye', 'You']
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:DRINK(0.80)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:DRINK(0.76)<-EAT
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YOU(0.45)<-ME
+[OneShot] Chặn 'You' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Bye You .
+[SentenceBuilder] Swipe-Left: Đã xóa 'You' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You', 'Bye']
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.65, Do khop: 0)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Bye' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You']
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.54, Do khop: 0)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You .
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You .
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 95) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink .
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 92) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello
+[OneShot] Chặn 'Bye' (dup_in_span): đã có từ được chốt trong khoảng ký này. (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:HELLO(0.70)<-BYE
+[SentenceBuilder] Nhận từ: 'Hello' (Do khop: 0) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello .
+[SentenceBuilder] Nhận từ: 'Me' (Do khop: 100) [trim: 0.10s, 2 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me .
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 96) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat .
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.41, Do khop=22) vs Hungry (d2=0.69) | Margin: 68.5%
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.38, Do khop=34) vs Hungry (d2=0.75) | Margin: 99.8%
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.70, Do khop: 0)
+[Fusion] dl_fallback:YOU(0.78)<-DRINK
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.13s, 3 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You
+[Fusion] dl_fallback:YOU(0.92)<-DRINK
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 0) [trim: 0.30s, 5 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 53) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.49, Do khop: 0)
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 51) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You
+[Fusion] dl_fallback:YOU(0.76)<-DRINK
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.50, Do khop: 0)
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 59) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 92) [trim: 0.20s, 4 tried] | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat
+[SentenceBuilder] Nhận từ: 'Eat' (Do khop: 71) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat .
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 67) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry .
+[SentenceBuilder] Nhận từ: 'Me' (Do khop: 75) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me
+[OneShot] Chặn 'Eat' (dup_in_span): đã có từ được chốt trong khoảng ký này. (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:BAD(0.67)<-PLEASE
+[SentenceBuilder] Nhận từ: 'Bad' (Do khop: 0) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad .
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 100) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Eat (d1=0.44, Do khop=13) vs Me (d2=0.59) | Margin: 36.1%
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 99) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry Hungry
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry Hungry .
+[SentenceBuilder] Nhận từ: 'Water' (Do khop: 98) | Câu: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry Hungry Water
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry Hungry Water .
+[SentenceBuilder] Swipe-Left: Đã xóa 'Water' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You', 'Thank You', 'Drink', 'Hello', 'Hello', 'Me', 'Eat', 'You', 'You', 'You', 'You', 'You', 'Eat', 'Eat', 'Sorry', 'Me', 'Bad', 'Hungry', 'Hungry']
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry Yes Sorry Me Eat Yes Please Drink Drink Please Hello Bye You Bye You Thank You Thank You Drink Hello Hello Me Eat You You You You You Eat Eat Sorry Me Bad Hungry Hungry .
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.90, Do khop: 0)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Bad (d1=0.43, Do khop=14) vs Please (d2=0.72) | Margin: 64.6%
+[Fusion] dl_fallback:DRINK(0.77)<-ME
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Hungry' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You', 'Thank You', 'Drink', 'Hello', 'Hello', 'Me', 'Eat', 'You', 'You', 'You', 'You', 'You', 'Eat', 'Eat', 'Sorry', 'Me', 'Bad', 'Hungry']
+[Fusion] dl_fallback:THANK_YOU(0.46)<-HUNGRY
+[OneShot] Chặn 'Thank You' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.49, Do khop: 0)
+[Fusion] dl_fallback:BYE(0.76)<-YOU
+[OneShot] Chặn 'Bye' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Hungry' | Còn lại: ['Hungry', 'Yes', 'Sorry', 'Me', 'Eat', 'Yes', 'Please', 'Drink', 'Drink', 'Please', 'Hello', 'Bye', 'You', 'Bye', 'You', 'Thank You', 'Thank You', 'Drink', 'Hello', 'Hello', 'Me', 'Eat', 'You', 'You', 'You', 'You', 'You', 'Eat', 'Eat', 'Sorry', 'Me', 'Bad']
+[OneShot] Cả phiên: cho phép 38 lần commit, chặn 21 lần trùng trong cùng span (tổng 47 span gần nhất đang giữ).
+[Camera] Cả phiên: 15907 khung / 530.2s | vòng lặp 30.0 khung/s | khung mới thật 30.0/s | trùng y hệt 0.0% | gần-trùng 20.1%
+[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.
+[SessionLogger] ✓ Đã lưu và đóng file log phiên: 'scratch/spnew/new.csv'
+
+[LeadTrim] Thống kê cắt dẫn đầu phiên (38 từ đã chốt):
+  - Trung vị tau: 0.000s | p90 tau: 0.200s | Tỉ lệ tau > 0: 26.3%
+-> Đã đóng chương trình nhận diện ghép câu an toàn.

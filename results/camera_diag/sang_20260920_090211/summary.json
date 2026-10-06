@@ -1,0 +1,133 @@
+{
+  "label": "sang",
+  "timestamp": "2026-09-20 09:02:42",
+  "source": "camera",
+  "video": null,
+  "cam_index": 1,
+  "note_source": "",
+  "aborted": false,
+  "frame_size": [
+    640,
+    480
+  ],
+  "seconds_requested": 25.0,
+  "seconds_measured": 24.960587,
+  "phase_boundaries_sec": [
+    5.0,
+    17.0,
+    25.0
+  ],
+  "camera_props": {
+    "CAP_PROP_FPS": 30.0,
+    "CAP_PROP_FOURCC": 22.0,
+    "CAP_PROP_AUTO_EXPOSURE": 0.0,
+    "CAP_PROP_EXPOSURE": -6.0,
+    "CAP_PROP_GAIN": -1.0,
+    "CAP_PROP_BRIGHTNESS": 128.0,
+    "CAP_PROP_FRAME_WIDTH": 640.0,
+    "CAP_PROP_FRAME_HEIGHT": 480.0,
+    "fourcc_text": "\u0016\u0000\u0000\u0000",
+    "backend": "MSMF"
+  },
+  "n_frames": 692,
+  "loop": {
+    "fps": 27.68364381815219,
+    "mean_inv_dt_fps": 29.617655546252372,
+    "gap_ms": {
+      "n": 691,
+      "mean": 36.122406657018814,
+      "p50": 35.754,
+      "p95": 60.456,
+      "max": 71.807
+    },
+    "note": "fps = số lần read/giây; mean_inv_dt_fps = trung bình 1/dt (cái mà chỉ số FPS trên màn hình của predict hội tụ tới)"
+  },
+  "new_frames": {
+    "fps": 9.17062662771081,
+    "dup_rate": 0.6690751445086706,
+    "n_dup": 463,
+    "n_new": 229,
+    "gap_ms": {
+      "n": 228,
+      "mean": 109.04380263157896,
+      "p50": 66.12850000000009,
+      "p95": 81.95145000000063,
+      "max": 5988.751999999998
+    }
+  },
+  "pos_msec": {
+    "meaningful": true,
+    "span_sec": 24.933333000004293,
+    "clock_span_sec": 24.960587,
+    "drift_ratio": 0.9989081186273501,
+    "fps_by_posmsec": 27.713904113817478,
+    "new_gap_ms": {
+      "n": 228,
+      "mean": 108.91812719300128,
+      "p50": 66.66699999570847,
+      "p95": 154.99980000257418,
+      "max": 5966.6669999957085
+    }
+  },
+  "luma": {
+    "mean": 196.558975433526,
+    "p5": 75.44595375722542,
+    "p95": 251.0,
+    "note": "mean = trung bình luma toàn khung qua các khung; p5/p95 = trung bình phân vị 5/95 của từng khung"
+  },
+  "hand": {
+    "rate_total": 0.5115606936416185,
+    "rate_hold": 0.4782608695652174,
+    "rate_wave": 0.8138801261829653,
+    "rate_off": 0.12658227848101267,
+    "wave_loss_events": 18,
+    "wave_loss_run_len": {
+      "mean": 3.2777777777777777,
+      "max": 7,
+      "runs": [
+        1,
+        2,
+        4,
+        2,
+        1,
+        1,
+        3,
+        5,
+        6,
+        2,
+        4,
+        4,
+        3,
+        4,
+        3,
+        7,
+        5,
+        2
+      ]
+    }
+  },
+  "v_norm": {
+    "wave": {
+      "n": 240,
+      "median": 0.059705,
+      "p95": 0.31373449999999975,
+      "max": 0.65343
+    },
+    "hold_over_start": {
+      "threshold": 0.08,
+      "n_valid": 65,
+      "count": 6,
+      "rate": 0.09230769230769231,
+      "p95": 0.11717
+    },
+    "note": "v_norm = |Δcổ tay đã làm mượt (1€ filter như production)| / palm_len giữa hai khung LIÊN TIẾP đều có tay"
+  },
+  "detect_ms": {
+    "n": 692,
+    "mean": 24.846420520231213,
+    "p50": 26.841,
+    "p95": 33.1962,
+    "max": 53.32
+  },
+  "out_dir": "results\\camera_diag\\sang_20260920_090211"
+}

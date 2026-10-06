@@ -1,0 +1,63 @@
+{
+ "meta": {
+  "bank": "scratch/bank_snapshot_clean.json",
+  "bank_sha256": "10fb1ae8db7e40fbd20953deb420d2fae9cbd15073c69ac0b9951e0d28a4fc31",
+  "n_words": 203,
+  "n_mapped": 141,
+  "fps": 30.0,
+  "seed": 20260920,
+  "n": 5,
+  "mode": "realistic",
+  "fast_cfg": null,
+  "multi_phase": [
+   "EAT",
+   "WATER",
+   "YES"
+  ],
+  "threshold_k": 1.75,
+  "uncertainty_k": 2.35,
+  "exclude_prefix": [],
+  "hold_dest": 0.0,
+  "dup_frac": 0.0
+ },
+ "aggregates": [
+  {
+   "sentences": 5,
+   "words": 11,
+   "acc": 0.0,
+   "word_acc": 0.0,
+   "lost": 11,
+   "extra": 0,
+   "lat_median": NaN,
+   "lat_p90": NaN,
+   "lat_p95": NaN,
+   "head_mean": 0.0,
+   "head_frac": 0.0,
+   "no_stroke": 7,
+   "merged": 4,
+   "swipes": 0,
+   "early_n": 0,
+   "early_wrong": 0,
+   "mp_words": 4,
+   "mp_bad": 0,
+   "mp_rate": 0.0,
+   "prem_any": 0,
+   "prem_any_rate": 0.0,
+   "leadin_contam": 2,
+   "leadin_contam_rate": 0.18181818181818182,
+   "head_loss_words": 0,
+   "head_loss_rate": 0.0,
+   "start_err_median": -0.3333333333333144,
+   "start_err_p90": 0.0,
+   "hitch_mean_ms": 0.0,
+   "hitch_p95_ms": 0.0,
+   "hitch_max_ms": 0.0,
+   "outcomes": {
+    "REJECTED": 2
+   },
+   "g": 0.2
+  }
+ ],
+ "min_wait_sec": null,
+ "elapsed_sec": 4.310072422027588
+}

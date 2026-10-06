@@ -1,0 +1,135 @@
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1791022284.886641   28012 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022284.896169   25300 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022284.897053   12696 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022284.971111   28012 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022284.972415   12696 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022284.974245   25300 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791022285.024312   27800 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+W0000 00:00:1791022285.386244   25212 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+===========================================================================
+  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)
+===========================================================================
+✓ Đang ghi log phiên cử chỉ vào: 'scratch\negeval\20261003_164439_neg_2.csv'
+✓ Đã nạp ParallelHandDetector (3 workers, max_in_flight=4).
+✓ Đã nạp Two-Stream CNN (vsl_dataset/models/best_model_v2.pth): ['A', 'B', 'C', 'L', 'V']
+ℹ️ [DTW] Chế độ trọng số: Toàn cục (Global Weights từ CONFIG).
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 189 template: lật 0, bỏ qua 189 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+ℹ️ [DL] Tầng dự phòng BẬT: best_gesture_model_none.pth (ngưỡng=0.38).
+✓ Đã nạp bộ dò mặt (mốc cơ thể) có cache.
+✓ Đã nạp 13 từ vựng cử chỉ mẫu từ webcam_templates.json (Golden Triad Engine).
+⚡ [FastChain] BẬT: pause=0.12s, grace=0.05s, cửa sổ nối=0.0s, lockout=0.0s, lead_trim=BẬT, chốt sớm=True (chất lượng>=70, margin>=0.25), kéo đuôi=0.45s. Từ nhiều pha (không chốt sớm): ['EAT', 'WATER', 'YES', 'YOU']
+[OneShot] BẬT khóa một lần (spotter=dl, NGHIÊM: chặn stroke ngoài khoảng đang ký): mỗi khoảng ký chỉ chốt tối đa 1 từ.
+[Video] KẾT NỐI THÀNH CÔNG video file: continuous_data/Dat/20261003_164439_neg\session.mp4
+[Video] Dùng ĐỒNG HỒ VIDEO (30.0 fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0=1791022285.427
+
+[HƯỚNG DẪN SỬ DỤNG]
+  - Múa cử chỉ rõ ràng, nghỉ nhẹ ~0.2s giữa hai từ (chế độ KÝ NHANH mặc định). Nếu tắt bằng [j], phải dừng ~0.55s.
+  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).
+  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).
+  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.
+  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát
+  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp
+  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)
+
+  Giao diện: demo | Ngôn ngữ: en
+
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.80, Do khop: 0)
+[Fusion] handshape_veto:DRINK(2/3)<-WATER
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:BAD(0.59)<-DRINK
+[OneShot] Chặn 'Bad' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.87)<-EAT
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) | Câu: Sorry
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry .
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.82, Do khop: 0)
+[Fusion] dl_fallback:SORRY(0.53)<-YOU
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.71)<-ME
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.82)<-EAT
+[SentenceBuilder] Nhận từ: 'Sorry' (Do khop: 0) [trim: 0.10s, 3 tried] | Câu: Sorry Sorry
+[Fusion] dl_fallback:PLEASE(0.71)<-EAT
+[OneShot] Chặn 'Please' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.93)<-EAT
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:SORRY(0.83)<-EAT
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.15)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry .
+[Fusion] dl_fallback:SORRY(0.59)<-EAT
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.03, Do khop: 0)
+[Fusion] handshape_veto:DRINK(3/3)<-YES
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:DRINK(0.53)<-ME
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:HELLO(0.40)<-YOU
+[OneShot] Chặn 'Hello' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YES(0.80)<-DRINK
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YES(0.85)<-YOU
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YES(0.86)<-DRINK
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Yes (d1=0.43, Do khop=14) vs You (d2=0.49) | Margin: 13.7%
+[Fusion] dl_fallback:YES(0.87)<-DRINK
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:HUNGRY(0.61)<-YOU
+[OneShot] Chặn 'Hungry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Sorry (d1=0.40, Do khop=25) vs Eat (d2=0.55) | Margin: 35.9%
+[Fusion] dl_fallback:SORRY(0.81)<-PLEASE
+[OneShot] Chặn 'Sorry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Sorry (d1=0.41, Do khop=23) vs Eat (d2=0.42) | Margin: 2.2%
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.54, Do khop: 0)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Drink (d1=0.47, Do khop=1) vs You (d2=0.48) | Margin: 2.0%
+[Fusion] dl_fallback:YES(0.64)<-YOU
+[OneShot] Chặn 'Yes' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.68, Do khop: 0)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Eat (d1=0.44, Do khop=11) vs Me (d2=0.57) | Margin: 28.7%
+[Fusion] handshape_veto:DRINK(3/3)<-SORRY
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:YOU(0.71)<-EAT
+[OneShot] Chặn 'You' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:ME(0.53)<-EAT
+[OneShot] Chặn 'Me' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:THANK_YOU(0.55)<-YOU
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 0) [trim: 0.13s, 4 tried] | Câu: Sorry Sorry Thank You
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.76, Do khop: 0)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.50, Do khop: 0)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.55, Do khop: 0)
+[Fusion] dl_fallback:HUNGRY(0.82)<-YOU
+[OneShot] Chặn 'Hungry' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:ME(0.92)<-EAT
+[OneShot] Chặn 'Me' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.79, Do khop: 0)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Thank You .
+[SentenceBuilder] Nhận từ: 'You' (Do khop: 41) [trim: 0.20s, 4 tried] | Câu: Sorry Sorry Thank You You
+[Fusion] handshape_veto:DRINK(3/3)<-YOU
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:DRINK(0.74)<-WATER
+[SentenceBuilder] Nhận từ: 'Drink' (Do khop: 7) | Câu: Sorry Sorry Thank You You Drink
+[Fusion] handshape_veto:DRINK(3/3)<-EAT
+[OneShot] Chặn 'Drink' (dup_in_span): đã có từ được chốt trong khoảng ký này. (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:WATER(0.83)<-EAT
+[OneShot] Chặn 'Water' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[Fusion] dl_fallback:ME(0.78)<-SORRY
+[OneShot] Chặn 'Me' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Sorry Sorry Thank You You Drink .
+[Fusion] dl_fallback:BAD(0.55)<-HUNGRY
+[OneShot] Chặn 'Bad' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.74, Do khop: 0)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.49, Do khop: 0)
+[OneShot] Cả phiên: cho phép 5 lần commit, chặn 31 lần trùng trong cùng span (tổng 10 span gần nhất đang giữ).
+[Camera] Cả phiên: 10271 khung / 342.7s | vòng lặp 30.0 khung/s | khung mới thật 29.8/s | trùng y hệt 0.5% | gần-trùng 44.7%
+[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.
+[SessionLogger] ✓ Đã lưu và đóng file log phiên: 'scratch\negeval\20261003_164439_neg_2.csv'
+
+[LeadTrim] Thống kê cắt dẫn đầu phiên (5 từ đã chốt):
+  - Trung vị tau: 0.100s | p90 tau: 0.174s | Tỉ lệ tau > 0: 60.0%
+-> Đã đóng chương trình nhận diện ghép câu an toàn.

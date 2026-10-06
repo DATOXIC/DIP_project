@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 40,
+  "top1": 0.95,
+  "top1_count": 38,
+  "clean_accept": 0.925,
+  "clean_accept_count": 37,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.075,
+  "uncertain_count": 3,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": 0.5364291149630643,
+  "margin_worst_word": {
+    "word": "YOU",
+    "margin": 0.007585082162133959
+  },
+  "num_negative_samples": 7,
+  "false_accept_neg_count": 7,
+  "false_accept_neg": 1.0,
+  "latency_ms": 87.92782766605787,
+  "metadata": {
+    "run_id": "run_C1_global_phien1_v04A1_20260919_173028",
+    "timestamp": "20260919_173028",
+    "config_path": "configs/C1_global.json",
+    "config_name": "C1_global",
+    "config_hash": "8276c2e113c75235c60c6a9a359072babd65666aed4b7ac7c9486efc89fc27d1",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "652115dd106d9697c95f3673ad8592d4094c2b83247a12cac9206f5f1f724da6",
+    "neg_path": "negative_strokes.json",
+    "neg_hash": "37146fc2189478a029543abb7bd7feb802e9972cf373514c1454db8523256591",
+    "split_mode": "block_half",
+    "num_folds": 2,
+    "git_commit": "3d450be20fc5cf14f959169d27395fbbfd01c23c",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

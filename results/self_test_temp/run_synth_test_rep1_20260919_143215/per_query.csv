@@ -1,0 +1,5 @@
+query_id,true_word,pred_word,status,d_correct,d_wrong,margin,latency_ms,top1,clean_accept,wrong_accept
+alpha_s1_1,SIGN_ALPHA,SIGN_ALPHA,ACCEPTED,0.0000,60.8000,1.0000,12.36,1,1,0
+beta_s1_1,SIGN_BETA,SIGN_BETA,ACCEPTED,0.0000,60.8000,1.0000,12.04,1,1,0
+alpha_s2_1,SIGN_ALPHA,SIGN_ALPHA,ACCEPTED,0.0000,60.8000,1.0000,12.75,1,1,0
+beta_s2_1,SIGN_BETA,SIGN_BETA,ACCEPTED,0.0000,60.8000,1.0000,12.45,1,1,0

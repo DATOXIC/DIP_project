@@ -1,0 +1,6 @@
+SHA-256 bank_frozen.json: 71f785eb73010026ffd3eda5481443d1a3dd2c3a1ef36fbd94851c6a217bd66d
+SHA-256 neg_frozen.json: 2ef7669f803d681467e65c1d28f2f840b2dcf4567058fbb32e9688bd2db3fc42
+Số mẫu theo từ: {'HELLO': 14, 'BYE': 13, 'ME': 13, 'YOU': 17, 'THANK_YOU': 16, 'EAT': 11, 'DRINK': 14, 'WATER': 11, 'SORRY': 10, 'PLEASE': 10, 'YES': 15, 'BAD': 13, 'HUNGRY': 12}
+Số mẫu theo phiên: {'phien2': 70, '20260920_094150': 9, '20260921_112100': 12, 'phien1': 36, '20260920_100121': 27, '20260920_093435': 11, 'quan_coffee': 4}
+Số mẫu âm: 3
+Commit git hiện tại: ee2015f7b77167d8b432e5ed744e86109e54303d

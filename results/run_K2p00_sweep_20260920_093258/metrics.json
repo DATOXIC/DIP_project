@@ -1,0 +1,38 @@
+{
+  "num_positive_queries": 74,
+  "top1": 1.0,
+  "top1_count": 74,
+  "clean_accept": 0.8918918918918919,
+  "clean_accept_count": 66,
+  "wrong_accept": 0.0,
+  "wrong_accept_count": 0,
+  "uncertain_rate": 0.10810810810810811,
+  "uncertain_count": 8,
+  "reject_rate": 0.0,
+  "reject_count": 0,
+  "margin_mean": 0.5667787320254423,
+  "margin_worst_word": {
+    "word": "WATER",
+    "margin": 0.38756895088083343
+  },
+  "num_negative_samples": 8,
+  "false_accept_neg_count": 0,
+  "false_accept_neg": 0.0,
+  "latency_ms": 4.600434147372342,
+  "metadata": {
+    "run_id": "run_K2p00_sweep_20260920_093258",
+    "timestamp": "20260920_093258",
+    "config_path": "configs/K2p00.json",
+    "config_name": "K2p00",
+    "config_hash": "60dc1da9933abcd057e095f486668e2712998c73f3ce7d3d341d033e1be36bf0",
+    "bank_path": "webcam_templates.json",
+    "bank_hash": "0d3563d7829f2a509c69a67bbfa65243d110d7da412e989b8c3f545f187baf79",
+    "neg_path": "negative_strokes.json",
+    "neg_hash": "1e9d8a34de62e863315a4c0f8e5e31f0a89829bb54a25435e9059701eef23ba8",
+    "split_mode": "loso",
+    "num_folds": 2,
+    "git_commit": "7e56f10da1cd720b3bea7f1114e987f1ffc6ef79",
+    "dirty_tree": true,
+    "random_seed": 20260919
+  }
+}

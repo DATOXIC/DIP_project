@@ -1,0 +1,143 @@
+[2026-09-21 16:56:53] Khởi động nested LOSO pipeline. Modes: ['B0'], Lambdas: [0.0, 0.3, 3.0]
+[2026-09-21 16:56:54] ================ BẮT ĐẦU CHẾ ĐỘ: B0 ================
+[2026-09-21 16:56:54] --- Outer Fold [1/7]: LOSO_20260920_093435 (Test: 11 truy vấn) ---
+[2026-09-21 16:56:55] --- Outer Fold [2/7]: LOSO_20260920_094150 (Test: 9 truy vấn) ---
+[2026-09-21 16:56:55] --- Outer Fold [3/7]: LOSO_20260920_100121 (Test: 27 truy vấn) ---
+[2026-09-21 16:56:55] --- Outer Fold [4/7]: LOSO_20260921_112100 (Test: 18 truy vấn) ---
+[2026-09-21 16:56:56] --- Outer Fold [5/7]: LOSO_phien1 (Test: 36 truy vấn) ---
+[2026-09-21 16:56:56] --- Outer Fold [6/7]: LOSO_phien2 (Test: 70 truy vấn) ---
+[2026-09-21 16:56:57] --- Outer Fold [7/7]: LOSO_quan_coffee (Test: 4 truy vấn) ---
+[2026-09-21 16:56:57] Hoàn thành B0 trong 2.87s. Top1=100.00%, CleanAccept=88.57%, WrongAccept=0.00%, MarginMean=+0.5383, FalseAcceptNeg=0.35% (1/287), Unstable=False
+[2026-09-21 16:56:57] [B0 Regression Check] top1=1.0000 (chuẩn 1.0000), clean_accept=0.8857 (chuẩn 0.8857), margin_mean=0.5383 (chuẩn 0.5383)
+[2026-09-21 16:57:43] Khởi động nested LOSO pipeline. Modes: ['B0'], Lambdas: [0.0, 0.3, 3.0]
+[2026-09-21 16:57:44] ================ BẮT ĐẦU CHẾ ĐỘ: B0 ================
+[2026-09-21 16:57:44] --- Outer Fold [1/7]: LOSO_20260920_093435 (Test: 11 truy vấn) ---
+[2026-09-21 16:57:45] --- Outer Fold [2/7]: LOSO_20260920_094150 (Test: 9 truy vấn) ---
+[2026-09-21 16:57:45] --- Outer Fold [3/7]: LOSO_20260920_100121 (Test: 27 truy vấn) ---
+[2026-09-21 16:57:46] --- Outer Fold [4/7]: LOSO_20260921_112100 (Test: 18 truy vấn) ---
+[2026-09-21 16:57:46] --- Outer Fold [5/7]: LOSO_phien1 (Test: 36 truy vấn) ---
+[2026-09-21 16:57:46] --- Outer Fold [6/7]: LOSO_phien2 (Test: 70 truy vấn) ---
+[2026-09-21 16:57:47] --- Outer Fold [7/7]: LOSO_quan_coffee (Test: 4 truy vấn) ---
+[2026-09-21 16:57:47] Hoàn thành B0 trong 2.97s. Top1=100.00%, CleanAccept=88.57%, WrongAccept=0.00%, MarginMean=+0.5383, FalseAcceptNeg=0.35% (1/287), Unstable=False
+[2026-09-21 16:57:47] [B0 Regression Check] top1=1.0000 (chuẩn 1.0000), clean_accept=0.8857 (chuẩn 0.8857), margin_mean=0.5383 (chuẩn 0.5383)
+[2026-09-21 16:57:47] Đánh giá các cổng chấp nhận SPEC 11...
+[2026-09-21 16:57:47] Không phương án nào vượt qua toàn bộ cổng đặt trước. Quyết định: GIỮ TRỌNG SỐ TAY.
+[2026-09-21 16:57:47] Toàn bộ nested LOSO pipeline đã hoàn thành thành công.
+[2026-09-21 16:58:42] Khởi động nested LOSO pipeline. Modes: ['B0', 'L5', 'L8'], Lambdas: [0.0, 0.3, 3.0]
+[2026-09-21 16:58:43] ================ BẮT ĐẦU CHẾ ĐỘ: B0 ================
+[2026-09-21 16:58:43] --- Outer Fold [1/7]: LOSO_20260920_093435 (Test: 11 truy vấn) ---
+[2026-09-21 16:58:43] --- Outer Fold [2/7]: LOSO_20260920_094150 (Test: 9 truy vấn) ---
+[2026-09-21 16:58:44] --- Outer Fold [3/7]: LOSO_20260920_100121 (Test: 27 truy vấn) ---
+[2026-09-21 16:58:44] --- Outer Fold [4/7]: LOSO_20260921_112100 (Test: 18 truy vấn) ---
+[2026-09-21 16:58:45] --- Outer Fold [5/7]: LOSO_phien1 (Test: 36 truy vấn) ---
+[2026-09-21 16:58:45] --- Outer Fold [6/7]: LOSO_phien2 (Test: 70 truy vấn) ---
+[2026-09-21 16:58:46] --- Outer Fold [7/7]: LOSO_quan_coffee (Test: 4 truy vấn) ---
+[2026-09-21 16:58:46] Hoàn thành B0 trong 3.31s. Top1=100.00%, CleanAccept=88.57%, WrongAccept=0.00%, MarginMean=+0.5383, FalseAcceptNeg=0.35% (1/287), Unstable=False
+[2026-09-21 16:58:46] [B0 Regression Check] top1=1.0000 (chuẩn 1.0000), clean_accept=0.8857 (chuẩn 0.8857), margin_mean=0.5383 (chuẩn 0.5383)
+[2026-09-21 16:58:46] ================ BẮT ĐẦU CHẾ ĐỘ: L5 ================
+[2026-09-21 16:58:46] --- Outer Fold [1/7]: LOSO_20260920_093435 (Test: 11 truy vấn) ---
+[2026-09-21 16:58:46]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:00:04]     lambda= 0.0 -> Inner mean margin: +0.5014 (took 55.72s)
+[2026-09-21 17:00:48]     lambda= 0.3 -> Inner mean margin: +0.5319 (took 43.81s)
+[2026-09-21 17:01:32]     lambda= 3.0 -> Inner mean margin: +0.5301 (took 44.03s)
+[2026-09-21 17:01:32]   Fold LOSO_20260920_093435: Chọn lambda = 0.3 (margin nội = +0.5319)
+[2026-09-21 17:01:44]   Huấn luyện fold ngoài xong trong 12.94s, w=[0.674, 1.029, 0.4126, 0.7829, 0.7015, 0.0, 0.0, 0.0]
+[2026-09-21 17:01:49] --- Outer Fold [2/7]: LOSO_20260920_094150 (Test: 9 truy vấn) ---
+[2026-09-21 17:01:49]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:03:08]     lambda= 0.0 -> Inner mean margin: +0.5392 (took 56.78s)
+[2026-09-21 17:03:47]     lambda= 0.3 -> Inner mean margin: +0.5467 (took 39.42s)
+[2026-09-21 17:04:23]     lambda= 3.0 -> Inner mean margin: +0.5468 (took 36.24s)
+[2026-09-21 17:04:23]   Fold LOSO_20260920_094150: Chọn lambda = 3.0 (margin nội = +0.5468)
+[2026-09-21 17:04:39]   Huấn luyện fold ngoài xong trong 16.00s, w=[0.6105, 1.0095, 0.4016, 0.8006, 0.7778, 0.0, 0.0, 0.0]
+[2026-09-21 17:04:44] --- Outer Fold [3/7]: LOSO_20260920_100121 (Test: 27 truy vấn) ---
+[2026-09-21 17:04:44]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:05:40]     lambda= 0.0 -> Inner mean margin: +0.5214 (took 40.20s)
+[2026-09-21 17:06:08]     lambda= 0.3 -> Inner mean margin: +0.5145 (took 28.76s)
+[2026-09-21 17:06:33]     lambda= 3.0 -> Inner mean margin: +0.5122 (took 24.81s)
+[2026-09-21 17:06:33]   Fold LOSO_20260920_100121: Chọn lambda = 0.0 (margin nội = +0.5214)
+[2026-09-21 17:06:46]   Huấn luyện fold ngoài xong trong 12.89s, w=[0.8519, 1.0151, 0.4585, 0.5636, 0.711, 0.0, 0.0, 0.0]
+[2026-09-21 17:06:51] --- Outer Fold [4/7]: LOSO_20260921_112100 (Test: 18 truy vấn) ---
+[2026-09-21 17:06:51]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:07:53]     lambda= 0.0 -> Inner mean margin: +0.4846 (took 42.22s)
+[2026-09-21 17:08:16]     lambda= 0.3 -> Inner mean margin: +0.5201 (took 23.53s)
+[2026-09-21 17:08:45]     lambda= 3.0 -> Inner mean margin: +0.5219 (took 28.14s)
+[2026-09-21 17:08:45]   Fold LOSO_20260921_112100: Chọn lambda = 3.0 (margin nội = +0.5219)
+[2026-09-21 17:09:01]   Huấn luyện fold ngoài xong trong 16.41s, w=[0.5901, 1.0095, 0.4022, 0.8004, 0.7978, 0.0, 0.0, 0.0]
+[2026-09-21 17:09:06] --- Outer Fold [5/7]: LOSO_phien1 (Test: 36 truy vấn) ---
+[2026-09-21 17:09:06]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:09:52]     lambda= 0.0 -> Inner mean margin: +0.5300 (took 29.08s)
+[2026-09-21 17:10:13]     lambda= 0.3 -> Inner mean margin: +0.5190 (took 20.78s)
+[2026-09-21 17:10:34]     lambda= 3.0 -> Inner mean margin: +0.5153 (took 21.12s)
+[2026-09-21 17:10:34]   Fold LOSO_phien1: Chọn lambda = 0.0 (margin nội = +0.5300)
+[2026-09-21 17:10:51]   Huấn luyện fold ngoài xong trong 17.64s, w=[0.7136, 1.6291, 0.3589, 0.3388, 0.5596, 0.0, 0.0, 0.0]
+[2026-09-21 17:10:55] --- Outer Fold [6/7]: LOSO_phien2 (Test: 70 truy vấn) ---
+[2026-09-21 17:10:55]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:11:27]     lambda= 0.0 -> Inner mean margin: +0.5213 (took 21.78s)
+[2026-09-21 17:11:42]     lambda= 0.3 -> Inner mean margin: +0.5300 (took 14.65s)
+[2026-09-21 17:11:56]     lambda= 3.0 -> Inner mean margin: +0.5283 (took 14.04s)
+[2026-09-21 17:11:56]   Fold LOSO_phien2: Chọn lambda = 0.3 (margin nội = +0.5300)
+[2026-09-21 17:12:02]   Huấn luyện fold ngoài xong trong 5.99s, w=[0.6626, 1.0113, 0.4264, 0.8329, 0.6668, 0.0, 0.0, 0.0]
+[2026-09-21 17:12:04] --- Outer Fold [7/7]: LOSO_quan_coffee (Test: 4 truy vấn) ---
+[2026-09-21 17:12:04]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:12:57]     lambda= 0.0 -> Inner mean margin: +0.5109 (took 34.37s)
+[2026-09-21 17:13:17]     lambda= 0.3 -> Inner mean margin: +0.5424 (took 20.51s)
+[2026-09-21 17:13:36]     lambda= 3.0 -> Inner mean margin: +0.5409 (took 19.05s)
+[2026-09-21 17:13:36]   Fold LOSO_quan_coffee: Chọn lambda = 0.3 (margin nội = +0.5424)
+[2026-09-21 17:13:49]   Huấn luyện fold ngoài xong trong 12.57s, w=[0.6535, 1.0316, 0.4108, 0.7726, 0.7315, 0.0, 0.0, 0.0]
+[2026-09-21 17:13:53] Hoàn thành L5 trong 907.24s. Top1=100.00%, CleanAccept=88.00%, WrongAccept=0.00%, MarginMean=+0.5341, FalseAcceptNeg=0.35% (1/287), Unstable=False
+[2026-09-21 17:13:53] ================ BẮT ĐẦU CHẾ ĐỘ: L8 ================
+[2026-09-21 17:13:53] --- Outer Fold [1/7]: LOSO_20260920_093435 (Test: 11 truy vấn) ---
+[2026-09-21 17:13:53]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:15:05]     lambda= 0.0 -> Inner mean margin: +0.5117 (took 55.75s)
+[2026-09-21 17:15:47]     lambda= 0.3 -> Inner mean margin: +0.5320 (took 42.13s)
+[2026-09-21 17:16:27]     lambda= 3.0 -> Inner mean margin: +0.5277 (took 40.48s)
+[2026-09-21 17:16:27]   Fold LOSO_20260920_093435: Chọn lambda = 0.3 (margin nội = +0.5320)
+[2026-09-21 17:16:39]   Huấn luyện fold ngoài xong trong 11.91s, w=[0.6254, 1.0145, 0.3945, 0.7785, 0.6932, 0.0, 0.0939, 0.0]
+[2026-09-21 17:16:44] --- Outer Fold [2/7]: LOSO_20260920_094150 (Test: 9 truy vấn) ---
+[2026-09-21 17:16:44]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:17:58]     lambda= 0.0 -> Inner mean margin: +0.5262 (took 56.44s)
+[2026-09-21 17:18:38]     lambda= 0.3 -> Inner mean margin: +0.5412 (took 40.60s)
+[2026-09-21 17:19:13]     lambda= 3.0 -> Inner mean margin: +0.5434 (took 35.00s)
+[2026-09-21 17:19:13]   Fold LOSO_20260920_094150: Chọn lambda = 3.0 (margin nội = +0.5434)
+[2026-09-21 17:19:25]   Huấn luyện fold ngoài xong trong 11.51s, w=[0.5906, 0.9918, 0.3897, 0.7958, 0.77, 0.0, 0.0, 0.0621]
+[2026-09-21 17:19:29] --- Outer Fold [3/7]: LOSO_20260920_100121 (Test: 27 truy vấn) ---
+[2026-09-21 17:19:29]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:20:19]     lambda= 0.0 -> Inner mean margin: +0.5153 (took 37.75s)
+[2026-09-21 17:20:49]     lambda= 0.3 -> Inner mean margin: +0.5120 (took 29.49s)
+[2026-09-21 17:21:19]     lambda= 3.0 -> Inner mean margin: +0.5096 (took 30.28s)
+[2026-09-21 17:21:19]   Fold LOSO_20260920_100121: Chọn lambda = 0.0 (margin nội = +0.5153)
+[2026-09-21 17:21:30]   Huấn luyện fold ngoài xong trong 11.25s, w=[0.8182, 0.9701, 0.3654, 0.5678, 0.6685, 0.0, 0.209, 0.001]
+[2026-09-21 17:21:35] --- Outer Fold [4/7]: LOSO_20260921_112100 (Test: 18 truy vấn) ---
+[2026-09-21 17:21:35]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:22:28]     lambda= 0.0 -> Inner mean margin: +0.5113 (took 38.70s)
+[2026-09-21 17:22:58]     lambda= 0.3 -> Inner mean margin: +0.5173 (took 30.24s)
+[2026-09-21 17:23:27]     lambda= 3.0 -> Inner mean margin: +0.5215 (took 28.42s)
+[2026-09-21 17:23:27]   Fold LOSO_20260921_112100: Chọn lambda = 3.0 (margin nội = +0.5215)
+[2026-09-21 17:23:44]   Huấn luyện fold ngoài xong trong 16.97s, w=[0.5817, 0.9996, 0.393, 0.7922, 0.7886, 0.0, 0.0007, 0.0441]
+[2026-09-21 17:23:49] --- Outer Fold [5/7]: LOSO_phien1 (Test: 36 truy vấn) ---
+[2026-09-21 17:23:49]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:24:36]     lambda= 0.0 -> Inner mean margin: +0.4728 (took 30.64s)
+[2026-09-21 17:24:55]     lambda= 0.3 -> Inner mean margin: +0.5128 (took 18.87s)
+[2026-09-21 17:25:16]     lambda= 3.0 -> Inner mean margin: +0.5126 (took 20.48s)
+[2026-09-21 17:25:16]   Fold LOSO_phien1: Chọn lambda = 0.3 (margin nội = +0.5128)
+[2026-09-21 17:25:24]   Huấn luyện fold ngoài xong trong 8.59s, w=[0.653, 1.0619, 0.4037, 0.7485, 0.7308, 0.0022, 0.0, 0.0]
+[2026-09-21 17:25:28] --- Outer Fold [6/7]: LOSO_phien2 (Test: 70 truy vấn) ---
+[2026-09-21 17:25:28]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:25:52]     lambda= 0.0 -> Inner mean margin: +0.5145 (took 17.62s)
+[2026-09-21 17:26:05]     lambda= 0.3 -> Inner mean margin: +0.5302 (took 13.15s)
+[2026-09-21 17:26:16]     lambda= 3.0 -> Inner mean margin: +0.5281 (took 11.22s)
+[2026-09-21 17:26:16]   Fold LOSO_phien2: Chọn lambda = 0.3 (margin nội = +0.5302)
+[2026-09-21 17:26:21]   Huấn luyện fold ngoài xong trong 4.96s, w=[0.6481, 0.9493, 0.3938, 0.804, 0.6479, 0.0, 0.1556, 0.0013]
+[2026-09-21 17:26:24] --- Outer Fold [7/7]: LOSO_quan_coffee (Test: 4 truy vấn) ---
+[2026-09-21 17:26:24]   Inner LOSO chọn siêu tham số lambda trong [0.0, 0.3, 3.0]...
+[2026-09-21 17:27:11]     lambda= 0.0 -> Inner mean margin: +0.5378 (took 32.29s)
+[2026-09-21 17:27:35]     lambda= 0.3 -> Inner mean margin: +0.5422 (took 23.91s)
+[2026-09-21 17:27:58]     lambda= 3.0 -> Inner mean margin: +0.5392 (took 22.27s)
+[2026-09-21 17:27:58]   Fold LOSO_quan_coffee: Chọn lambda = 0.3 (margin nội = +0.5422)
+[2026-09-21 17:28:10]   Huấn luyện fold ngoài xong trong 12.48s, w=[0.6058, 1.0084, 0.3893, 0.7791, 0.7108, 0.0, 0.1001, 0.0066]
+[2026-09-21 17:28:15] Hoàn thành L8 trong 861.75s. Top1=99.43%, CleanAccept=89.71%, WrongAccept=0.00%, MarginMean=+0.5416, FalseAcceptNeg=0.70% (2/287), Unstable=True
+[2026-09-21 17:28:15] Đánh giá các cổng chấp nhận SPEC 11...
+[2026-09-21 17:28:15] Cổng so sánh L5 vs B0: DeltaMargin=-0.0042 (KTC95: [-0.0094, +0.0008] -> False), WrongAcceptOk=True, FalseNegOk=True, WordsOk=True, StabilityOk=True, Latency=4.74ms (-4.8%), Passed=False
+[2026-09-21 17:28:15] Cổng so sánh L8 vs B0: DeltaMargin=+0.0033 (KTC95: [-0.0028, +0.0091] -> False), WrongAcceptOk=True, FalseNegOk=False, WordsOk=True, StabilityOk=False, Latency=4.69ms (-5.8%), Passed=False
+[2026-09-21 17:28:15] Không phương án nào vượt qua toàn bộ cổng đặt trước. Quyết định: GIỮ TRỌNG SỐ TAY.
+[2026-09-21 17:28:15] Toàn bộ nested LOSO pipeline đã hoàn thành thành công.

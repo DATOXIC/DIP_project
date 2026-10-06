@@ -181,23 +181,13 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-.results\
-/results/self_test_temp
-/results
-/raw_strokes
-/archive/backups/raw_strokes.backup_*
+# .results\
+# /results/self_test_temp
+# /results
 /specs
 /specs
 .aider*
 /audio_cache
-/raw_volunteers
-/profiles/V*
-/profiles/C_*
-/profiles/DAT_cond*
-/profiles/notes.csv
-# Ho so nguoi ky theo TEN THAT (2026-09-28): van KHONG dua len GitHub; muon dua len thi bo cac dong nay
-/profiles/*
-/archive/backups/ten_nguoi_ky_*
 
 # Microsoft Office lock files
 ~$*
@@ -205,14 +195,13 @@ cython_debug/
 # CodeGraph index (sinh tu dong)
 /.codegraph/
 /web_uploads
-/continuous_data
-/scratch
-/letter_landmarks
-/letter_landmarks_backup
+# /scratch
+# /letter_landmarks
+# /letter_landmarks_backup
 
 # Bản web: video tải lên tạm thời
 web_uploads/
+# /scratch
+# /letter_landmarks_backup
+# /letter_landmarks
 /continuous_data
-/scratch
-/letter_landmarks_backup
-/letter_landmarks
