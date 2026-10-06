@@ -59,6 +59,18 @@ _ADJ = {"HUNGRY", "BAD"}
 _INTJ = {"HELLO", "BYE", "THANK_YOU", "SORRY", "YES"}
 _POLITE = "PLEASE"
 
+# Thán từ có thể đi kèm người được nhắc tới ngay sau nó ("HELLO YOU" = chào bạn, "SORRY YOU" = xin lỗi bạn): (EN, VI) theo đối tượng.
+_ADDRESSED = {
+    ("HELLO", "YOU"): ("Hello, you.", "Xin chào bạn."),
+    ("HELLO", "ME"): ("Hello, it's me.", "Xin chào, tôi đây."),
+    ("BYE", "YOU"): ("Goodbye, you.", "Tạm biệt bạn."),
+    ("BYE", "ME"): ("Goodbye, from me.", "Tôi chào tạm biệt."),
+    ("THANK_YOU", "YOU"): ("Thank you.", "Cảm ơn bạn."),
+    ("THANK_YOU", "ME"): ("Thank you, from me.", "Tôi cảm ơn."),
+    ("SORRY", "YOU"): ("I apologize to you.", "Xin lỗi bạn."),
+    ("SORRY", "ME"): ("I'm sorry.", "Tôi xin lỗi."),
+}
+
 _SPELL_RE = re.compile(r"^SPELL:([A-Z]+)$")
 
 # Từ dùng trong luật ngữ pháp: (EN, VI), chữ thường.
@@ -185,6 +197,8 @@ def _realize_core(body: List[str], lang: str) -> Optional[str]:
             return f"{_NOUN_TEXT[t][i].capitalize()}."           # G6
         if t in _VERB:
             return f"{_VERB_TEXT[t][i].capitalize()}."           # G4 (câu mệnh lệnh không tân ngữ)
+        if t in _ADJ:
+            return f"{_ADJ_TEXT[t][i].capitalize()}."            # G7: tính từ đứng một mình ("Đói.")
         return None
 
     if n == 2:
@@ -225,9 +239,18 @@ def _realize_clause(tokens: List[str], lang: str) -> Optional[str]:
     if tokens == ["ME", "SORRY"]:                                  # "ME SORRY" là cách ký "I'm sorry"
         return _INTJ_TEXT["SORRY"][i]
 
+    if tokens == ["YOU", "SORRY"]:                                 # G13: "YOU SORRY" = "Bạn xin lỗi."
+        return ("You are sorry.", "Bạn xin lỗi.")[i]
+
     if len(tokens) == 2 and tokens[0] == "HELLO" and _spell_name(tokens[1]) is not None:   # G5
         name = _spell_name(tokens[1])
         return (f"Hello, {name}.", f"Xin chào, {name}.")[i]
+
+    if len(tokens) == 2 and (tokens[0], tokens[1]) in _ADDRESSED:   # G8: thán từ + người được nhắc tới
+        return _ADDRESSED[(tokens[0], tokens[1])][i]
+
+    if tokens == ["YES", _POLITE]:                                 # G9: "Yes, please."
+        return ("Yes, please.", "Vâng, làm ơn.")[i]
 
     if tokens == [_POLITE]:
         return ("Please.", "Làm ơn.")[i]
@@ -241,11 +264,18 @@ def _realize_clause(tokens: List[str], lang: str) -> Optional[str]:
         body = body[:-1]
         polite = True
 
+    if polite and body == ["WATER"]:                               # G10: "Water, please."
+        return ("Water, please.", "Làm ơn cho tôi nước.")[i]
+
     base = _realize_core(body, lang)
     if base is None:
         return None
     if not polite:
         return base
+    if i == 1 and tokens[0] == _POLITE and body[0] == "YOU" and len(body) >= 2 and body[1] in _VERB:
+        return "Mời " + base[0].lower() + base[1:]                 # G11: "PLEASE YOU EAT" = "Mời bạn ăn."
+    if i == 1 and tokens[0] != _POLITE and body[0] in _PRON:
+        return base[:-1] + ", làm ơn."                             # G12: "ME HUNGRY PLEASE" = "Tôi đói, làm ơn."
     if i == 0:
         return base[:-1] + ", please."
     return "Làm ơn " + base[0].lower() + base[1:]
@@ -266,9 +296,21 @@ def _split_clauses(tokens: List[str]) -> List[List[str]]:
                 clauses.append([t, tokens[idx + 1]])
                 idx += 2
                 continue
+            nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
+            after = tokens[idx + 2] if idx + 2 < len(tokens) else None
+            # G8: "HELLO YOU", "SORRY ME"... thành MỘT mệnh đề nếu đại từ KHÔNG mở đầu một vị ngữ ("HELLO YOU HUNGRY" vẫn tách).
+            if (t, nxt) in _ADDRESSED and after not in _ADJ and after not in _VERB and after != "SORRY":
+                clauses.append([t, nxt])
+                idx += 2
+                continue
+            # G9: "YES PLEASE" thành một mệnh đề.
+            if t == "YES" and nxt == _POLITE:
+                clauses.append([t, nxt])
+                idx += 2
+                continue
             clauses.append([t])
-        elif t == "ME" and idx + 1 < len(tokens) and tokens[idx + 1] == "SORRY":
-            # "ME SORRY" gộp thành một mệnh đề (ngoại lệ của quy tắc "thán từ đứng riêng", như HELLO + tên).
+        elif t in _PRON and idx + 1 < len(tokens) and tokens[idx + 1] == "SORRY":
+            # "ME SORRY" / "YOU SORRY" gộp thành một mệnh đề (ngoại lệ của quy tắc "thán từ đứng riêng", như HELLO + tên).
             if cur:
                 clauses.append(cur)
                 cur = []

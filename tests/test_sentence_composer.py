@@ -235,5 +235,40 @@ def test_me_sorry_trong_chuoi_dai_hon():
 
 def test_me_sorry_khong_lam_hong_cac_ca_khac():
     assert compose(["SORRY"], "en").text == "I'm sorry."
-    assert compose(["YOU", "SORRY"], "en").rule == "fallback"     # chưa có luật cho YOU SORRY
+    assert compose(["YOU", "SORRY"], "en").text == "You are sorry."
     assert compose(["ME", "HUNGRY"], "en").text == "I am hungry."
+
+
+# ------------------------------------------- câu có nghĩa mở rộng (G7-G13) ----
+
+def test_than_tu_goi_nguoi_duoc_nhac_toi():
+    assert compose(["HELLO", "YOU"], "vi").text == "Xin chào bạn."
+    assert compose(["HELLO", "ME"], "vi").text == "Xin chào, tôi đây."
+    assert compose(["BYE", "YOU"], "vi").text == "Tạm biệt bạn."
+    assert compose(["THANK_YOU", "YOU"], "en").text == "Thank you."
+    assert compose(["SORRY", "YOU"], "vi").text == "Xin lỗi bạn."
+    assert compose(["THANK_YOU", "YOU", "BYE"], "vi").text == "Cảm ơn bạn. Tạm biệt."
+    assert compose(["SORRY", "ME", "BYE"], "en").text == "I'm sorry. Goodbye."
+
+
+def test_dai_tu_mo_dau_vi_ngu_khong_bi_nuot_vao_than_tu():
+    assert compose(["HELLO", "YOU", "HUNGRY"], "vi").text == "Xin chào. Bạn đói."
+    assert compose(["SORRY", "ME", "BAD"], "en").text == "I'm sorry. I feel bad."
+
+
+def test_yes_please_va_tinh_tu_dung_mot_minh():
+    assert compose(["YES", "PLEASE"], "en").text == "Yes, please."
+    assert compose(["YES", "PLEASE", "THANK_YOU"], "vi").text == "Vâng, làm ơn. Cảm ơn."
+    assert compose(["HUNGRY", "YES"], "vi").text == "Đói. Vâng."
+
+
+def test_lich_su_dat_dung_cho_voi_dai_tu_va_danh_tu():
+    assert compose(["ME", "HUNGRY", "PLEASE"], "vi").text == "Tôi đói, làm ơn."
+    assert compose(["ME", "DRINK", "PLEASE"], "vi").text == "Tôi uống, làm ơn."
+    assert compose(["PLEASE", "YOU", "EAT"], "vi").text == "Mời bạn ăn."
+    assert compose(["WATER", "PLEASE", "THANK_YOU"], "en").text == "Water, please. Thank you."
+
+
+def test_cau_vo_nghia_van_roi_ve_fallback():
+    assert compose(["BAD", "WATER"], "en").rule == "fallback"
+    assert compose(["ME", "HUNGRY", "BAD"], "en").rule == "fallback"
