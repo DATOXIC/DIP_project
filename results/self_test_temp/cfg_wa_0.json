@@ -1,1 +1,0 @@
-{"name": "C_wa_0.0", "weights": {"w_p": 0.6, "w_a": 0.0, "w_m": 0.4, "w_n": 0.8, "w_z": 0.0, "w_b": 0.0, "w_s": 0.0, "w_r": 0.0}, "asllex_mode": "none", "asllex_lambda": 0.0, "asllex_mapping": "legacy", "flip_body_x": true, "matcher": {"margin_threshold": 0.12, "uncertainty_ratio": 1.4}, "thresholds": "from_bank"}

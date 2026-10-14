@@ -203,3 +203,12 @@ web_uploads/
 # /letter_landmarks_backup
 # /letter_landmarks
 /continuous_data
+
+# --- Dọn repo 2026-10-14: file sinh lại được / sao lưu / tạm (vẫn giữ trên đĩa) ---
+/archive/
+/results/self_test_temp/
+/results/aug_eval/bank_*.json
+/results/**/raw.avi
+/vsl_colab_package.zip
+/vsl_dynamic_colab.zip
+/profiles/_gop_*.json
