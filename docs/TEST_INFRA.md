@@ -117,16 +117,16 @@ tests/
 
 ### Run All Test Suites (Complete Test Run)
 ```bash
-python run_e2e_tests.py
+python tools/run_e2e_tests.py
 ```
 
 ### Run Specific Test Tiers
 ```bash
-python run_e2e_tests.py --steps     # Verification Steps 1-5
-python run_e2e_tests.py --tier 1    # Tier 1: Feature Completeness
-python run_e2e_tests.py --tier 2    # Tier 2: Boundary & Corner Cases
-python run_e2e_tests.py --tier 3    # Tier 3: Pairwise Interactions
-python run_e2e_tests.py --tier 4    # Tier 4: Realistic Scenarios & Stress Tests
+python tools/run_e2e_tests.py --steps     # Verification Steps 1-5
+python tools/run_e2e_tests.py --tier 1    # Tier 1: Feature Completeness
+python tools/run_e2e_tests.py --tier 2    # Tier 2: Boundary & Corner Cases
+python tools/run_e2e_tests.py --tier 3    # Tier 3: Pairwise Interactions
+python tools/run_e2e_tests.py --tier 4    # Tier 4: Realistic Scenarios & Stress Tests
 ```
 
 ### Run via Pytest Directly

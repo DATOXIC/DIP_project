@@ -68,7 +68,7 @@ Phần đã có sẵn (SPEC 08): `pause_sec`, `min_stroke_sec`, `ready_stable_se
 - `time_norm` (`KineticPauseSegmenter(time_normalized=True, …)`): quy vận tốc về "mỗi khung ở 30 fps" bằng dt ước lượng từ dấu thời gian; Swipe dò trong cửa sổ theo giây với ngưỡng theo giây (cửa sổ tự nới khi camera chậm để luôn có ≥3 mẫu). `v_scale_min=1.0` = chỉ bù khi fps **cao hơn** 30 (chuẩn hóa hai chiều làm xấu đi ở fps rất thấp — đã đo).
 - `dedupe_frames`: bỏ khung trùng y hệt (dùng `CameraHealthMonitor.is_new`) trước khi dò tay, để dt/vận tốc phản ánh khung mới thật.
 
-`py eval_segmenter_fps.py` (150 stroke × 7 biến thể × 4 chế độ; số liệu = % stroke ra đúng 1 lần chốt / số Swipe nhầm trong 150 stroke từ vựng):
+`py tools/eval_segmenter_fps.py` (150 stroke × 7 biến thể × 4 chế độ; số liệu = % stroke ra đúng 1 lần chốt / số Swipe nhầm trong 150 stroke từ vựng):
 
 | Biến thể | production hiện tại | `time_norm` (v_scale_min=1) |
 |---|---|---|

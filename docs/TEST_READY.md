@@ -57,5 +57,5 @@ Chưa chạy lại toàn bộ bộ test sau bản sửa; con số tổng hợp �
 py -m pip install pytest fastapi httpx
 py -m pytest tests -q                              # toàn bộ (~9 phút)
 py -m pytest tests/test_sentence_composer.py -q    # một nhóm
-py run_e2e_tests.py                                # bản tổng hợp theo tier (engine cũ)
+py tools/run_e2e_tests.py                                # bản tổng hợp theo tier (engine cũ)
 ```

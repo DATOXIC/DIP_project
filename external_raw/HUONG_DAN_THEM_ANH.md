@@ -23,11 +23,11 @@ c:/DIP/DIP_project/external_raw/
 2. **Chạy công cụ chuyển đổi sang Tensor DIP:**
    Mở terminal gõ:
    ```bash
-   py process_external_images.py
+   py legacy/process_external_images.py
    ```
    *Muốn xem trước trực quan từng ảnh được bóc tách viền và CLAHE ra sao:*
    ```bash
-   py process_external_images.py --preview
+   py legacy/process_external_images.py --preview
    ```
 
 3. **Huấn luyện mô hình:**

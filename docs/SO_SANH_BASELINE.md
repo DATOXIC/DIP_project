@@ -322,7 +322,7 @@ Trước khi mở rộng bảng chữ cái theo suy đoán "chữ nào nhìn gi�
 
 # Mô phỏng phiên xác nhận (confirm-enroll) trên Đăng & Vương (2026-09-30)
 
-Công cụ: `eval_confirm.py` (mô phỏng một phiên `session_enroll.py`: mỗi mẫu của "người lạ" được nhận diện bằng bank hiện tại — bắt đầu là bank của Đạt — nếu không ACCEPTED thì hệ thống hỏi xác nhận, người dùng luôn trả lời đúng, mẫu được thêm vào bank cho các lần sau trong CÙNG phiên). Chạy: `py eval_confirm.py --targets Dang Vuong --repeats 3` (~1100s CPU). Kết quả: `results/baselines/confirm_dang_vuong.json`.
+Công cụ: `eval_confirm.py` (mô phỏng một phiên `session_enroll.py`: mỗi mẫu của "người lạ" được nhận diện bằng bank hiện tại — bắt đầu là bank của Đạt — nếu không ACCEPTED thì hệ thống hỏi xác nhận, người dùng luôn trả lời đúng, mẫu được thêm vào bank cho các lần sau trong CÙNG phiên). Chạy: `py legacy/eval_confirm.py --targets Dang Vuong --repeats 3` (~1100s CPU). Kết quả: `results/baselines/confirm_dang_vuong.json`.
 
 ## Kết quả
 

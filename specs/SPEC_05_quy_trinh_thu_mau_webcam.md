@@ -108,7 +108,7 @@ mốc cơ thể cứu được FATHER/MOTHER trên **dữ liệu webcam của b�
 Phiên 1, thu **3 từ đầu**: `HELLO`, `ME`, `EAT`, **4 mẫu mỗi từ**. Rồi chạy:
 
 ```bash
-py audit_sign_quality.py --all
+py tools/audit_sign_quality.py --all
 ```
 
 **Điều kiện đi tiếp:** LOO-CV **100%** (12/12) và không có cảnh báo lệch mẫu hay va chạm.
@@ -124,8 +124,8 @@ Bật `predict_sentence_webcam.py` lên kiểm tra nhanh (1–2 phút):
 ## Bước 2 — Thu các nhóm từ tiếp theo & Audit theo nhóm (~15 phút)
 
 Thu 7 từ còn lại chia làm 2 nhóm, mỗi từ 4 mẫu:
-- **Nhóm 2 (4 từ):** `BYE`, `YOU`, `THANK_YOU`, `DRINK` -> Chạy `py audit_sign_quality.py --all` kiểm tra va chạm liên lớp với nhóm 1.
-- **Nhóm 3 (3 từ):** `WATER`, `SORRY`, `PLEASE` -> Chạy `py audit_sign_quality.py --all` kiểm tra toàn bộ 10 từ (chú ý cặp `SORRY` vs `PLEASE`).
+- **Nhóm 2 (4 từ):** `BYE`, `YOU`, `THANK_YOU`, `DRINK` -> Chạy `py tools/audit_sign_quality.py --all` kiểm tra va chạm liên lớp với nhóm 1.
+- **Nhóm 3 (3 từ):** `WATER`, `SORRY`, `PLEASE` -> Chạy `py tools/audit_sign_quality.py --all` kiểm tra toàn bộ 10 từ (chú ý cặp `SORRY` vs `PLEASE`).
 
 **Cố tình biến thiên nhẹ giữa 4 mẫu** (miễn phí, và làm ngưỡng tổng quát hóa được):
 
@@ -136,7 +136,7 @@ Thu 7 từ còn lại chia làm 2 nhóm, mỗi từ 4 mẫu:
 | 3 | Nhanh hơn ~30% |
 | 4 | Lệch nhẹ vị trí (sang trái/phải ~10cm) |
 
-Sau mỗi từ, chạy `py audit_sign_quality.py --word <TỪ>`. Từ nào LOO < 100% → thu lại từ đó ngay tại chỗ.
+Sau mỗi từ, chạy `py tools/audit_sign_quality.py --word <TỪ>`. Từ nào LOO < 100% → thu lại từ đó ngay tại chỗ.
 
 ---
 
