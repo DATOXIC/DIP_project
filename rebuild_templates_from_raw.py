@@ -308,7 +308,11 @@ def main() -> None:
             n_skip_err += 1
             continue
 
-        sample["source_raw_file"] = os.path.relpath(rf).replace("\\", "/")
+        try:
+            src_path = os.path.relpath(rf)
+        except ValueError:  # Windows: file raw nằm khác ổ đĩa với thư mục hiện tại
+            src_path = os.path.abspath(rf)
+        sample["source_raw_file"] = src_path.replace("\\", "/")
         entry = vocab.setdefault(word_key, {
             "display_name": raw.get("display_name", word_key),
             "threshold": 1.25,
