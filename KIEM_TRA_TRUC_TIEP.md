@@ -48,6 +48,24 @@ py dip.py hieu-chinh --ho-so Thu --tu XIN_CHAO
 ```
 - [ ] Dạy 3 lần xong ký lại: nhận ra, hiện tên từ.
 
+## 3b. Từ mới của hồ sơ Phi và bank demo (10 phút) — thêm 2026-10-14
+Từ mới `LIKE`, `NO`, `WANT`, `MY`, `NAME` nằm trong `profiles/Phi.json` (ký hiệu quy ước 1 tay, không phải ASL chuẩn).
+```bash
+py dip.py nhan-dien --ho-so Phi -- --cam 0 --spotter rule
+```
+- [ ] Ký từng từ mới riêng lẻ, mỗi từ 5 lần: ghi **số lần đúng / 5** và từ nào bị nhầm (ví dụ `MY` với `ME`/`PLEASE`, `NAME` với `YES`).
+- [ ] Ký `ME LIKE YOU`, `ME WANT WATER`, `ME NO LIKE YOU`: câu tự nhiên hiện đúng ("I like you.", "I want water.", "I don't like you.").
+- [ ] Với `--spotter dl` mặc định (bỏ `--spotter rule`): từ mới có bị chặn không? Console có dòng `[OneShot] Chặn ... no_span` hay không (ghi lại).
+- [ ] Bank demo của Đạt: `py dip.py nhan-dien -- --cam 0 --spotter rule --templates demo_templates.json`: 5 từ mới có nhận được bằng tay của Đạt không (ghi số lần đúng / 5).
+
+## 3c. Đánh vần chữ cái (5 phút) — thêm 2026-10-14
+Trong cửa sổ nhận diện bấm `s`. Chữ hỗ trợ: `A B C D E F G H I K L O S W` (khuyến nghị demo: `D B W I L`).
+- [ ] Banner vàng "SPELL: ..." hiện; ký một chữ, giữ yên ~0,7 s: chữ vào ("SPELL: D_").
+- [ ] Chữ đôi (ví dụ `BOB`, `DEED`): phải hạ tay hoặc đổi hình tay giữa hai chữ giống nhau mới chốt thêm.
+- [ ] `Backspace` xóa chữ cuối.
+- [ ] Ký `MY`, `NAME`, bấm `s`, ký 3–4 chữ, bấm `s`, hạ tay > 1,8 s: câu "My name is …" (không phát từ nào trong lúc đánh vần).
+- [ ] Nếu chữ nhận kém hoặc nhầm hàng loạt: bấm `f` lật camera rồi thử lại (dữ liệu chữ cái thu với khung hình lật gương) và ghi kết quả.
+
 ## 4. Bản web của đồng đội (3 phút)
 ```bash
 py dip.py web
@@ -69,5 +87,7 @@ py dip.py hieu-chinh --moi "TenBan" --tu HELLO ME YOU THANK_YOU BYE
 | 1 Cửa sổ | | |
 | 2 Nhận diện (Đạt) | | |
 | 3 Dạy từ mới | | |
+| 3b Từ mới của Phi / bank demo | | |
+| 3c Đánh vần | | |
 | 4 Bản web | | |
 | 5 Người lạ | | |

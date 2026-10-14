@@ -1,7 +1,11 @@
 # Project: ASL Dynamic Gesture Recognition Pipeline
 
 ## Architecture
-> **Cập nhật 2026-10-14.** Mô tả dưới đây đã được đối chiếu lại với code. Hệ thống hiện nhận diện **13 từ** bằng landmark MediaPipe + DTW 24D; CNN ảnh (DIP) **không** chạy trong vòng lặp từ động (`enable_static_shape_cnn = False`). Xem `docs/DE_CUONG_DO_AN_DIP_ASL.md` cho kiến trúc đầy đủ, `docs/TEST_READY.md` cho kiểm thử.
+> **Cập nhật 2026-10-14.** Mô tả dưới đây đã được đối chiếu lại với code. Hệ thống nhận diện từ bằng landmark MediaPipe + DTW 24D; CNN ảnh (DIP) **không** chạy trong vòng lặp từ động (`enable_static_shape_cnn = False`). Xem `docs/DE_CUONG_DO_AN_DIP_ASL.md` cho kiến trúc đầy đủ, `docs/TEST_READY.md` cho kiểm thử.
+>
+> **Từ vựng.** Bank sản xuất `webcam_templates.json` (chủ bank: Đạt, đóng băng) có **13 từ**: HELLO, BYE, ME, YOU, THANK_YOU, EAT, DRINK, WATER, SORRY, PLEASE, YES, BAD, HUNGRY. Năm từ quy ước 1 tay thu thêm trong hồ sơ `profiles/Phi.json`: **LIKE, NO, WANT, MY, NAME** (NICE, MEET đã có tên hiển thị và luật ghép câu nhưng **chưa có mẫu**). Bank demo `demo_templates.json` = bank Đạt (giữ nguyên) + mẫu của Phi cho 5 từ mới = **18 từ**; chạy bằng `py dip.py nhan-dien -- --cam 0 --spotter rule --templates demo_templates.json`. Các từ mới là ký hiệu **quy ước đơn giản hóa từ ASL** (nhiều từ vốn dùng 2 tay), không phải ASL chuẩn.
+>
+> **Đánh vần chữ cái.** Phím `s` trong cửa sổ nhận diện bật chế độ đánh vần (`fingerspell.py`) bằng bộ phân loại landmark `letter_landmark_model.pt`: **14 chữ** `A B C D E F G H I K L O S W` (model còn 2 lớp hình tay `1`, `5`). Tên ký xong vào câu dưới dạng token `SPELL:<TÊN>` và `sentence_composer.py` ghép thành "My name is …".
 
 The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 - **Layer 1 (Perception)**: MediaPipe BlazeHand extracts wrist coordinates $(c_x, c_y)$ and palm length $\text{palm\_len}$ per frame.
@@ -16,7 +20,9 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
   - Static hand shape is handled by landmarks (`handshape_gate.py`, `letter_landmark_model_image.pt`), not by the image CNN. `extract_smart_hand_crop` + `process_lean_dip_tensor` (`improved_dip_pipeline.py`) and `TwoStreamHandCNN` (`train.py`) are used for data collection / letter-training, and are disabled in the live word loop.
   - Legacy description (kept for history): CNN inference interleaved every 2nd frame with `HybridDTWEngine` 4D. No longer the production path.
 - **Layer 4 (Sentence Builder & Audio-Visual Feedback)**:
-  - Accumulates ASL words; silence $> 1.8\text{s}$ or 8 words commits the sentence; `sentence_composer.py` builds a bilingual natural sentence (SPEC 14).
+  - Accumulates ASL words; silence $> 1.8\text{s}$ or 8 words commits the sentence; `sentence_composer.py` builds a bilingual natural sentence (SPEC 14), including `ME LIKE YOU`, `ME WANT WATER`, `ME NO LIKE YOU`, `MY NAME SPELL:<NAME>`, `NICE MEET YOU`.
+  - Fingerspelling mode (key `s`, `fingerspell.py`): a letter is committed when the landmark classifier holds it stable for ~0.7 s; repeated letters need a hand drop or a shape change of ~0.35 s.
+  - One-shot lock + spotter: with `--spotter dl` (default when `spotter_model.pth` exists) a stroke outside a "signing" span is blocked. The DL spotter was trained on the 13 original words, so new words can be blocked (`[OneShot] Chặn ... no_span`); use `--spotter rule` until the spotter is retrained on sessions containing the new words.
   - Large on-screen banner displays recognized English word and confidence percentage for $2.0\text{s}$.
   - Fading neon motion trail renders hand trajectory.
   - Background daemon thread running `pyttsx3` verbalizes the recognized English word without blocking the main webcam loop (max loop latency $< 50\text{ ms}$, maintaining $\ge 25\text{ FPS}$).
@@ -33,6 +39,9 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 | 7 | Template Tool Compatibility | Verification of `collect_dynamic_templates.py` schema v1.0 and template consistency | M1 | R5, survey |
 | 8 | E2E Test Infra & Test Suites (Tiers 1-4) | Comprehensive test harness covering Tiers 1-4 and Verification Plan steps 1-5, publishing `TEST_READY.md` | M_TEST | Dual Track, survey |
 | 9 | 100% E2E Pass & Tier 5 Hardening | Validate 100% pass on Tiers 1-4 and execute adversarial coverage hardening | M_FINAL | Dual Track, survey |
+| 10 | Quick word teaching (`hieu-chinh`) | `py dip.py hieu-chinh --ho-so <tên> --tu <TỪ...> --so-mau N` teaches a new or existing word from N signed samples and saves it to `profiles/<tên>.json` (no training). The owner bank is never written. | post-M1 | `session_enroll.py`, `dip.py` |
+| 11 | Fingerspelling mode | Key `s`: letters (14 supported) -> `SPELL:<NAME>` token -> composed into the sentence. Pure logic in `fingerspell.py`, tests in `tests/test_fingerspell.py`. | post-M1 | SPEC 15 (landmark fallback) |
+| 12 | Extended gloss -> sentence rules | `LIKE`, `WANT` (+ negation with `NO`), `MY NAME <name>`, `NICE MEET YOU`, `NO` as an answer. | post-M1 | SPEC 14 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
@@ -78,13 +87,19 @@ The system is a real-time 4-layer gesture recognition pipeline running on CPU:
 - Immutable / Read-only:
   - `dynamic_dtw_engine.py` (Core DTW & Segmenter — contains BOTH the legacy 4D `HybridDTWEngine` (deprecated, kept only for `tests/` compatibility pending Phase 2 migration) AND the real production 12D `GoldenTriadDTWMatcher`)
   - `improved_dip_pipeline.py` (DIP v4 engine)
-  - `dynamic_templates.json` (ASL template database)
+  - `webcam_templates.json` (production bank of the project owner; frozen — never written by the recognizer)
+  - `dynamic_templates.json`, `asl_citizen_templates.json` (older / ASL-Citizen template banks)
   - `train.py` (CNN model architecture)
-  - `vsl_dataset\models\best_model_v2.pth` (Model weights)
-- Work File (Owned by M1 Worker):
-  - `predict_sentence_webcam.py`
-- Test Files (Owned by M_TEST & M_FINAL Workers):
-  - `tests\`
-  - `run_e2e_tests.py`
-  - `docs\TEST_INFRA.md`
-  - `docs\TEST_READY.md`
+  - `vsl_dataset/models/best_model_v2.pth` (Model weights)
+- Work Files:
+  - `predict_sentence_webcam.py` (live loop, sentence builder, fingerspelling key `s`)
+  - `sentence_composer.py` (gloss -> natural sentence, SPEC 14), `fingerspell.py` (letter stability / word assembly)
+  - `dip.py` + `dip_app.py` (single entry point: `nhan-dien`, `hieu-chinh`, `thu`, `kiem-tra`, ...)
+  - `demo_templates.json` (demo bank, generated from the owner bank + Phi's new-word samples)
+- Data of volunteers: `profiles/<tên>.json` (templates), `raw_volunteers/` (raw strokes), `letter_landmarks/` (letter samples).
+- Tooling moved out of the root: `tools/` (evaluation, audit, e2e runner, letter live demo) and `legacy/` (superseded scripts such as `webcam.py`, `predict_webcam.py`, `collect_webcam.py`).
+- Test Files:
+  - `tests/`
+  - `tools/run_e2e_tests.py`
+  - `docs/TEST_INFRA.md`
+  - `docs/TEST_READY.md`

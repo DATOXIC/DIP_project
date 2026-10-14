@@ -25,6 +25,17 @@ Từ vựng production hiện có 13 khóa (`webcam_templates.json`):
 Bộ sinh câu phải xử lý thêm token đánh vần `SPELL:<CHỮ HOA>` (ví dụ `SPELL:ANNA`) do SPEC 15
 tạo ra — nhưng phải **hoạt động đầy đủ khi SPEC 15 chưa tồn tại** (không có token đó).
 
+> **Cập nhật 2026-10-14 (đã cài trong `sentence_composer.py`, 22 test mới ở `tests/test_sentence_composer.py`):**
+> - Từ vựng mở rộng thêm `NO, LIKE, WANT, MY, NAME, NICE, MEET` (5 từ đầu có mẫu trong `profiles/Phi.json`; `NICE`/`MEET` chưa có mẫu).
+>   Bảng tên hiển thị nội bộ `_NAMES` nay có 20 khóa (en/vi). Các phần "13 từ" bên dưới là mô tả bản gốc.
+> - Luật mới: **G14** `MY|ME NAME SPELL:X` → "My name is X." / "Tên tôi là X." (đứng riêng một mệnh đề);
+>   **G15** `ĐẠI TỪ LIKE|WANT <tân ngữ>` (tân ngữ: đại từ, danh từ, động từ, động từ + danh từ) → "I like you.", "I want water.",
+>   "I want to drink water."; **G16** `ĐẠI TỪ NO LIKE|WANT ...` → phủ định "I don't like you.";
+>   **G17** `NICE MEET YOU` → "Nice to meet you." / "Rất vui được gặp bạn." (đứng riêng một mệnh đề).
+> - `NO` đứng riêng là lời đáp "No." (thán từ); đứng giữa đại từ và `LIKE`/`WANT` là phủ định; `NO THANK_YOU` → "No, thank you." (bảng cụm).
+> - Chưa có luật cho `FROM`/`VIETNAM` (chưa có từ `FROM`), nên "I am from VietNam" chưa ra được.
+> - Cách đọc gloss thiếu tân ngữ (`ME LIKE`, `MY NAME`, `WANT WATER`, `ME NO`) vẫn là `fallback`, không mất từ nào.
+
 **Tính chất an toàn cần giữ:** bộ sinh câu **không bao giờ làm mất, đổi thứ tự, hay thêm từ
 nội dung** khỏi gloss, và **không bao giờ ném ngoại lệ**. Mọi trường hợp không áp được luật ⇒
 quay về cách nối cũ (`fallback`). Bộ sinh câu **không ảnh hưởng nhận dạng** (chỉ hiển thị/giọng nói).
@@ -69,7 +80,7 @@ def fallback_join(keys: Sequence[str], lang: str = "en",
 ```
 
 - `phrase_fn(key, lang)` cho phép tra tên hiển thị từ `ASL_VOCAB_MAP` bên ngoài; nếu `None`
-  thì dùng **bảng nhỏ nội bộ** 13 từ (en/vi) — để module chạy độc lập và test được.
+  thì dùng **bảng nhỏ nội bộ** (13 từ gốc ở bản đầu; nay 20 khóa, xem cập nhật ở mục Từ vựng) — để module chạy độc lập và test được.
 - Ngôn ngữ không phải `"vi"` ⇒ coi là `"en"`.
 
 ### 1.1 Phân loại token
@@ -268,7 +279,7 @@ Không sửa `ui_render.py` (chỉ import `strip_diacritics`).
 3. Tên hiển thị tiếng Việt cho nhánh fallback có bảng nội bộ dự phòng (13 từ) nếu `phrase_fn` không trả gì.
 
 **Số đo (2026-10-03):**
-- 70 cụm trong `phrases_plan.json` (sau khi thêm luật `ME SORRY`): **13 theo bảng + 33 theo luật = 46 (66%)** ra câu tự nhiên; 24 rơi về cách nối cũ.
+- (Số đo lịch sử, chưa tính lại sau khi thêm luật G14–G17.) 70 cụm trong `phrases_plan.json` (sau khi thêm luật `ME SORRY`): **13 theo bảng + 33 theo luật = 46 (66%)** ra câu tự nhiên; 24 rơi về cách nối cũ.
   Cờ `natural` của kế hoạch (câu viết tay trong `CORE_2`/`CORE_3` của `collect_phrases.py`) cho thấy: trong 52 cụm `natural` có **40 (77%)** ra câu,
   **12 chưa có luật** (HELLO YOU, HELLO YOU THANK_YOU, HELLO ME THANK_YOU, THANK_YOU YOU BYE, THANK_YOU ME BYE, SORRY YOU, SORRY YOU BYE, BYE ME,
   BAD WATER, HUNGRY ME EAT, HUNGRY ME DRINK, HUNGRY YES); trong 18 cụm không `natural` (chỉ để phủ cặp từ, nhiều cụm vô nghĩa như `BAD EAT`) có 6 (33%) ra câu.

@@ -1,7 +1,7 @@
 # TRẠNG THÁI KIỂM THỬ
 
-**Dự án**: Nhận diện thủ ngữ ASL thời gian thực và ghép câu (13 từ, chạy CPU)
-**Cập nhật**: 2026-10-14 (thay bản 2026-09-12 chỉ có 89 test cho 5 từ)
+**Dự án**: Nhận diện thủ ngữ ASL thời gian thực và ghép câu (13 từ ở bank Đạt, 18 từ ở bank demo, chạy CPU)
+**Cập nhật**: 2026-10-14, chạy lại toàn bộ sau khi thêm bộ gloss mới, `fingerspell.py` và từ mới (thay bản 2026-09-12 chỉ có 89 test cho 5 từ)
 **Môi trường chạy**: Python 3.12 hệ thống (`py`), `pytest`, `fastapi`, `httpx`. Thư mục `.venv` trong repo không dùng được (thiếu `cv2`, `pytest`).
 
 ---
@@ -12,11 +12,11 @@ Lệnh: `py -m pytest tests -q -p no:cacheprovider`
 
 | Lần chạy | Kết quả |
 |---|---|
-| Toàn bộ trừ `test_web_app.py` (521 s) | 447 pass, 2 fail, 2 skip, 7 xfail |
-| Sau khi sửa lỗi bên dưới: `test_spec12_step0.py` + `test_tts_real_engine.py` | 10 pass |
-| `test_web_app.py` (sau khi cài `fastapi`, `httpx`) | 8 pass, 2 skip |
+| **Toàn bộ `tests/` trong MỘT lần chạy (2026-10-14, 228 s)** | **485 pass, 1 fail, 4 skip, 7 xfail** |
+| Nhóm mới thêm: `test_sentence_composer.py` (97, trong đó 22 mới cho bộ gloss LIKE/WANT/NO/MY NAME/NICE MEET) + `test_fingerspell.py` (12) | 109 pass |
 
-Chưa chạy lại toàn bộ bộ test sau bản sửa; con số tổng hợp ở trên là tổng của các lần chạy riêng, không phải một lần chạy duy nhất.
+Test fail duy nhất của lần chạy này là `test_tts_real_engine.py::test_real_sapi_reads_every_queued_sentence` (xem bên dưới), không liên quan tới thay đổi mã.
+Các số của bản cập nhật trước (447 pass, 2 fail) là tổng của nhiều lần chạy riêng và đã được thay bằng lần chạy đơn này.
 
 ### Hai test từng lỗi
 | Test | Nguyên nhân | Xử lý |
@@ -25,7 +25,7 @@ Chưa chạy lại toàn bộ bộ test sau bản sửa; con số tổng hợp �
 | `test_tts_real_engine.py::test_real_sapi_reads_every_queued_sentence` | Dùng engine SAPI thật của Windows, phụ thuộc thời gian và tải máy; chạy riêng thì pass | Không sửa code; coi là test dễ chập chờn |
 
 ### Test bị bỏ qua / kỳ vọng lỗi
-- 7 `xfail` và 2+2 `skip` là các trường hợp đã biết (xem lý do bằng `pytest -rxs`).
+- 7 `xfail` và 4 `skip` là các trường hợp đã biết (xem lý do bằng `pytest -rxs`).
 
 ---
 

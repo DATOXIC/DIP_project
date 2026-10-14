@@ -19,11 +19,11 @@
 ### 2. Phạm vi hiện tại
 | Hạng mục | Hiện trạng |
 |---|---|
-| Từ vựng động | **13 từ**: HELLO, ME, YOU, THANK_YOU, BYE, EAT, DRINK, WATER, HUNGRY, SORRY, PLEASE, YES, BAD |
+| Từ vựng động | **13 từ** trong bank sản xuất của Đạt: HELLO, ME, YOU, THANK_YOU, BYE, EAT, DRINK, WATER, HUNGRY, SORRY, PLEASE, YES, BAD. Thêm **5 từ quy ước 1 tay** trong hồ sơ Phi: LIKE, NO, WANT, MY, NAME (bank demo `demo_templates.json` = 18 từ). NICE, MEET mới có luật ghép câu, chưa có mẫu. Các từ mới là ký hiệu đơn giản hóa từ ASL (nhiều từ vốn 2 tay), không phải ASL chuẩn |
 | Dữ liệu | 10 hồ sơ người ký trong `profiles/`; 4 người có bộ dữ liệu đủ đánh giá (Đạt, Mai, Phi, Vuong) |
 | Dạy từ mới | Có: `py dip.py hieu-chinh`, 1–3 mẫu/từ, không train lại |
-| Chữ cái tĩnh | Bộ phân loại landmark 16 lớp (`letter_landmark_model*.pt`), dùng làm **bộ lọc dáng tay** (handshape gate). Đánh vần ghép từ chưa là tính năng chính |
-| Ghép câu | Có: gom từ, chốt câu khi hạ tay > 1,8 s hoặc đủ 8 từ, ra câu tự nhiên song ngữ (SPEC 14) |
+| Chữ cái tĩnh | Bộ phân loại landmark 16 lớp (`letter_landmark_model*.pt`: 14 chữ `A B C D E F G H I K L O S W` + hình tay `1`, `5`), dùng làm **bộ lọc dáng tay** (handshape gate) **và chế độ đánh vần** (phím `s`, `fingerspell.py`). Dữ liệu chữ cái chỉ từ một người ký; chưa đo trên người lạ |
+| Ghép câu | Có: gom từ, chốt câu khi hạ tay > 1,8 s hoặc đủ 8 từ, ra câu tự nhiên song ngữ (SPEC 14), gồm `ME LIKE YOU`, `ME WANT WATER`, `ME NO LIKE YOU`, `MY NAME <tên đánh vần>`, `NICE MEET YOU` |
 | Giao diện | Cửa sổ ứng dụng (`py dip.py`), panel bên phải + panel dưới; bản web `py dip.py web` |
 
 ---

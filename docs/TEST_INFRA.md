@@ -49,7 +49,7 @@ tests/
 └── test_tier4_scenarios.py       # Tier 4: Realistic Scenarios & Stress Tests (5 tests)
 ```
 
-### 3.1. Verification Plan (Steps 1–5 from ORIGINAL_REQUEST.md)
+### 3.1. Verification Plan (Steps 1–5 from the original request; the file `ORIGINAL_REQUEST.md` is no longer in the repo)
 | Test Function | Verification Step | Assertions |
 |---|---|---|
 | `test_verification_step1_import_check` | Step 1: Interface Contracts | Confirms all classes, enums, functions, and models import without syntax or symbol errors. |

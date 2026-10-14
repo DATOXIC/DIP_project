@@ -136,11 +136,15 @@ Nguyên tắc: không sửa `train.py`, `improved_dip_pipeline.py`, `best_model*
 
 - **SPEC 14** `SPEC_14_gloss_thanh_cau.md`: chuỗi gloss -> câu hoàn chỉnh EN/VI bằng luật offline (không LLM),
   module thuần `sentence_composer.py`; gloss gốc luôn giữ, câu tự nhiên là dòng thêm, đọc câu khi chốt. Không cần dữ liệu mới.
-- **SPEC 15** `SPEC_15_danh_van_chu_cai.md`: chế độ đánh vần (phím `s`) bằng CNN DIP mở rộng cho 12 chữ tĩnh + lớp NONE,
-  model mới `fingerspell_v1.pth` (không đụng model 5 lớp), chia dữ liệu **theo phiên**. 3 giai đoạn: 15A (agent) ->
-  Bước 15 (NGƯỜI thu ~1 giờ) -> 15B (agent: huấn luyện, cổng GO/NO-GO, đo thật).
+- **SPEC 15** `SPEC_15_danh_van_chu_cai.md`: chế độ đánh vần (phím `s`). Đặc tả gốc là CNN DIP mở rộng cho 12 chữ tĩnh + lớp NONE,
+  model mới `fingerspell_v1.pth`, 3 giai đoạn 15A -> Bước 15 (người thu) -> 15B (cổng GO/NO-GO).
+  **Trạng thái 2026-10-14: ĐÃ CÀI theo phương án dự phòng (landmark), KHÔNG theo CNN.** Dùng lại bộ phân loại landmark
+  `letter_landmark_model.pt` (14 chữ `A B C D E F G H I K L O S W`, thêm 2 lớp hình tay `1`, `5`), logic ghép chữ ở `fingerspell.py`
+  (giữ ổn định ~0,7 s thì chốt chữ), tích hợp phím `s` vào `predict_sentence_webcam.py`. Các file `fingerspell_v1.pth`,
+  `collect_fingerspell.py`, `train_fingerspell.py`, `fingerspell_letters.json` **chưa/không được tạo**; lớp NONE chưa có
+  (hiện dùng ngưỡng tin cậy 0,6 và thời gian giữ). Chưa đo độ chính xác trên người lạ.
 
 | Spec | File chính bị sửa/tạo |
 |---|---|
 | SPEC 14 | `sentence_composer.py` (mới), `predict_sentence_webcam.py`, `ui_side_panel.py`, `tests/test_sentence_composer.py` |
-| SPEC 15 | `fingerspell.py`, `collect_fingerspell.py`, `train_fingerspell.py`, `fingerspell_letters.json` (mới), `predict_sentence_webcam.py`, `ui_side_panel.py` |
+| SPEC 15 (đã cài) | `fingerspell.py`, `tests/test_fingerspell.py` (mới), `predict_sentence_webcam.py` (phím `s`). Dùng model có sẵn `letter_landmark_model.pt`. Các file `collect_fingerspell.py`, `train_fingerspell.py`, `fingerspell_letters.json` trong đặc tả gốc chưa được tạo. |

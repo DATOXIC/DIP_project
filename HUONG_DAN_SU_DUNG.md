@@ -1,5 +1,11 @@
 # Hướng Dẫn Sử Dụng: Pipeline DIP Nâng Cấp cho Phân Tích Thủ Ngữ
 
+> **TÀI LIỆU LỊCH SỬ (đối chiếu 2026-10-14) — KHÔNG phản ánh hệ thống hiện tại.**
+> File này mô tả giai đoạn đầu: phân đoạn tay bằng histogram backprojection, CNN trên ảnh DIP và `dataset_builder.py`
+> (nay ở `legacy/dataset_builder.py`). Các file `dnn_model.py`, `vsl_model.pth`, `vsl_dataset/splits/*.json` nhắc bên dưới không còn trong repo.
+> Hệ thống hiện tại nhận diện từ bằng **landmark MediaPipe + DTW 24D**, chạy bằng `py dip.py`.
+> Xem: `PROJECT.md`, `docs/HUONG_DAN_DIP.md` (cách chạy), `docs/DE_CUONG_DO_AN_DIP_ASL.md` (kiến trúc), `KIEM_TRA_TRUC_TIEP.md` (kiểm tra trực tiếp).
+
 **Dự Án:** Nhận Diện Thủ Ngữ Tiếng Việt (Vietnamese Sign Language Recognition)  
 **Giai Đoạn:** DIP (Digital Image Processing) + Deep Learning  
 **Sinh Viên:** Đạt (Tô Phương Đạt)  

@@ -1,5 +1,16 @@
 # SPEC 15 — Chế độ đánh vần chữ cái tĩnh (CNN DIP mở rộng)
 
+> **TRẠNG THÁI THỰC HIỆN (2026-10-14): đã cài theo PHƯƠNG ÁN DỰ PHÒNG (landmark), không theo CNN như đặc tả dưới đây.**
+> - Phím `s` trong `predict_sentence_webcam.py` bật/tắt chế độ đánh vần; `Backspace` xóa chữ cuối; hạ tay > 3 s tự kết thúc.
+> - Bộ phân loại: `letter_landmark_model.pt` (MLP trên landmark 3D chuẩn hóa, `hand_pose_features.py`), **14 chữ**
+>   `A B C D E F G H I K L O S W` + 2 lớp hình tay `1`, `5` (bỏ qua khi đánh vần). Không có lớp NONE.
+> - Logic ghép chữ thuần Python ở `fingerspell.py` (nhiệm vụ A3), test ở `tests/test_fingerspell.py` (A6). Chữ được chốt khi giữ ổn định
+>   0,7 s ở tin cậy ≥ 0,6; chữ đôi cần hạ tay hoặc đổi hình tay ≥ 0,35 s.
+> - Kết quả là token `SPELL:<TÊN>`; `sentence_composer.py` ghép "My name is …" / "Tên tôi là …".
+> - **Chưa làm:** A1 (`fingerspell_letters.json`), A2 (`collect_fingerspell.py`), A4 (`train_fingerspell.py`), cổng GO/NO-GO 15B,
+>   đo độ chính xác trên người lạ. Dữ liệu chữ cái hiện chỉ từ một người ký (`letter_landmarks/DAT`); `C`/`V` đã được ghi nhận yếu ở phần dưới.
+> - Phần còn lại của file này là đặc tả gốc, giữ làm lịch sử và làm cơ sở nếu sau này muốn quay lại hướng CNN.
+
 > Đọc `specs/_PREAMBLE.md` trước. Dành cho agent **và người dùng** (có bước thu dữ liệu).
 > Ước lượng: 15A agent 5–7 giờ → **Bước 15 người ~45–60 phút** → 15B agent 3–5 giờ.
 > **Chạy SAU SPEC 14** (cùng sửa `predict_sentence_webcam.py`, `ui_side_panel.py`). SPEC 13 đã bị bỏ.
