@@ -1972,8 +1972,15 @@ def run_sentence_builder(
                 if one_shot_lock is not None:
                     # KHÓA MỘT LẦN: spotter nhận đúng v_norm của segmenter, lock ghi span theo thời gian.
                     # landmarks chỉ hợp lệ ở khung MediaPipe thấy tay thật (hand_lost_frames == 0); khung LK-fallback => None.
+                    # Spotter DL được huấn luyện trên phiên thu bằng collect_continuous.py, luôn LẬT GƯƠNG khung trước khi ghi.
+                    # Webcam trực tiếp không lật (flip_cam=False) => landmark bị đối xứng so với lúc huấn luyện, p ~ 0 và spotter
+                    # không bao giờ mở. Đưa landmark về đúng chiều gương: x -> 1 - x khi khung HIỆN TẠI không ở chiều gương
+                    # (webcam: khi chưa lật; video phiên thu đã ở chiều gương: chỉ khi người dùng bấm [f]).
+                    _os_lm = landmarks if hand_lost_frames == 0 else None
+                    if _os_lm is not None and ((video_path is None) != flip_cam):
+                        _os_lm = np.array([[1.0 - _p.x, _p.y, _p.z] for _p in _os_lm], dtype=np.float64)
                     _os_gate = one_shot_spotter.update(
-                        curr_time, True, float(v_norm), landmarks if hand_lost_frames == 0 else None, (w_f, h_f))
+                        curr_time, True, float(v_norm), _os_lm, (w_f, h_f))
                     one_shot_lock.observe(curr_time, _os_gate, getattr(one_shot_spotter, "last_prob", None))
                 if force_stroke and force_flush and not force_done and seg_state == KineticState.RECORDING:
                     # Hết đoạn người dùng chọn: chốt toàn bộ bộ đệm thành MỘT cử chỉ.
