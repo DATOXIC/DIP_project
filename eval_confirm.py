@@ -10,7 +10,6 @@ và số nét âm nhận nhầm với bank cuối phiên.
 Cách dùng:  py eval_confirm.py --targets Mai Phi --repeats 3
 Kết quả: results/baselines/confirm.json
 """
-import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # chạy từ thư mục con: thêm gốc dự án để import module dùng chung
 import argparse
 import json
 import os

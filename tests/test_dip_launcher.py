@@ -353,3 +353,11 @@ def test_lenh_mau_am():
     assert a == ["train_spotter.py", "--models", "CNN", "--save", "--out", "x.pth", "--exclude", "_neg"]
     assert "spotter_model.pth" not in dip.cmd_huan_luyen_spotter()                  # mặc định KHÔNG đè model đang dùng
     assert dip.cmd_cham_mau_am(None, ["a.pth", "b.pth"]) == ["eval_negative_session.py", "--latest", "--model", "a.pth", "--model", "b.pth"]
+
+
+def test_moi_loai_danh_gia_tro_toi_script_ton_tai():
+    """Chặn hồi quy: dip.py ghép tên script (vd f"eval_{kind}.py"); di chuyển file đi nơi khác sẽ làm lệnh hỏng mà
+    các test chỉ so sánh danh sách lệnh sẽ không phát hiện."""
+    for kind in dip.EVAL_KINDS:
+        script = dip.cmd_danh_gia(kind, None)[0]
+        assert os.path.exists(os.path.join(dip.ROOT, script)), f"danh-gia {kind} -> {script} không còn ở gốc dự án"

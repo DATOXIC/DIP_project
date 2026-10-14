@@ -7,7 +7,6 @@ và số nét âm nhận nhầm với bank cuối. g = 9 nghĩa là mọi mẫu 
 Cách dùng:  py eval_adapt.py --targets Mai Phi --gates 9 1.2 0.9 --cap 3 --repeats 5
 Kết quả: results/baselines/adapt.json
 """
-import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # chạy từ thư mục con: thêm gốc dự án để import module dùng chung
 import argparse
 import json
 import os

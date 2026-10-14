@@ -721,14 +721,14 @@ def scan_dataset(data_dir: str) -> Tuple[List[Tuple[str, int]], Dict[int, str]]:
     if not samples_dir.exists():
         raise FileNotFoundError(
             f"Khong tim thay thu muc samples tai: {samples_dir}\n"
-            f"Hay chay collect_webcam.py truoc de thu thap du lieu!"
+            f"Hay chay legacy/collect_webcam.py truoc de thu thap du lieu!"
         )
 
     class_dirs = sorted(d for d in samples_dir.iterdir() if d.is_dir())
     if not class_dirs:
         raise FileNotFoundError(
             f"Khong co thu muc con nao trong {samples_dir}. "
-            f"Hay thu thap du lieu bang collect_webcam.py!"
+            f"Hay thu thap du lieu bang legacy/collect_webcam.py!"
         )
 
     all_samples: List[Tuple[str, int]] = []

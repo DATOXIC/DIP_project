@@ -2667,7 +2667,7 @@ if __name__ == "__main__":
                              "Mặc định None lấy từ CONFIG['fast_chain']['lead_trim']['enabled'] (BẬT). Dùng --no-lead-trim để tắt. Phím [k] đổi lúc chạy.")
     parser.add_argument("--handshape-gate", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt bộ lọc ứng viên theo dáng tay (handshape_gate.py). Mặc định tắt. Cần letter_landmark_model_image.pt "
-                             "và handshape_gate_table.json (py build_handshape_table.py).")
+                             "và handshape_gate_table.json (py tools/build_handshape_table.py).")
     parser.add_argument("--dl", action=argparse.BooleanOptionalAction, default=None,
                         help="Bật/tắt tầng DL dự phòng (xem dl_fusion.py, docs/BAO_CAO_DEEP_LEARNING_HYBRID.md). "
                              "Mặc định None = TỰ ĐỘNG bật nếu tìm thấy 'best_gesture_model_none.pth' (hoặc file chỉ "

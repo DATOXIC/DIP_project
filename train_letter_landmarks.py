@@ -57,7 +57,7 @@ def load_dataset(root: str, space: str = "world") -> Dict[str, Any]:
         persons += [str(d["person"])] * n
         angles.append(d["view_angle"])
     if not world:
-        raise SystemExit(f"Không có dữ liệu trong {root}/ — chạy collect_letters_landmarks.py trước.")
+        raise SystemExit(f"Không có dữ liệu trong {root}/ — chạy tools/collect_letters_landmarks.py trước.")
     return {"world": np.concatenate(world).astype(np.float32), "handed": np.array(handed), "label": np.array(labels),
             "session": np.array(sessions), "person": np.array(persons), "angle": np.concatenate(angles).astype(np.float32)}
 
