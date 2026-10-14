@@ -272,3 +272,49 @@ def test_lich_su_dat_dung_cho_voi_dai_tu_va_danh_tu():
 def test_cau_vo_nghia_van_roi_ve_fallback():
     assert compose(["BAD", "WATER"], "en").rule == "fallback"
     assert compose(["ME", "HUNGRY", "BAD"], "en").rule == "fallback"
+
+
+# ------------------------------------------------ bộ gloss mới: LIKE / WANT / NO / MY / NAME / NICE MEET ----
+
+GLOSS_MOI = [
+    ("ME LIKE YOU", "I like you.", "Tôi thích bạn.", "grammar"),
+    ("YOU LIKE ME", "You like me.", "Bạn thích tôi.", "grammar"),
+    ("ME LIKE WATER", "I like water.", "Tôi thích nước.", "grammar"),
+    ("ME NO LIKE YOU", "I don't like you.", "Tôi không thích bạn.", "grammar"),
+    ("ME WANT WATER", "I want water.", "Tôi muốn nước.", "grammar"),
+    ("ME WANT EAT", "I want to eat.", "Tôi muốn ăn.", "grammar"),
+    ("ME WANT DRINK WATER", "I want to drink water.", "Tôi muốn uống nước.", "grammar"),
+    ("YOU WANT WATER", "You want water.", "Bạn muốn nước.", "grammar"),
+    ("ME NO WANT EAT", "I don't want to eat.", "Tôi không muốn ăn.", "grammar"),
+    ("ME WANT WATER PLEASE", "I want water, please.", "Tôi muốn nước, làm ơn.", "grammar"),
+    ("MY NAME SPELL:ANNA", "My name is Anna.", "Tên tôi là Anna.", "grammar"),
+    ("ME NAME SPELL:ANNA", "My name is Anna.", "Tên tôi là Anna.", "grammar"),
+    ("HELLO MY NAME SPELL:ANNA", "Hello. My name is Anna.", "Xin chào. Tên tôi là Anna.", "grammar"),
+    ("NICE MEET YOU", "Nice to meet you.", "Rất vui được gặp bạn.", "table"),
+    ("HELLO NICE MEET YOU", "Hello. Nice to meet you.", "Xin chào. Rất vui được gặp bạn.", "table"),
+    ("NICE MEET YOU MY NAME SPELL:ANNA", "Nice to meet you. My name is Anna.", "Rất vui được gặp bạn. Tên tôi là Anna.", "grammar"),
+    ("NO", "No.", "Không.", "grammar"),
+    ("NO THANK_YOU", "No, thank you.", "Không, cảm ơn.", "table"),
+    ("NO ME WANT WATER", "No. I want water.", "Không. Tôi muốn nước.", "grammar"),
+    ("HELLO MY NAME SPELL:ANNA ME LIKE YOU", "Hello. My name is Anna. I like you.",
+     "Xin chào. Tên tôi là Anna. Tôi thích bạn.", "grammar"),
+]
+
+
+@pytest.mark.parametrize("gloss,en,vi,rule", GLOSS_MOI)
+def test_bo_gloss_moi(gloss, en, vi, rule):
+    r_en, r_vi = compose(_keys(gloss), "en"), compose(_keys(gloss), "vi")
+    assert (r_en.text, r_vi.text) == (en, vi)
+    assert r_en.rule == rule and r_vi.rule == rule
+
+
+def test_gloss_moi_thieu_tan_ngu_van_roi_ve_fallback_khong_mat_tu():
+    for gloss in ("ME LIKE", "MY NAME", "WANT WATER", "ME NO"):
+        r = compose(_keys(gloss), "en")
+        assert r.rule == "fallback", gloss
+        assert len(r.text.rstrip(".").split()) == len(gloss.split()), (gloss, r.text)
+
+
+def test_no_phu_dinh_khong_nuot_cau_tra_loi_no():
+    assert compose(["NO"], "en").text == "No."
+    assert compose(["YES", "NO"], "en").text == "Yes. No."
