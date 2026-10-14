@@ -1,2 +1,0 @@
-##### D_gap0.8
-[Video] Dùng ĐỒNG HỒ VIDEO (30.0 fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0=1791011306.112

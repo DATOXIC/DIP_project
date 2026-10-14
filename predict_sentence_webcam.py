@@ -63,7 +63,7 @@ from improved_dip_pipeline import (
 )
 import json
 # SPEC 03: các hàm trích xuất 4 nhóm đặc trưng mới (z_norm, mốc cơ thể, độ xòe ngón) dùng CHUNG với
-# collect_dynamic_templates.py / inspect_and_trim_asl_citizen.py / rebuild_templates_from_raw.py.
+# collect_dynamic_templates.py / tools/inspect_and_trim_asl_citizen.py / rebuild_templates_from_raw.py.
 from dynamic_features import (
     CachedFaceDetector,
     compute_extended_columns,
@@ -148,7 +148,7 @@ CONFIG = {
     "pause_frames": 9,           # Số frame khựng liên tục để chốt cử chỉ (~0.3s)
     # Chuẩn hóa vận tốc + Swipe-Left theo THỜI GIAN (mặc định BẬT từ 2026-09-29). Giúp khi camera có fps thật lệch 30
     # (thiếu sáng, 60 fps) -- quan trọng cho người lạ vì ta không kiểm soát được fps camera của họ.
-    # Số đo ngoại tuyến: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md (eval_segmenter_fps.py) -- ở fps gốc (30) hành vi
+    # Số đo ngoại tuyến: docs/BAO_CAO_TANG_CUONG_VA_TU_CHOI.md (tools/eval_segmenter_fps.py) -- ở fps gốc (30) hành vi
     # giống hệt lúc tắt; ở 60fps/15fps/45fps/khung-trùng đều cải thiện rõ (nhớ giảm, swipe-nhầm giảm về 0).
     "time_norm": {"enabled": True, "ref_fps": 30.0, "max_stroke_sec": 2.0, "swipe_window_sec": 0.17, "v_scale_min": 1.0},
     "dedupe_frames": False,      # True = bỏ khung TRÙNG y hệt (camera thiếu sáng lặp bộ đệm) trước khi dò tay; cần camera thật (video/headless bỏ qua). Chưa kiểm chứng trên webcam thật.
@@ -160,7 +160,7 @@ CONFIG = {
     # --- Tối ưu hóa hiệu năng (SPEC 02 & SPEC 05C - Chống lag) ---
     # --- Bộ lọc ứng viên theo DÁNG TAY (handshape_gate.py, nhánh landmark 3D chuẩn hóa) ---
     # Loại ứng viên DTW mâu thuẫn rõ với dáng tay đo ở đầu/cuối cử chỉ; chỉ can thiệp khi DTW KHÔNG ACCEPTED.
-    # Mặc định TẮT. Số đo: results/handshape_gate_eval.json (eval_handshape_gate.py). Bật: --handshape-gate.
+    # Mặc định TẮT. Số đo: results/handshape_gate_eval.json (tools/eval_handshape_gate.py). Bật: --handshape-gate.
     "handshape_gate": {"enabled": False, "model": "letter_landmark_model_image.pt", "table": "handshape_gate_table.json",
                        "conf": 0.6, "compat": 0.15},
     "max_sentence_words": 8,            # Chốt câu tự động khi đủ ngần này từ (0 = tắt); từ kế tiếp mở câu mới

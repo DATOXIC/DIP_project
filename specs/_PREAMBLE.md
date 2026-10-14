@@ -50,7 +50,7 @@ không kèm file này, HÃY ĐỌC NÓ TRƯỚC KHI GÕ BẤT KỲ DÒNG CODE N�
 ## Tình trạng test suite (QUAN TRỌNG)
 
 Test suite **đã hỏng sẵn từ trước**: `pytest tests/` cho **49 failed / 58 passed**,
-`run_e2e_tests.py` cho **42 passed / 47 failed**. Đây KHÔNG phải lỗi của bạn.
+`tools/run_e2e_tests.py` cho **42 passed / 47 failed**. Đây KHÔNG phải lỗi của bạn.
 
 Cách kiểm tra hồi quy đúng: chạy test **trước** khi sửa, lưu danh sách `FAILED` đã
 sort ra file; chạy lại **sau** khi sửa, sort, rồi `diff` hai danh sách. Yêu cầu:
@@ -67,7 +67,7 @@ Bộ dữ liệu, cắt về 12 chiều đầu, trọng số `w_p=0.6, w_a=1.0, 
 | Chuyển miền, chưa canonical | 34 mẫu trên làm query → 5 từ tương ứng trong `asl_citizen_templates.backup_before_bye_delete_20260918_183236.json` | **12/34 = 35.3%**, margin **−0.157** |
 | Chuyển miền, đã canonical (eps=0.05) | như trên | **21/34 = 61.8%**, margin +0.075 |
 | Chuyển miền, đã canonical (eps=0.0) | như trên | **22/34 = 64.7%**, margin +0.087 |
-| `audit_sign_quality.py --all` | bank Citizen hiện tại | **129/129 = 100%** |
+| `tools/audit_sign_quality.py --all` | bank Citizen hiện tại | **129/129 = 100%** |
 
 5 từ trùng nhau giữa hai bank: `HELLO, BYE, ME, YOU, THANK_YOU`.
 

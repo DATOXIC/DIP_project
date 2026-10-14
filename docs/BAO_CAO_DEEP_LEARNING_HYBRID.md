@@ -46,7 +46,7 @@ nhưng **tụt xuống 96.0% đúng ở khoảng 0.28-0.32** (1 mẫu EAT của 
 tình rơi vào hõm. Đã sửa `sweep_confidence_threshold()` để chọn **điểm giữa của đoạn ổn định dài
 nhất** thay vì điểm đầu tiên chạm max — chốt **`DEFAULT_CONF_THRESHOLD = 0.38`**.
 
-**Kiểm chứng không rò rỉ (nested cross-validation, `calibrate_dl_threshold_nested.py`)**: với mỗi
+**Kiểm chứng không rò rỉ (nested cross-validation, `tools/calibrate_dl_threshold_nested.py`)**: với mỗi
 người lạ, ngưỡng được chọn CHỈ từ dữ liệu của 3 người còn lại (không đụng vào chính họ) — kết quả
 trung bình **96.6%**, khớp chính xác với con số dùng ngưỡng cố định toàn cục. Ngưỡng 0.38 KHÔNG bị
 overfit vào các người cụ thể đã dùng để chọn nó.
@@ -112,7 +112,7 @@ enroll.**
 
 - `dl_fusion.py` — module gate (mới).
 - `eval_dynamic_hybrid.py` — script so sánh DTW/DL/Hybrid theo từng người (đã sửa).
-- `calibrate_dl_threshold_nested.py` — hiệu chỉnh ngưỡng không rò rỉ (mới).
+- `tools/calibrate_dl_threshold_nested.py` — hiệu chỉnh ngưỡng không rò rỉ (mới).
 - `eval_enroll_hybrid.py` — đo enrollment + hybrid cộng gộp (mới).
 - `dynamic_dtw_engine.py`, `predict_sentence_webcam.py`, `dip.py` — wiring production (`--dl-model`, `--dl-nguong`).
 - `results_hybrid_{Dang,Mai,Phi,Vuong}.json`, `results/baselines/dl_threshold_nested_cv.json`,

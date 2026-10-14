@@ -1,4 +1,0 @@
-timestamp,event,predicted_word,best_distance,second_word,second_distance,margin_pct,duration_sec,num_frames,body_anchor_valid,fps,best_confidence,match_quality,r_ratio,t_unix,commit_mode,t_start,lead_trim_sec,lead_trim_tried
-2026-10-04 19:56:31,ACCEPTED,HUNGRY,0.2101,THANK_YOU,0.5941,182.73,0.8,15,True,30.0,0.8319,90.62,1.1051,1791118599.294,early,1791118598.827,0.0,2
-2026-10-04 19:56:32,REJECTED,YES,1.6606,,,0.0,1.067,25,True,30.0,0.0,0.0,8.7332,1791118600.427,normal,1791118599.627,0.0,6
-2026-10-04 19:56:34,ACCEPTED,YES,0.2168,BYE,0.5777,166.5,1.8,47,True,30.0,0.8266,88.35,1.14,1791118602.494,normal,1791118600.961,0.067,6

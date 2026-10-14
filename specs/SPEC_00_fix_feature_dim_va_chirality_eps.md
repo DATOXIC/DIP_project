@@ -44,7 +44,7 @@ Kỳ vọng in ra `4 17` — tức metadata nói 4 nhưng dữ liệu là 17.
 
 1. **Trước tiên kiểm tra xem có test nào assert `feature_dim == 4` không:**
    ```
-   grep -rn "feature_dim" tests/ run_e2e_tests.py
+   grep -rn "feature_dim" tests/ tools/run_e2e_tests.py
    ```
    - Nếu **CÓ** test assert giá trị 4 → **KHÔNG sửa `HybridDTWEngine.save_templates()`**.
      Thay vào đó, sau khi `save_templates()` ghi file, ghi đè lại đúng trường metadata
@@ -62,13 +62,13 @@ Kỳ vọng in ra `4 17` — tức metadata nói 4 nhưng dữ liệu là 17.
 
 ### Tiêu chí hoàn thành
 
-- `diagnose_chirality.py` hoặc lệnh kiểm chứng ở trên in ra `17 17`.
+- `tools/diagnose_chirality.py` hoặc lệnh kiểm chứng ở trên in ra `17 17`.
 - Chạy `predict_sentence_webcam.py --help` (hoặc import module) không lỗi.
 - **Báo cáo bắt buộc**: dòng cảnh báo `"mẫu 4D cũ"` (grep chuỗi `4D` trong
   `load_templates`) phải **biến mất** khi nạp `dynamic_templates.json`.
 - **Báo cáo bắt buộc — phần quan trọng nhất**: margin guard giờ là 0.12 thay vì 0.08,
   tức **siết chặt hơn**. Hãy đo xem điều đó làm đổi bao nhiêu quyết định: chạy
-  `audit_sign_quality.py --all` trước và sau, đếm số mẫu chuyển từ `ACCEPTED` sang
+  `tools/audit_sign_quality.py --all` trước và sau, đếm số mẫu chuyển từ `ACCEPTED` sang
   `UNCERTAIN`. In con số cụ thể. Nếu số đó lớn hơn 10% tổng số mẫu, **DỪNG và BÁO CÁO**
   thay vì tự ý nới `margin_threshold` để bù.
 
@@ -107,11 +107,11 @@ tuyệt đối):
 
 1. Phép đo chuyển miền (xem bảng mốc trong PREAMBLE) phải đạt **>= 22/34 = 64.7%**,
    margin **>= +0.087**.
-2. Chạy `tune_thresholds.py` (KHÔNG có `--apply`) và báo cáo `intra_max` của `SORRY`.
+2. Chạy `tools/tune_thresholds.py` (KHÔNG có `--apply`) và báo cáo `intra_max` của `SORRY`.
    Yêu cầu: **không được lớn hơn 0.411** (giá trị trước khi có canonicalization).
 3. LOO nội miền webcam phải giữ **>= 32/34 = 94.1%**.
-4. `audit_sign_quality.py --all` phải giữ **129/129**.
-5. Chạy `diagnose_chirality.py` và báo cáo số mẫu còn nằm trong vùng mơ hồ theo tiêu
+4. `tools/audit_sign_quality.py --all` phải giữ **129/129**.
+5. Chạy `tools/diagnose_chirality.py` và báo cáo số mẫu còn nằm trong vùng mơ hồ theo tiêu
    chí mới. Kỳ vọng: **ít hơn 6**.
 
 ---
@@ -121,6 +121,6 @@ tuyệt đối):
 - Không đổi bất kỳ giá trị `lambda_shape` hay `lambda_shape_global` nào. Đã đo: mọi
   giá trị > 0 đều làm giảm độ chính xác (79.9% → 74.8% → 67.6% → 58.3%). Giữ 0.0.
 - Không đổi `margin_threshold`, `uncertainty_ratio`, hay ngưỡng per-word nào.
-- Không chạy `tune_thresholds.py --apply`.
+- Không chạy `tools/tune_thresholds.py --apply`.
 - Không sửa segmenter (đó là SPEC 01).
 - Không thêm chiều đặc trưng nào (đó là SPEC 03).

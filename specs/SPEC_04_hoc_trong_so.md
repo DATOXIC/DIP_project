@@ -141,7 +141,7 @@ cặp với **ma trận nhầm lẫn thực đo** của C_best trên bảng đi�
 ## NHIỆM VỤ 6 — Ngưỡng và tỉ lệ nhận nhầm
 
 Trên C_best:
-1. Chạy `tune_thresholds.py` (xem trước, không `--apply`) với bank webcam và trọng số của C_best.
+1. Chạy `tools/tune_thresholds.py` (xem trước, không `--apply`) với bank webcam và trọng số của C_best.
 2. **Nhận nhầm mẫu âm:** chạy bảng điểm với ngưỡng đề xuất. Mục tiêu theo `false_accept_neg_max`.
 3. Nếu vượt: hạ ngưỡng từ bị nhận nhầm tới khi đạt, rồi báo cáo **cái giá**: bao nhiêu mẫu
    dương của từ đó chuyển sang UNCERTAIN/REJECTED thêm.

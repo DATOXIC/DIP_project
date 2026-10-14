@@ -40,7 +40,7 @@ import numpy as np
 
 # Do bang quet day du (khong chi lay "best" tu sweep_confidence_threshold - de bi trung diem tie-break
 # xau) tren ca 4 nguoi la that (Dang/Mai/Phi/Vuong), buoc 0.02 tu 0.20 den 0.50 (xem lich su sua doi +
-# calibrate_dl_threshold_nested.py). Duong cong accuracy trung binh co 2 mien on dinh: 0.20-0.26 va
+# tools/calibrate_dl_threshold_nested.py). Duong cong accuracy trung binh co 2 mien on dinh: 0.20-0.26 va
 # 0.34-0.42 (ca 2 deu 96.6%), nhung TUT xuong 96.0% dung o khoang 0.28-0.32 (1 mau EAT cua Dang co
 # do tin cay DL nam dung trong "hom lom" nay va SAI). 0.32 (trung binh tho 3 ngưỡng single-best truoc
 # do) vo tinh roi dung vao hom lom nay - da SUA lai bang cach chon giua mien on dinh 0.34-0.42, xa ca

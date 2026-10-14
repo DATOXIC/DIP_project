@@ -119,7 +119,7 @@ def palm_faces_camera(pts: np.ndarray, handedness: Optional[str]) -> bool:
     nhau. Quy ước TOÀN CỤC được suy ra từ dữ liệu thật (không thể suy từ lý thuyết vì phụ thuộc việc driver camera
     có tự lật gương hay không): với nhãn 'Left' thì z > 0 là lòng bàn tay hướng camera — kiểm chứng bằng hướng cuộn
     ngón (ngón gập cuộn về phía lòng bàn tay nên đầu ngón tiến gần camera). Nếu đổi camera/driver, hãy kiểm tra
-    lại bằng mắt qua nhãn LONG/MU trong collect_letters_landmarks.py.
+    lại bằng mắt qua nhãn LONG/MU trong tools/collect_letters_landmarks.py.
     """
     p = np.asarray(pts, dtype=np.float64).reshape(NUM_LANDMARKS, 3)
     nz = float(np.cross(p[5] - p[0], p[17] - p[0])[2])
@@ -145,7 +145,7 @@ def simulate_view(pts: np.ndarray, rng: np.random.Generator,
     Chú ý quan trọng: xoay "hoàn hảo" rồi canonicalize cho kết quả giống hệt (đó là tính bất biến), nên xoay
     đơn thuần KHÔNG là tăng cường dữ liệu có ích. Phần có ích là nhiễu độ sâu: sau khi xoay, z bị cộng nhiễu
     Gauss (độ lệch ∝ palm_scale, ngẫu nhiên trong z_sigma_range) và x,y bị rung nhẹ. Cường độ nhiễu là GIẢ ĐỊNH
-    cần kiểm chứng bằng dữ liệu thu thật nhiều góc (collect_letters_landmarks.py).
+    cần kiểm chứng bằng dữ liệu thu thật nhiều góc (tools/collect_letters_landmarks.py).
     """
     p = np.asarray(pts, dtype=np.float64).reshape(NUM_LANDMARKS, 3)
     s = max(palm_scale(p), 1e-9)

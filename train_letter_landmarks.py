@@ -2,7 +2,7 @@
 """
 HUẤN LUYỆN + ĐO nhánh chữ cái dựa trên landmark 3D chuẩn hóa.
 
-Dữ liệu: letter_landmarks/<người>/*.npz (do collect_letters_landmarks.py tạo).
+Dữ liệu: letter_landmarks/<người>/*.npz (do tools/collect_letters_landmarks.py tạo).
 Chia train/test THEO PHIÊN (không theo khung — khung trong một phiên gần như trùng nhau nên chia theo khung
 sẽ phồng độ chính xác). Có thể giữ nguyên cả một người làm tập test (--holdout-person) để đo khả năng
 tổng quát hóa sang người lạ.
@@ -63,7 +63,7 @@ def load_dataset(root: str, space: str = "world") -> Dict[str, Any]:
 
 
 def is_ext(data: Dict[str, Any]) -> np.ndarray:
-    """Dữ liệu cộng đồng nhập bằng import_letter_images.py (person = EXT_*): CHỈ để train, không bao giờ vào test."""
+    """Dữ liệu cộng đồng nhập bằng tools/import_letter_images.py (person = EXT_*): CHỈ để train, không bao giờ vào test."""
     return np.array([p.startswith("EXT_") for p in data["person"]], dtype=bool)
 
 

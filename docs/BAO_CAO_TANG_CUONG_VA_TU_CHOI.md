@@ -91,5 +91,5 @@ Ghi chú ngoài phạm vi: trên chính stroke gốc, production (ký nhanh mặ
 
 ## File mới / đã sửa
 
-Mới: `augment_templates.py`, `eval_open_set.py`, `eval_segmenter_fps.py`, `backup_utils.py`, `configs/G1p90.json`, `configs/G2p00.json`, `tests/test_robustness_step.py` (23 test).
+Mới: `augment_templates.py`, `eval_open_set.py`, `tools/eval_segmenter_fps.py`, `backup_utils.py`, `configs/G1p90.json`, `configs/G2p00.json`, `tests/test_robustness_step.py` (23 test).
 Sửa (cộng thêm, mặc định giữ nguyên): `dynamic_dtw_engine.py` (`is_original` trong độ rộng nội lớp; `width_blend`/`effective_width`; tham số `time_normalized…` của `KineticPauseSegmenter`), `pipeline_common.py` (`make_segmenter` đọc `time_norm`), `scoreboard.py` (`global_k:<k>`, `blend_k:<b>:<k>`), `predict_sentence_webcam.py` (CONFIG `width_blend`/`time_norm`/`dedupe_frames`; cờ `--width-blend`, `--time-norm`, `--dedupe-frames`).

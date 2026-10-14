@@ -181,7 +181,7 @@ Với mỗi target, so 3 kịch bản GRU cùng tập test: `others` (2 người
 
 **Thử loại BYE/YOU khỏi Citizen** (hai từ khớp 0% khi so trực tiếp với bank Đạt qua DTW — nghi có biến thể ký khác) — kết quả **không xác nhận giả thuyết**: đóng góp thật của Đạt giảm còn +15,6 (không tăng), Mai/Phi vẫn phẳng (−1,2 và +1,1). Kết luận: nhiễu nhãn BYE/YOU không phải nguyên nhân chính khiến Mai/Phi không hưởng lợi từ Citizen.
 
-**Quy luật rút ra**: lợi ích của dữ liệu ngoài miền (Citizen) **tỉ lệ nghịch với độ giàu dữ liệu bản địa** — giúp nhiều khi tập train còn mỏng (Đạt, 135 mẫu nền), gần như không giúp khi tập train đã đủ dày (Mai/Phi, 220+ mẫu nền). Vì bank sẽ dày dần khi thu đủ 8 tình nguyện viên, giá trị của Citizen sẽ tự giảm — không đáng đầu tư công cắt thêm video Citizen thủ công (mỗi video phải cắt tay bằng `inspect_and_trim_asl_citizen.py`, không có đường tắt tự động vì từng gây lệch miền).
+**Quy luật rút ra**: lợi ích của dữ liệu ngoài miền (Citizen) **tỉ lệ nghịch với độ giàu dữ liệu bản địa** — giúp nhiều khi tập train còn mỏng (Đạt, 135 mẫu nền), gần như không giúp khi tập train đã đủ dày (Mai/Phi, 220+ mẫu nền). Vì bank sẽ dày dần khi thu đủ 8 tình nguyện viên, giá trị của Citizen sẽ tự giảm — không đáng đầu tư công cắt thêm video Citizen thủ công (mỗi video phải cắt tay bằng `tools/inspect_and_trim_asl_citizen.py`, không có đường tắt tự động vì từng gây lệch miền).
 
 ## Pilot 4: gộp NGƯỜI THẬT (không Citizen) — đường cong theo số người tham chiếu, `eval_deep_pilot4.py`
 
@@ -206,7 +206,7 @@ Với mỗi target, so 3 kịch bản GRU cùng tập test: `others` (2 người
 
 # Chuẩn hóa segmenter theo thời gian: `time_norm` (2026-09-29)
 
-Đo bằng `eval_segmenter_fps.py` (159 stroke thật × 7 biến thể fps × 4 chế độ, không cần camera). So sánh chế độ sản xuất hiện tại (`prod`) với `prod+tn` (bật `time_norm`: quy vận tốc bắt đầu/dừng + dò Swipe-Left về THỜI GIAN thay vì SỐ KHUNG, để xử lý camera có fps thật khác 30).
+Đo bằng `tools/eval_segmenter_fps.py` (159 stroke thật × 7 biến thể fps × 4 chế độ, không cần camera). So sánh chế độ sản xuất hiện tại (`prod`) với `prod+tn` (bật `time_norm`: quy vận tốc bắt đầu/dừng + dò Swipe-Left về THỜI GIAN thay vì SỐ KHUNG, để xử lý camera có fps thật khác 30).
 
 | Biến thể | prod (cũ) | prod+tn (mới) |
 |---|---|---|

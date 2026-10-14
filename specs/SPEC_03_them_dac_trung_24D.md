@@ -132,7 +132,7 @@ bao xa**. Nên `V` (2 ngón xòe) và `U` (2 ngón khép) đang không phân bi�
 
 Class `CachedFaceDetector` trong cùng file:
 - Dùng `mp.tasks.vision.FaceDetector` với model `blaze_face_short_range.tflite`.
-- Tự tải nếu thiếu, theo **đúng khuôn** mà `inspect_and_trim_asl_citizen.py` đã làm cho
+- Tự tải nếu thiếu, theo **đúng khuôn** mà `tools/inspect_and_trim_asl_citizen.py` đã làm cho
   `hand_landmarker.task` (tìm chuỗi `urllib.request.urlretrieve` trong file đó để copy
   cách làm). URL:
   `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`
@@ -213,7 +213,7 @@ Tìm chuỗi `column_stack` trong từng file để định vị chỗ ghép vec
 |---|---|---|
 | 1 | `predict_sentence_webcam.py` | đường live (query) |
 | 2 | `collect_dynamic_templates.py` | đường live (thu mẫu) |
-| 3 | `inspect_and_trim_asl_citizen.py` | đường video |
+| 3 | `tools/inspect_and_trim_asl_citizen.py` | đường video |
 | 4 | `rebuild_templates_from_raw.py` | đường tái tạo offline |
 
 Thứ tự ghép mới (giữ nguyên 17 cột đầu, chỉ thêm vào sau):
@@ -247,7 +247,7 @@ hoạch này đang cố tránh.
 Mỗi mẫu trong `asl_citizen_templates.json` **đã lưu sẵn** `source_video` và
 `trim_range`. Video gốc vẫn còn trong `ASL_Citizen_videos/<TỪ>/`.
 
-Viết script mới `reextract_citizen_batch.py`:
+Viết script mới `tools/reextract_citizen_batch.py`:
 - Đọc file template Citizen hiện có, lấy `(source_video, trim_range)` của từng mẫu.
 - Mở đúng video đó, chạy lại MediaPipe **và bộ dò mặt** trên đúng khoảng
   `trim_range`, tính vector 24D mới + `rep_count`.
@@ -265,7 +265,7 @@ Viết script mới `reextract_citizen_batch.py`:
 
 ## NHIỆM VỤ 5 — CỔNG ĐO TỪNG NHÓM (phần quan trọng nhất của spec)
 
-Viết script `ablate_feature_groups.py`:
+Viết script `tools/ablate_feature_groups.py`:
 
 - Nạp `asl_citizen_templates_24d.json`.
 - Chạy LOO top-1 + margin trung bình cho **từng** cấu hình dưới đây. Trọng số khởi

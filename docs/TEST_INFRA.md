@@ -113,7 +113,7 @@ tests/
 
 ---
 
-## 4. Execution Commands & Test Runner (`run_e2e_tests.py`)
+## 4. Execution Commands & Test Runner (`tools/run_e2e_tests.py`)
 
 ### Run All Test Suites (Complete Test Run)
 ```bash
