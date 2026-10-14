@@ -127,37 +127,8 @@ class TestEarlyCommitOk:
 
 # ------------------------------------------------------------------ giao diện
 class TestUiChainReady:
-    def _hud(self, chain_ready, lang, seg_state="IDLE"):
-        import ui_render
-        st = ui_render.HudState(lang=lang, seg_state=seg_state, hand_found=True, hand_center=(320.0, 240.0), palm_len=90.0,
-                                settle_progress=0.3, now=100.0, chain_ready=chain_ready)
-        return ui_render, st
-
     def test_chuoi_song_ngu(self):
         import ui_render
         assert ui_render.tr("vi", "chip_chain_ready") == "Ký tiếp được rồi"
         assert ui_render.tr("en", "chip_chain_ready") == "Ready — keep signing"
         assert ui_render.tr("vi", "key_j") and ui_render.tr("en", "key_j")
-
-    def test_mac_dinh_khong_doi_nhan(self):
-        ui, st = self._hud(False, "en")
-        assert ui.HudState().chain_ready is False
-        assert ui.DemoHUD._mode(st) == "hold"
-
-    def test_cua_so_noi_mo_thi_vong_day_xanh(self):
-        ui, st = self._hud(True, "en")
-        assert ui.DemoHUD._mode(st) == "ready"
-        _, st_rec = self._hud(True, "en", seg_state="RECORDING")
-        assert ui.DemoHUD._mode(st_rec) == "recording"      # đang ghi thì giữ nguyên
-
-    @pytest.mark.parametrize("lang", ["vi", "en"])
-    @pytest.mark.parametrize("chain", [False, True])
-    def test_ve_khong_loi_ca_bang_tro_giup(self, lang, chain):
-        ui, st = self._hud(chain, lang)
-        frame = np.full((480, 640, 3), 40, dtype=np.uint8)
-        hud = ui.DemoHUD()
-        out = hud.render(frame.copy(), st)
-        assert out.shape == frame.shape and not np.array_equal(out, frame)
-        st.show_help = True
-        out2 = hud.render(frame.copy(), st)
-        assert out2.shape == frame.shape

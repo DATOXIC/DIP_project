@@ -94,7 +94,7 @@ from dynamic_dtw_engine import (
 )
 # Giao diện demo song ngữ (vẽ chữ Unicode) & dịch vụ giọng nói theo ngôn ngữ
 import speech_service
-from ui_render import DemoHUD, HudState, HudToast, draw_soft_trail, strip_diacritics
+from ui_render import draw_soft_trail, strip_diacritics
 import ui_side_panel
 from sentence_composer import compose as compose_sentence
 from camera_health import CameraHealthMonitor
@@ -608,11 +608,6 @@ def draw_prominent_hud_banner(
         stx = max(banner_x1 + 15, (w_f - stw) // 2)
         cv2.putText(frame, subtitle, (stx, banner_y1 + 54),
                     cv2.FONT_HERSHEY_SIMPLEX, sub_scale, (220, 220, 220), 1, lineType=cv2.LINE_AA)
-
-
-def _make_toast(kind: str, keys: List[str], quality: Optional[float], now: float, duration: float) -> HudToast:
-    """Tạo sự kiện phản hồi có cấu trúc cho giao diện demo (kind, khóa từ, độ khớp, thời gian bắt đầu/hết hạn)."""
-    return HudToast(kind=kind, keys=list(keys), quality=quality, t_start=now, t_expire=now + duration)
 
 
 def draw_feature_metrics_hud(
@@ -1427,10 +1422,6 @@ def run_sentence_builder(
     ui_mode = ui_mode if ui_mode in ("demo", "debug") else "demo"
     ui_lang = (ui_lang if ui_lang is not None else CONFIG.get("ui_lang", "en"))
     ui_lang = ui_lang if ui_lang in ("en", "vi") else "en"
-    hud_toast: Optional[HudToast] = None
-    show_help = False
-    demo_hud = DemoHUD(phrase_lookup=lambda k, lg: get_asl_phrase(k, lang=lg, default=""))
-    hud_warned = False
     speech_service.init_speech()  # dò giọng tiếng Việt ở luồng nền (không chặn)
     if mute_speech:
         speech_service.set_muted(True)
@@ -1730,7 +1721,6 @@ def run_sentence_builder(
             x1, y1, x2, y2 = cached_box
             current_angles: Optional[np.ndarray] = None
             current_normal: Optional[np.ndarray] = None
-            hand_center_px: Optional[Tuple[float, float]] = None   # tâm lòng bàn tay (px) cho vòng trạng thái ở giao diện demo
 
             if det_result.hand_landmarks and len(det_result.hand_landmarks) > 0:
                 hand_lost_frames = 0
@@ -1746,7 +1736,6 @@ def run_sentence_builder(
                 lm17 = landmarks[17]
                 raw_wrist_x = lm0.x * w_f
                 raw_wrist_y = lm0.y * h_f
-                hand_center_px = ((lm0.x + lm9.x) * 0.5 * w_f, (lm0.y + lm9.y) * 0.5 * h_f)
 
                 # Nguồn sự thật duy nhất của palm_len (dynamic_features.compute_palm_len), dùng chung với collector.
                 palm_len = compute_palm_len(lm0, lm5, lm9, lm17, w_f, h_f)
@@ -1858,7 +1847,6 @@ def run_sentence_builder(
                     banner_subtitle = f"\"{final_sentence}\""
                     banner_color = (0, 255, 0)
                     banner_expire = curr_time + 2.0
-                    hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
                     print(f"[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: {final_sentence}")
                     event_log.push(f"Chốt câu: \"{final_sentence}\"", ui_side_panel.COL_OK)
                     if composer_on:
@@ -1946,7 +1934,6 @@ def run_sentence_builder(
                                 banner_subtitle = f"Temporary prediction (tau={_tau_sel:.2f}s)"
                                 banner_color = (180, 180, 180) # màu xám nhạt
                                 banner_expire = curr_time + 1.0
-                                hud_toast = _make_toast("pending", [t_match.top_word], None, curr_time, 1.0)
                         else:
                             if fast_on and fc_cfg.get("tail_pad_sec"):
                                 # Chế độ ký nhanh: đuôi yên ngắn hơn bank => kéo về ~0.45 s (nhân bản khung cuối) để nhận dạng
@@ -1984,7 +1971,6 @@ def run_sentence_builder(
                                         banner_subtitle = f"Temporary prediction"
                                         banner_color = (180, 180, 180) # màu xám nhạt
                                         banner_expire = curr_time + 1.0
-                                        hud_toast = _make_toast("pending", [t_match.top_word], None, curr_time, 1.0)
 
                 # 4. Quản lý vệt sáng chuyển động neon (Lưu tọa độ + nhãn thời gian)
                 trail_points.append((int(wrist_x), int(wrist_y), curr_time))
@@ -1994,7 +1980,6 @@ def run_sentence_builder(
                     if len(sentence_words) > 0:
                         removed = sentence_words.pop()
                         removed_key = sentence_keys.pop() if sentence_keys else ""
-                        hud_toast = _make_toast("deleted", [removed_key] if removed_key else [], None, curr_time, 1.6)
                         sentence_finalized = False
                         banner_title = f"<- BACKSPACE: -{removed}"
                         banner_subtitle = "Action: Deleted last word"
@@ -2007,7 +1992,6 @@ def run_sentence_builder(
                         banner_subtitle = "Nothing to delete"
                         banner_color = (0, 200, 255)
                         banner_expire = curr_time + 1.2
-                        hud_toast = _make_toast("empty", [], None, curr_time, 1.2)
                     trail_points.clear()
                     stroke_angles_history.clear()
                     stroke_ext_history.clear()
@@ -2114,7 +2098,6 @@ def run_sentence_builder(
                                         _os_ok, _os_reason = one_shot_lock.allow_commit(float(completed_stroke[0].timestamp), word_key)
                                         _os_blocked = not _os_ok
                                     if _os_blocked:
-                                        hud_toast = _make_toast("suppressed", [word_key], None, curr_time, 1.0)
                                         _os_why = ("ngoài khoảng đang ký (spotter báo không ký)" if _os_reason == "no_span"
                                                    else "đã có từ được chốt trong khoảng ký này")
                                         print(f"[OneShot] Chặn '{en_phrase}' ({_os_reason}): {_os_why}. (p tối đa trong stroke = {one_shot_lock.last_pmax:.2f})")
@@ -2140,7 +2123,6 @@ def run_sentence_builder(
                                         if _max_sw > 0 and len(sentence_words) >= _max_sw:
                                             # Ký liên tục không hạ tay: chốt câu khi đủ số từ để câu không dài vô hạn.
                                             sentence_finalized = True
-                                            hud_toast = _make_toast("committed", [], None, curr_time, 2.0)
                                             print(f"[SentenceBuilder] ✓ ĐỦ {_max_sw} TỪ, CHỐT CÂU: {' '.join(sentence_words)} .")
                                         lead_trim_history.append(cur_lead_trim_sec)
 
@@ -2155,7 +2137,6 @@ def run_sentence_builder(
                                             banner_subtitle += f" [trim {cur_lead_trim_sec:.2f}s]"
                                         banner_color = (0, 255, 100)
                                         banner_expire = curr_time + 2.0
-                                        hud_toast = _make_toast("accepted", [word_key], float(do_khop), curr_time, 2.0)
 
                                         # Phát âm theo ngôn ngữ giao diện, bất đồng bộ không chặn (R4 Non-blocking TTS).
                                         # Tôn trọng phím [t] (tắt loa); lỗi giọng nói không được làm sập vòng lặp.
@@ -2196,8 +2177,6 @@ def run_sentence_builder(
                                     banner_subtitle = f"Dist: {match_result.best_distance:.2f} | Do khop: {match_result.match_quality:.0f} | Margin: {margin_pct:.1f}%"
                                     banner_color = (0, 200, 255)
                                     banner_expire = curr_time + 1.4
-                                    hud_toast = _make_toast("uncertain", [c1.word_key, c2.word_key],
-                                                            float(match_result.match_quality), curr_time, 1.4)
                                     reason = "Margin Guard (2 từ quá sát nhau)" if c1.distance <= (c1.r_ratio * 1.6) else "Vượt ngưỡng chuẩn"
                                     print(f"[SentenceBuilder] ❓ Nghi vấn ({reason}): {en1} (d1={c1.distance:.2f}, Do khop={c1.match_quality:.0f}) vs {en2} (d2={c2.distance:.2f}) | Margin: {margin_pct:.1f}%")
 
@@ -2219,7 +2198,6 @@ def run_sentence_builder(
                                     banner_subtitle = f"DTW Distance: {match_result.best_distance:.2f} | Do khop: {match_result.match_quality:.0f} (Rejected)"
                                     banner_color = (140, 140, 140)  # Xám per SPEC 04B
                                     banner_expire = curr_time + 1.0
-                                    hud_toast = _make_toast("rejected", [], float(match_result.match_quality), curr_time, 1.0)
                                     print(f"[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: {match_result.best_distance:.2f}, Do khop: {match_result.match_quality:.0f})")
 
                                     _emit_event("REJECTED", match_result, completed_stroke, stroke_duration, _commit_mode,
@@ -2349,73 +2327,6 @@ def run_sentence_builder(
                     _log_text = f"{banner_title} | {banner_subtitle}" if banner_subtitle else banner_title
                     event_log.push(_log_text, banner_color)
 
-            if ui_mode == "legacy_demo":
-                # ---------------- GIAO DIỆN DEMO SONG NGỮ CŨ (ui_render.DemoHUD) ----------------
-                # Chỉ dùng khi cố tình chạy legacy_demo không có side panel
-                _seg_val = getattr(seg_state, "value", str(seg_state))
-                _settle: Optional[float] = None
-                if getattr(segmenter, "require_ready_pose", False):
-                    if seg_state == KineticState.READY:
-                        _settle = 1.0
-                    elif seg_state == KineticState.IDLE:
-                        _settle = min(1.0, segmenter.ready_counter / max(1, segmenter.effective_ready_stable_frames()))
-                _rec = 0.0
-                if seg_state in (KineticState.RECORDING, KineticState.PENDING_COMMIT):
-                    _rec = min(1.0, len(segmenter.buffer) / max(1, segmenter.effective_max_stroke_frames()))
-                # SPEC 08: cửa sổ nối đang mở => vòng quanh tay giữ trạng thái "sẵn sàng" (đầy, xanh), chip "Ký tiếp được rồi"
-                _chain_ready = bool(fast_on and hand_found and segmenter.chain_window_open(curr_time))
-                if not hand_found:
-                    _center = None
-                elif hand_center_px is not None:
-                    _center = hand_center_px
-                else:
-                    _center = (wrist_x, wrist_y)
-                if face_detector is None:
-                    _face_state = "off"
-                elif current_face_box is not None:
-                    _face_state = "ok"
-                else:
-                    _face_state = "searching"
-                _cam_hud_fields = {}
-                if cam_monitor is not None:
-                    _cam_status = cam_monitor.status()
-                    _cam_hud_fields = dict(
-                        unique_fps=cam_monitor.unique_fps, loop_fps=cam_monitor.loop_fps,
-                        camera_warning=_cam_status[0] if _cam_status else None,
-                        camera_warning_level=_cam_status[1] if _cam_status else "warn",
-                        dup_ratio=cam_monitor.dup_ratio, near_dup_ratio=cam_monitor.near_dup_ratio,
-                        luma_mean=cam_monitor.luma_mean,
-                    )
-                hud_state = HudState(
-                    lang=ui_lang,
-                    seg_state=_seg_val,
-                    hand_found=hand_found,
-                    hand_center=_center,
-                    palm_len=palm_len,
-                    v_norm=v_norm,
-                    settle_progress=_settle,
-                    record_progress=_rec,
-                    fps=fps,
-                    sentence_keys=list(sentence_keys),
-                    sentence_finalized=sentence_finalized,
-                    toast=hud_toast if (hud_toast is not None and curr_time <= hud_toast.t_expire) else None,
-                    vocabulary_empty=(len(dtw_engine.vocabulary) == 0),
-                    face_state=_face_state,
-                    speech_status=speech_service.get_speech_status(ui_lang),
-                    show_help=show_help,
-                    camera_index=camera_index,
-                    now=curr_time,
-                    chain_ready=_chain_ready,
-                    **_cam_hud_fields,
-                )
-                try:
-                    demo_hud.render(display_frame, hud_state)
-                except Exception as hud_err:
-                    if not hud_warned:
-                        hud_warned = True
-                        print(f"[HUD] Lỗi vẽ giao diện demo ({hud_err}) — bỏ qua khung hình này, vòng lặp vẫn chạy.")
-                        event_log.push(f"Loi HUD demo: {hud_err}", (0, 0, 255))
-
             if profile:
                 _t_draw += time.perf_counter() - _t0_draw_hud
 
@@ -2505,7 +2416,6 @@ def run_sentence_builder(
                 elif key in [ord('c'), ord('C')]:
                     sentence_words.clear()
                     sentence_keys.clear()
-                    hud_toast = _make_toast("cleared", [], None, curr_time, 1.5)
                     sentence_finalized = False
                     trail_points.clear()
                     banner_title = "SENTENCE CLEARED"
@@ -2530,8 +2440,6 @@ def run_sentence_builder(
                 elif key in [ord('t'), ord('T')]:
                     _muted_now = speech_service.toggle_muted()
                     print(f"[UI] Loa: {'TẮT' if _muted_now else 'BẬT'}")
-                elif key in [ord('h'), ord('H')]:
-                    show_help = not show_help
                 elif key in [ord('j'), ord('J')]:
                     # SPEC 08: bật/tắt chế độ KÝ NHANH lúc chạy. Dựng lại bộ phân đoạn (tham số khác) và bỏ dở stroke đang ghi.
                     fast_on = not fast_on
@@ -2575,7 +2483,6 @@ def run_sentence_builder(
                     banner_subtitle = f"Adaptive lead trimming {'enabled' if lead_trim_on else 'disabled'}"
                     banner_color = (0, 255, 200) if lead_trim_on else (150, 150, 150)
                     banner_expire = curr_time + 1.5
-                    hud_toast = _make_toast("lead_trim", [], None, curr_time, 1.5)
                     print(f"[UI] Cắt phần dẫn đầu (lead-trim): {'BẬT' if lead_trim_on else 'TẮT'}")
 
             if max_frames is not None and processed_frames >= max_frames:
