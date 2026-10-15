@@ -30,6 +30,7 @@ Kỳ vọng: giao diện panel bên phải + panel dưới; dòng khởi động
 - [ ] Đứng yên, gãi mặt, uống nước, vẫy tay (không ký): **không** nên có từ nào chốt (ghi lại nếu có, kèm từ nào).
 - [ ] Ký liên tục 10 từ không hạ tay: câu tự chốt khi đủ 8 từ (viền xanh), từ thứ 9 mở câu mới; câu không tràn khỏi panel.
 - [ ] Hạ tay > 1,8 s: câu chốt, có câu tự nhiên song ngữ (SPEC 14) nếu bật.
+- [ ] Mẫu âm trực tuyến: làm một cử chỉ vu vơ cho đến khi một từ bị chốt nhầm, bấm **n**: từ đó bị xóa khỏi câu, hiện "REMOVED", và có thư mục mới `continuous_data/_online/*_onlineneg`. Bấm **x** khi một từ vừa chốt là sai từ: từ bị xóa, thêm dòng vào `continuous_data/_online/log.jsonl`.
 
 ## 3. Dạy từ mới / hiệu chỉnh (5 phút) — phần dùng để trình bày cho giảng viên
 Phải dùng hồ sơ **không phải Đạt** (Đạt bị từ chối vì bank gốc đang đóng băng):

@@ -101,6 +101,7 @@ from camera_health import CameraHealthMonitor
 from lead_trim import select_best_lead_trim
 from session_enroll import SessionEnroller, TeachPlan
 from fingerspell import Fingerspeller
+from online_negatives import OnlineNegativeRecorder
 from hand_pose_features import extract_hand, landmarks_to_features
 
 class _NoHandResult:
@@ -114,6 +115,38 @@ _NO_HAND_RESULT = _NoHandResult()
 SPELL_MODEL_PATH = "letter_landmark_model.pt"   # landmark 3D thế giới, 14 chữ cái + 2 lớp hình tay ('1', '5')
 SPELL_MIN_CONF = 0.6                            # tin cậy tối thiểu (sau làm mượt) để một khung được tính là một chữ
 SPELL_IDLE_SEC = 3.0                            # hạ tay quá ngần này giây khi đã có chữ => tự kết thúc đánh vần
+
+# =============================================================================
+# TĂNG CƯỜNG ẢNH DIP (CHỐNG CHÓI SÁNG TƯỜNG TRẮNG / OVEREXPOSURE)
+# =============================================================================
+_GAMMA_LUT: dict = {}
+_CLAHE_OBJ: Optional[cv2.CLAHE] = None
+
+
+def apply_dip_enhancement(frame: np.ndarray, gamma: float = 1.35, use_clahe: bool = True) -> np.ndarray:
+    """Tăng cường ảnh chống chói sáng tường trắng bằng Gamma Correction phi tuyến + CLAHE kênh L (không gian LAB)."""
+    if frame is None or frame.size == 0:
+        return frame
+    global _CLAHE_OBJ
+    # 1. Nén dải sáng cao bằng Gamma phi tuyến qua Look-Up Table
+    lut = _GAMMA_LUT.get(gamma)
+    if lut is None:
+        inv_g = 1.0 / max(0.1, gamma)
+        table = np.array([((i / 255.0) ** inv_g) * 255 for i in range(256)]).astype("uint8")
+        _GAMMA_LUT[gamma] = table
+        lut = table
+    enhanced = cv2.LUT(frame, lut)
+
+    # 2. Tăng tương phản viền ngón tay bằng CLAHE trên kênh Lightness của không gian màu CIE L*a*b*
+    if use_clahe:
+        if _CLAHE_OBJ is None:
+            _CLAHE_OBJ = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+        l_ch, a_ch, b_ch = cv2.split(lab)
+        cl = _CLAHE_OBJ.apply(l_ch)
+        enhanced = cv2.cvtColor(cv2.merge((cl, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+    return enhanced
+
 
 # =============================================================================
 # 0. BẢNG CẤU HÌNH TRUNG TÂM (CENTRAL CONFIGURATION)
@@ -1052,6 +1085,7 @@ def run_sentence_builder(
     uncertainty_k: Optional[float] = None,
     ui_mode: Optional[str] = None,
     ui_lang: Optional[str] = None,
+    online_negatives: Optional[bool] = None,
     fast_chain: Optional[bool] = None,
     transition_lockout: Optional[float] = None,
     lead_trim: Optional[bool] = None,
@@ -1080,6 +1114,8 @@ def run_sentence_builder(
     seg_tune: Optional[Dict[str, Any]] = None,
     motion_mode: str = "wrist",
     composer: Optional[bool] = None,
+    prefer_dshow: bool = False,
+    dip_enhance: bool = False,
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1421,6 +1457,9 @@ def run_sentence_builder(
 
     # CHẾ ĐỘ ĐÁNH VẦN (phím [s]): ký từng chữ cái tĩnh, giữ ổn định ~0.7 s thì chốt; kết thúc bằng [s] hoặc hạ tay > 3 s.
     # Tên ký xong vào câu dưới dạng token "SPELL:<TÊN>" (sentence_composer.py biến thành "My name is ...").
+    # MẪU ÂM TRỰC TUYẾN (phím [n] = "vừa rồi là cử chỉ vu vơ", [x] = "từ vừa rồi sai"): chỉ GHI dữ liệu, huấn luyện lại ngoại tuyến.
+    _on_enabled = CONFIG.get("online_negatives", True) if online_negatives is None else bool(online_negatives)
+    neg_rec: Optional[OnlineNegativeRecorder] = OnlineNegativeRecorder() if _on_enabled else None
     speller = Fingerspeller()
     spell_mode = False
     spell_clf: Optional[Any] = None
@@ -1551,8 +1590,11 @@ def run_sentence_builder(
             if video_clock:
                 _vclk_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
                 print(f"[Video] Dùng ĐỒNG HỒ VIDEO ({_vclk_fps:.1f} fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0={_vclk_t0:.3f}")
-    elif not headless:
-        cap = open_camera(camera_index, prefer_mjpg=True)
+    dip_enhance_on: bool = bool(dip_enhance)
+    if dip_enhance_on:
+        print("[DIP] Tăng cường ảnh chống chói sáng (Gamma 1.35 + CLAHE) đang BẬT.")
+    if not headless and video_path is None:
+        cap = open_camera(camera_index, prefer_mjpg=True, prefer_dshow=prefer_dshow)
 
     # Đồng hồ VIDEO: chỉ số khung / fps thay cho time.time(), để bộ phân đoạn (nghỉ, cổng thời lượng...) không phụ thuộc
     # tốc độ xử lý. Khung được thưa bớt về <= ~30 fps (video 60 fps lấy cách một khung) cho giống điều kiện webcam.
@@ -1669,6 +1711,9 @@ def run_sentence_builder(
                     if not is_dup_frame:
                         if flip_cam:
                             frame = cv2.flip(frame, 1)
+
+                        if dip_enhance_on:
+                            frame = apply_dip_enhancement(frame, gamma=1.35, use_clahe=True)
 
                         if detect_scale < 0.999:
                             det_frame = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale, interpolation=cv2.INTER_AREA)
@@ -1958,6 +2003,15 @@ def run_sentence_builder(
 
             if trace_file is not None and not hand_found:
                 trace_file.write(json.dumps({"t": round(float(curr_time), 3), "h": 0, "s": segmenter.state.name[:3]}) + "\n")
+            if neg_rec is not None:
+                # Bộ đệm landmark ~4 s cho mẫu âm trực tuyến. Lưu ở chiều gương mà spotter đã học (xem nhánh spotter bên dưới).
+                _nr_pts, _nr_lab, _nr_sc = None, None, 0.0
+                if det_result.hand_landmarks and len(det_result.hand_landmarks) > 0:
+                    _nr_pts = [[_q.x, _q.y, _q.z] for _q in det_result.hand_landmarks[0]]
+                    if det_result.handedness and det_result.handedness[0]:
+                        _nr_lab = det_result.handedness[0][0].category_name
+                        _nr_sc = float(det_result.handedness[0][0].score)
+                neg_rec.push(curr_time, _nr_lab, _nr_sc, _nr_pts, mirror=((video_path is None) != flip_cam))
             if hand_found:
                 # 3. Cập nhật Bộ phân đoạn động học (Tầng 2)
                 seg_state, completed_stroke, is_swipe, v_norm = segmenter.update(
@@ -2490,7 +2544,7 @@ def run_sentence_builder(
                 palm_len=palm_len,
                 palm_normal=current_normal,
                 event_log=event_log,
-                help_line="[d]:Dac trung [Swipe-Left]:Xoa tu [Ha tay]:Chot cau [c]:Xoa cau [s]:Danh van [u]:Doi giao dien [q]:Thoat",
+                help_line="[p]:Driver [g]:Chong choi DIP [s]:Danh van [d]:Dac trung [c]:Xoa cau [u]:Doi giao dien [q]:Thoat",
                 ui_mode=ui_mode,
                 ui_lang=ui_lang,
                 profile_lines=profile_lines,
@@ -2513,6 +2567,38 @@ def run_sentence_builder(
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
                 key = cv2.waitKey(1) & 0xFF
+                if neg_rec is not None and key in [ord('n'), ord('N')]:
+                    # [n] = cử chỉ vu vơ: ghi ~3 s landmark gần nhất làm mẫu âm; nếu một từ vừa được chốt trong 3 s qua thì xóa nó.
+                    _removed = None
+                    if sentence_words and (curr_time - last_commit_time) <= 3.0:
+                        _removed = sentence_words.pop()
+                        if sentence_keys:
+                            sentence_keys.pop()
+                        last_committed_word = None
+                    _nd = neg_rec.save_negative(curr_time, reason="user_n", extra={"removed_word": _removed})
+                    if _nd:
+                        _msg = "Đã lưu mẫu âm" + (f", xóa '{_removed}'" if _removed else "")
+                        print(f"[MauAm] {_msg} -> {_nd} (tổng {neg_rec.saved} trong phiên)")
+                        event_log.push(_msg, ui_side_panel.COL_WARN)
+                        banner_title = "NOISE SAVED" if not _removed else f"REMOVED: {_removed}"
+                        banner_subtitle = f"Negative sample #{neg_rec.saved} saved"
+                        banner_color = (0, 165, 255)
+                        banner_expire = curr_time + 1.5
+                    else:
+                        print("[MauAm] Chưa đủ khung gần đây để lưu mẫu âm (cần tay xuất hiện ~1 s).")
+                elif neg_rec is not None and key in [ord('x'), ord('X')]:
+                    # [x] = từ vừa chốt là SAI: xóa khỏi câu, ghi dòng 'wrong_word' để dùng làm mẫu khó / bằng chứng sau này.
+                    if sentence_words:
+                        _w = sentence_words.pop()
+                        _k = sentence_keys.pop() if sentence_keys else None
+                        last_committed_word = None
+                        neg_rec.log_wrong_word(_w, {"key": _k, "t": round(float(curr_time), 3)})
+                        event_log.push(f"Sai từ: xóa '{_w}'", ui_side_panel.COL_WARN)
+                        print(f"[MauAm] Đánh dấu SAI TỪ: '{_w}' (đã xóa khỏi câu, ghi vào continuous_data/_online/log.jsonl).")
+                        banner_title = f"WRONG: {_w}"
+                        banner_subtitle = "Word removed"
+                        banner_color = (0, 165, 255)
+                        banner_expire = curr_time + 1.5
                 if key == ord('q'):
                     break
                 elif key in [ord('d'), ord('D')]:
@@ -2567,7 +2653,15 @@ def run_sentence_builder(
                     event_log.push(f"Lật camera: {'BẬT (Gương)' if flip_cam else 'TẮT'}", ui_side_panel.COL_MUTED)
                 elif key in [ord('p'), ord('P')]:
                     if cap is not None:
-                        cap.set(cv2.CAP_PROP_SETTINGS, 1)
+                        res = cap.set(cv2.CAP_PROP_SETTINGS, 1)
+                        if not res:
+                            print("[Camera] Không thể mở Camera Settings qua backend hiện tại. Khuyên dùng cờ --dshow hoặc chạy: py tools/adjust_camera.py")
+                            event_log.push("Mo driver: Chay py tools/adjust_camera.py", ui_side_panel.COL_WARN)
+                elif key in [ord('g'), ord('G')]:
+                    dip_enhance_on = not dip_enhance_on
+                    print(f"[DIP] Tăng cường ảnh chống chói tường trắng (Gamma 1.35 + CLAHE): {'BẬT' if dip_enhance_on else 'TẮT'}")
+                    event_log.push(f"DIP Anti-Glare: {'BAT' if dip_enhance_on else 'TAT'}",
+                                   ui_side_panel.COL_OK if dip_enhance_on else ui_side_panel.COL_MUTED)
                 elif key in [ord('l'), ord('L')]:
                     ui_lang = "vi" if ui_lang == "en" else "en"
                     print(f"[UI] Ngôn ngữ giao diện + giọng nói: {ui_lang.upper()}")
@@ -2792,6 +2886,8 @@ if __name__ == "__main__":
     parser.add_argument("--luu-ho-so", type=str, default=None,
                         help="Lưu mẫu xác nhận/dạy của phiên vào hồ sơ cá nhân này (dip.py tự truyền khi chạy bank gộp Đạt + hồ sơ).")
     parser.add_argument("--width-blend", type=float, default=None, help="Pha trộn độ rộng chuẩn hóa ngưỡng 0..1 (0 = độ rộng riêng từng từ, 1 = thang chung). Mặc định lấy CONFIG['width_blend'] (0.0).")
+    parser.add_argument("--no-online-neg", action="store_true", default=False,
+                        help="Tắt ghi mẫu âm trực tuyến (phím [n] = vu vơ, [x] = sai từ). Mặc định BẬT, ghi vào continuous_data/_online/.")
     parser.add_argument("--ui", type=str, choices=["demo", "debug"], default=None, help="Giao diện: 'demo' (sạch, cho người dùng cuối) hoặc 'debug' (bảng đặc trưng cũ). Mặc định lấy CONFIG['ui_mode'].")
     parser.add_argument("--lang", type=str, choices=["en", "vi"], default=None, help="Ngôn ngữ giao diện + giọng nói: 'en' hoặc 'vi'. Mặc định lấy CONFIG['ui_lang'].")
     parser.add_argument("--fast-chain", action=argparse.BooleanOptionalAction, default=None,
@@ -2847,6 +2943,10 @@ if __name__ == "__main__":
                         help="Không đòi tay đứng yên trước khi bắt đầu ghi (cho người ký nhanh, video không có nhịp dừng).")
     parser.add_argument("--hold-on-hand-loss", action="store_true", default=False,
                         help="Khi tay biến mất giữa lúc đang ghi, giữ tư thế cuối ~0.3 s để chốt cử chỉ thay vì xóa.")
+    parser.add_argument("--dshow", action="store_true", default=False,
+                        help="Ưu tiên backend DirectShow để có thể bấm phím [p] chỉnh cài đặt driver camera.")
+    parser.add_argument("--dip-enhance", action="store_true", default=False,
+                        help="Bật chế độ tăng cường ảnh DIP (Gamma 1.35 + CLAHE) chống chói sáng tường trắng. Phím [g] để đổi lúc chạy.")
     args, _ = parser.parse_known_args()
 
     eff_dl_model_path = None
@@ -2884,6 +2984,7 @@ if __name__ == "__main__":
         uncertainty_k=args.uncertainty_k,
         ui_mode=args.ui,
         ui_lang=args.lang,
+        online_negatives=(False if args.no_online_neg else None),
         fast_chain=args.fast_chain,
         transition_lockout=args.transition_lockout,
         lead_trim=args.lead_trim,
@@ -2911,6 +3012,8 @@ if __name__ == "__main__":
         trace_path=args.trace,
         motion_mode=args.motion,
         composer=args.composer,
+        prefer_dshow=args.dshow,
+        dip_enhance=args.dip_enhance,
         seg_tune={k: v for k, v in {"pause_sec": args.pause_sec, "grace_sec": args.grace_sec, "v_stop": args.v_stop,
                                     "v_start": args.v_start, "early_commit": args.early_commit}.items() if v is not None} or None,
     )
