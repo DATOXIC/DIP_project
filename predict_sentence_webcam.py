@@ -1579,7 +1579,7 @@ def run_sentence_builder(
         # Mọi đồng hồ nội bộ khởi tạo theo đồng hồ video (ban đầu là time.time() của đồng hồ máy).
         last_hand_seen_time = vid_seek_sec
 
-    flip_cam = False
+    flip_cam = video_path is None   # webcam trực tiếp LUÔN lật gương (khớp dữ liệu huấn luyện); video phiên thu đã lật sẵn; [f] để đảo
     if show_features is None:
         show_features = False
     prev_time = vid_seek_sec if (video_path is not None and cap is not None) else time.time()
