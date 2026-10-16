@@ -558,6 +558,12 @@ DEFAULT_VOCAB = {
     'a': ('YES',       'Yes / Vâng, Có',      'Nắm tay chữ S gật lên xuống như đầu gật'),
     'b': ('BAD',       'Bad / Tệ, Xấu',       'Chạm các ngón tay vào cằm rồi lật úp hướng xuống'),
     'c': ('HUNGRY',    'Hungry / Đói',        'Bàn tay khum chữ C kéo từ cổ họng xuống ngực'),
+    # 5 từ mới bổ sung
+    'e': ('SLEEP',     'Sleep / Ngủ',         'Nghiêng đầu, áp lòng bàn tay vào má'),
+    'g': ('CRY',       'Cry / Khóc',          'Hai ngón trỏ vuốt từ dưới mắt xuống má'),
+    'h': ('THINK',     'Think / Nghĩ',        'Ngón trỏ chạm vào thái dương hoặc trán'),
+    'k': ('KNOW',      'Know / Biết',         'Đầu 4 ngón tay chạm nhẹ vào trán'),
+    'p': ('PHONE',     'Phone / Điện thoại',  'Tay chữ Y áp ngón cái vào tai, ngón út vào miệng'),
 }
 
 TARGET_SAMPLES_PER_WORD = 8
@@ -1493,8 +1499,8 @@ def run_dynamic_collector(
         col2 = vocab_items[half:]
 
         y_base = card_c_y1 + 35
-        row_h = 18 if len(vocab_items) > 10 else 22
-        font_sc = 0.33 if len(vocab_items) > 10 else 0.35
+        row_h = 16 if len(vocab_items) > 13 else (18 if len(vocab_items) > 10 else 22)
+        font_sc = 0.30 if len(vocab_items) > 13 else (0.33 if len(vocab_items) > 10 else 0.35)
 
         for i, (k_opt, (w_id, d_name, _)) in enumerate(col1):
             n_samp = len(dtw_engine.vocabulary.get(w_id, {}).get("samples", []))
@@ -1531,7 +1537,7 @@ def run_dynamic_collector(
         card_d_y1, card_d_y2 = 390, 452
         cv2.rectangle(canvas, (8, card_d_y1), (SIDEBAR_W - 8, card_d_y2), (12, 12, 12), -1)
         cv2.rectangle(canvas, (8, card_d_y1), (SIDEBAR_W - 8, card_d_y2), (32, 32, 32), 1)
-        cv2.putText(canvas, "[1-0,a-c]: Chon tu | [n]: Mau am | [f]: Flip",
+        cv2.putText(canvas, "[Phim tat]: Chon tu | [n]: Mau am | [f]: Flip",
                     (14, card_d_y1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (180, 180, 180), 1, lineType=cv2.LINE_AA)
         cv2.putText(canvas, "[o]: Overlay | [d]: HUD 3D | [r]: Undo | [x]: Xoa",
                     (14, card_d_y1 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (180, 180, 180), 1, lineType=cv2.LINE_AA)

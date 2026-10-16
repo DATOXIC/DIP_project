@@ -114,7 +114,8 @@ class _NoHandResult:
 _NO_HAND_RESULT = _NoHandResult()
 SPELL_MODEL_PATH = "letter_landmark_model.pt"   # landmark 3D thế giới, 14 chữ cái + 2 lớp hình tay ('1', '5')
 SPELL_MIN_CONF = 0.6                            # tin cậy tối thiểu (sau làm mượt) để một khung được tính là một chữ
-SPELL_IDLE_SEC = 3.0                            # hạ tay quá ngần này giây khi đã có chữ => tự kết thúc đánh vần
+SPELL_IDLE_SEC = 1.8                            # hạ tay quá 1.8s khi ĐÃ có chữ => tự chốt tên vào câu (đồng bộ 1.8s chốt câu)
+SPELL_ABORT_IDLE_SEC = 2.0                      # hạ tay quá 2.0s khi CHƯA có chữ => tự hủy đánh vần, tránh kẹt chế độ
 
 # =============================================================================
 # TĂNG CƯỜNG ẢNH DIP (CHỐNG CHÓI SÁNG TƯỜNG TRẮNG / OVEREXPOSURE)
@@ -311,6 +312,12 @@ ASL_VOCAB_MAP: Dict[str, Dict[str, str]] = {
     "MY":        {"en": "My",        "vi": "Của tôi"},
     "NICE":      {"en": "Nice",      "vi": "Vui"},
     "MEET":      {"en": "Meet",      "vi": "Gặp"},
+    # Các từ mới bổ sung
+    "SLEEP":     {"en": "Sleep",     "vi": "Ngủ"},
+    "CRY":       {"en": "Cry",       "vi": "Khóc"},
+    "THINK":     {"en": "Think",     "vi": "Nghĩ"},
+    "KNOW":      {"en": "Know",      "vi": "Biết"},
+    "PHONE":     {"en": "Phone",     "vi": "Điện thoại"},
     # Alias tương thích ngược cho template tiếng Việt cũ nếu có
     "xin_chao":  {"en": "Hello",     "vi": "Xin chào"},
     "cam_on":    {"en": "Thank You", "vi": "Cảm ơn"},
@@ -1465,6 +1472,69 @@ def run_sentence_builder(
     spell_clf: Optional[Any] = None
     spell_ema: Optional[np.ndarray] = None
     spell_no_hand_since: Optional[float] = None
+    spell_auto = False   # True = chế độ đánh vần được kích hoạt TỰ ĐỘNG (không phải phím [s])
+
+    # -----------------------------------------------------------------------
+    # AUTO-SPELL TRIGGERS: các chuỗi từ cuối câu gợi ý người dùng sắp ký tên.
+    # Khi câu kết thúc bằng một trong các chuỗi này, hệ thống tự động bật
+    # spell_mode mà không cần phím [s]. Phím [s] vẫn hoạt động bất cứ lúc nào.
+    # -----------------------------------------------------------------------
+    _SPELL_TRIGGERS: frozenset = frozenset([
+        ("NAME",),               # [NAME] → ngay sau đó đánh vần tên
+        ("MY", "NAME"),          # MY NAME → "My name is ..."
+        ("ME", "NAME"),          # ME NAME → giống MY NAME (dạng ký tắt)
+        ("HELLO",),              # HELLO → chào và nói tên
+        ("NICE", "MEET", "YOU"), # NICE MEET YOU → giới thiệu tên
+    ])
+
+    def _should_auto_spell(keys: List[str]) -> bool:
+        """True nếu đuôi câu vừa chốt khớp một trong các trigger words."""
+        tail = tuple(keys)
+        for trigger in _SPELL_TRIGGERS:
+            n = len(trigger)
+            if tail[-n:] == trigger:
+                return True
+        return False
+
+    def _activate_spell_mode(auto: bool = False) -> None:
+        """Bật spell_mode, nạp model nếu cần, reset trạng thái. Dùng chung cho tự động và phím [s]."""
+        nonlocal spell_mode, spell_clf, spell_ema, spell_no_hand_since, spell_auto
+        nonlocal has_predicted_pending, segmenter
+        if spell_clf is None:
+            try:
+                from letter_landmark_classifier import LetterLandmarkClassifier
+                spell_clf = LetterLandmarkClassifier(SPELL_MODEL_PATH, min_conf=0.0)
+            except Exception as _spell_err:
+                print(f"[Spell] Không nạp được '{SPELL_MODEL_PATH}': {_spell_err}")
+                event_log.push("Không nạp được model chữ cái", ui_side_panel.COL_WARN)
+                return
+        spell_mode = True
+        spell_auto = auto
+        speller.reset()
+        spell_ema = None
+        spell_no_hand_since = None
+        # Bỏ dở stroke đang ghi để cử chỉ trước khi bật spell không bị chốt nhầm.
+        segmenter = _new_segmenter()
+        has_predicted_pending = False
+        stroke_angles_history.clear()
+        stroke_normals_history.clear()
+        stroke_ext_history.clear()
+        _src = "TỰ ĐỘNG" if auto else "THỦ CÔNG (phím [s])"
+        print(f"[Spell] BẬT đánh vần ({_src}): ký từng chữ cái, giữ ổn định ~0.7 s; [s] để xong, [Backspace] để xóa chữ cuối.")
+        event_log.push(f"Bật đánh vần chữ cái ({'auto' if auto else 'thủ công'})", ui_side_panel.COL_DL)
+
+    def _deactivate_spell_mode() -> None:
+        """Tắt spell_mode và dọn trạng thái."""
+        nonlocal spell_mode, spell_ema, spell_no_hand_since, spell_auto
+        nonlocal has_predicted_pending, segmenter
+        spell_mode = False
+        spell_auto = False
+        spell_ema = None
+        spell_no_hand_since = None
+        speller.reset()
+        segmenter = _new_segmenter()
+        has_predicted_pending = False
+        print("[Spell] TẮT đánh vần: quay về nhận diện từ.")
 
     def _spell_finish(now: float) -> str:
         """Kết thúc đánh vần: đưa tên vừa ký vào câu. Trả tên đã ghép ('' nếu chưa có chữ nào)."""
@@ -1643,8 +1713,11 @@ def run_sentence_builder(
     print("  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).")
     print("  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).")
     print("  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.")
+    print("  - ĐÁNH VẦN TÊN: Ký 'NAME' (hoặc 'MY NAME', 'HELLO', 'NICE MEET YOU') → tự động chuyển sang đánh vần chữ cái.")
+    print("    Giữ từng chữ ~0.7s để chốt; hạ tay > 1.8s để xong (hoặc > 2.0s để tự hủy nếu chưa ký). Kết quả: 'My name is ...'")
     print("  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát")
     print("  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp")
+    print("  [s]: Bật/tắt đánh vần chữ cái THỦ CÔNG (dùng khi muốn đánh vần bất kỳ lúc nào, không cần ký trigger word)")
     print("  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)\n")
     print(f"  Giao diện: {ui_mode} | Ngôn ngữ: {ui_lang}\n")
 
@@ -1821,17 +1894,34 @@ def run_sentence_builder(
                 if (spell_no_hand_since is not None and speller.letters
                         and curr_time - spell_no_hand_since > SPELL_IDLE_SEC):
                     _spell_finish(curr_time)
-                    spell_mode = False
-                    spell_ema = None
-                    spell_no_hand_since = None
-                    print("[Spell] Hạ tay lâu: kết thúc đánh vần, quay về nhận diện từ.")
+                    _deactivate_spell_mode()
+                    print("[Spell] Hạ tay đủ lâu: chốt tên vào câu, quay về nhận diện từ.")
+                elif (spell_no_hand_since is not None and not speller.letters
+                        and curr_time - spell_no_hand_since > SPELL_ABORT_IDLE_SEC):
+                    _deactivate_spell_mode()
+                    banner_title = "SPELL: ABORTED"
+                    banner_subtitle = "Chưa ký chữ nào: Tự hủy, quay về nhận diện từ"
+                    banner_color = (160, 160, 160)
+                    banner_expire = curr_time + 1.5
+                    event_log.push("Hủy đánh vần (hạ tay)", ui_side_panel.COL_MUTED)
+                    print("[Spell] Hạ tay khi chưa có chữ: tự hủy đánh vần, quay về nhận diện từ.")
                 else:
-                    banner_title = f"SPELL: {speller.word}_" if speller.letters else "SPELL: ..."
+                    # HUD phân biệt: auto (kích hoạt tự động) vs manual (phím [s])
+                    _spell_src_icon = "✍ AUTO" if spell_auto else "✍ [s]"
+                    banner_title = f"{_spell_src_icon}: {speller.word}_" if speller.letters else f"{_spell_src_icon}: ..."
                     _cur = speller.current
-                    banner_subtitle = ((f"Hold {_cur} ({speller.progress(curr_time) * 100:.0f}%)  conf {_sp_conf * 100:.0f}%"
-                                        if _cur else ("Show a letter" if _sh is not None else "No hand"))
-                                       + "  |  [s] done  [Backspace] undo")
-                    banner_color = (255, 200, 0)
+                    if _cur:
+                        _action_hint = f"Hold {_cur} ({speller.progress(curr_time) * 100:.0f}%)  conf {_sp_conf * 100:.0f}%"
+                    elif _sh is not None:
+                        _action_hint = "Ký chữ cái tiếp theo"
+                    elif speller.letters:
+                        _rem = max(0.0, SPELL_IDLE_SEC - (curr_time - spell_no_hand_since))
+                        _action_hint = f"Hạ tay chốt tên (còn {_rem:.1f}s)"
+                    else:
+                        _rem = max(0.0, SPELL_ABORT_IDLE_SEC - (curr_time - spell_no_hand_since))
+                        _action_hint = f"Không có tay (hủy sau {_rem:.1f}s)"
+                    banner_subtitle = f"{_action_hint}  |  [s] xong  [Backspace] xóa"
+                    banner_color = (255, 160, 0) if spell_auto else (255, 200, 0)
                     banner_expire = curr_time + 0.3
 
             cam_last_v_norm = 0.0   # cập nhật lại sau khi phân đoạn tính v_norm; mất tay -> 0 (không chuyển động)
@@ -2310,6 +2400,18 @@ def run_sentence_builder(
                                         print(f"[SentenceBuilder] Nhận từ: '{en_phrase}' (Do khop: {do_khop:.0f}){trim_str} | Câu: {' '.join(sentence_words)}")
                                         event_log.push(f"Nhận từ: {en_phrase} (Khớp {do_khop:.0f}%, nguồn {match_result.result_source})", ui_side_panel.COL_OK)
 
+                                        # AUTO-SPELL: tự động bật đánh vần nếu câu vừa chốt một trigger word.
+                                        # Điều kiện: spell_mode đang tắt VÀ không đang trong chế độ dạy từ.
+                                        if (not spell_mode
+                                                and teach_plan is None
+                                                and _should_auto_spell(sentence_keys)):
+                                            _activate_spell_mode(auto=True)
+                                            # Ghi đè banner bằng hướng dẫn đánh vần rõ hơn
+                                            banner_title = f"{en_phrase} ✓  →  Đánh vần tên..."
+                                            banner_subtitle = "Giữ từng chữ ~0.7s | Hạ tay 3s để xong | [s] để hủy"
+                                            banner_color = (255, 200, 0)
+                                            banner_expire = curr_time + 4.0
+
                                     if not _os_blocked:
                                         _emit_event("ACCEPTED", match_result, completed_stroke, stroke_duration, _commit_mode,
                                                 records=(seg_records if seg_records is not None else raw_records))
@@ -2606,34 +2708,12 @@ def run_sentence_builder(
                     print(f"[HUD] {'BẬT' if show_features else 'TẮT'} bảng hiển thị đặc trưng 3D.")
                 elif key in [ord('s'), ord('S')]:
                     if not spell_mode:
-                        if spell_clf is None:
-                            try:
-                                from letter_landmark_classifier import LetterLandmarkClassifier
-                                spell_clf = LetterLandmarkClassifier(SPELL_MODEL_PATH, min_conf=0.0)
-                            except Exception as _spell_err:
-                                print(f"[Spell] Không nạp được '{SPELL_MODEL_PATH}': {_spell_err}")
-                                event_log.push("Không nạp được model chữ cái", ui_side_panel.COL_WARN)
-                        if spell_clf is not None:
-                            spell_mode = True
-                            speller.reset()
-                            spell_ema = None
-                            spell_no_hand_since = None
-                            # Bỏ dở stroke đang ghi, để cử chỉ trước khi bấm [s] không bị chốt nhầm lúc đánh vần.
-                            segmenter = _new_segmenter()
-                            has_predicted_pending = False
-                            stroke_angles_history.clear()
-                            stroke_normals_history.clear()
-                            stroke_ext_history.clear()
-                            print("[Spell] BẬT đánh vần: ký từng chữ cái, giữ ổn định ~0.7 s; [s] để xong, [Backspace] để xóa chữ cuối.")
-                            event_log.push("Bật đánh vần chữ cái", ui_side_panel.COL_DL)
+                        # Phím [s] kích hoạt THỦ CÔNG: nạp model + bật, giữ spell_auto=False
+                        _activate_spell_mode(auto=False)
                     else:
+                        # [s] lần hai: kết thúc đánh vần và quay về nhận diện từ
                         _spell_finish(curr_time)
-                        spell_mode = False
-                        spell_ema = None
-                        spell_no_hand_since = None
-                        segmenter = _new_segmenter()
-                        has_predicted_pending = False
-                        print("[Spell] TẮT đánh vần: quay về nhận diện từ.")
+                        _deactivate_spell_mode()
                 elif key == 8 and spell_mode:
                     _gone = speller.backspace()
                     print(f"[Spell] Xóa chữ '{_gone}' -> {speller.word or '(trống)'}" if _gone else "[Spell] Chưa có chữ nào để xóa.")

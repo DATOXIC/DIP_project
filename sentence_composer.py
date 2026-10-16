@@ -44,19 +44,21 @@ _NAMES: Dict[str, Dict[str, str]] = {
         "EAT": "Eat", "DRINK": "Drink", "WATER": "Water", "SORRY": "Sorry", "PLEASE": "Please",
         "YES": "Yes", "BAD": "Bad", "HUNGRY": "Hungry",
         "NO": "No", "LIKE": "Like", "WANT": "Want", "MY": "My", "NAME": "Name", "NICE": "Nice", "MEET": "Meet",
+        "SLEEP": "Sleep", "CRY": "Cry", "THINK": "Think", "KNOW": "Know", "GO": "Go", "PHONE": "Phone",
     },
     "vi": {
         "HELLO": "Xin chào", "BYE": "Tạm biệt", "ME": "Tôi", "YOU": "Bạn", "THANK_YOU": "Cảm ơn",
         "EAT": "Ăn", "DRINK": "Uống", "WATER": "Nước", "SORRY": "Xin lỗi", "PLEASE": "Làm ơn",
         "YES": "Vâng", "BAD": "Tệ", "HUNGRY": "Đói",
         "NO": "Không", "LIKE": "Thích", "WANT": "Muốn", "MY": "Của tôi", "NAME": "Tên", "NICE": "Vui", "MEET": "Gặp",
+        "SLEEP": "Ngủ", "CRY": "Khóc", "THINK": "Nghĩ", "KNOW": "Biết", "GO": "Đi", "PHONE": "Điện thoại",
     },
 }
 
 # Phân loại token (SPEC 14, mục 1.1)
 _PRON = {"ME", "YOU"}
-_VERB = {"EAT", "DRINK"}
-_NOUN = {"WATER"}
+_VERB = {"EAT", "DRINK", "SLEEP", "CRY", "THINK", "KNOW", "GO"}
+_NOUN = {"WATER", "PHONE"}
 _ADJ = {"HUNGRY", "BAD"}
 _INTJ = {"HELLO", "BYE", "THANK_YOU", "SORRY", "YES", "NO"}
 _TRANS = {"LIKE", "WANT"}   # động từ cần tân ngữ: ME LIKE YOU, ME WANT WATER, ME WANT EAT
@@ -78,8 +80,13 @@ _SPELL_RE = re.compile(r"^SPELL:([A-Z]+)$")
 
 # Từ dùng trong luật ngữ pháp: (EN, VI), chữ thường.
 _PRON_TEXT = {"ME": ("I", "Tôi"), "YOU": ("You", "Bạn")}
-_VERB_TEXT = {"EAT": ("eat", "ăn"), "DRINK": ("drink", "uống")}
-_NOUN_TEXT = {"WATER": ("water", "nước")}
+_VERB_TEXT = {
+    "EAT": ("eat", "ăn"), "DRINK": ("drink", "uống"),
+    "SLEEP": ("sleep", "ngủ"), "CRY": ("cry", "khóc"),
+    "THINK": ("think", "nghĩ"), "KNOW": ("know", "biết"),
+    "GO": ("go", "đi"),
+}
+_NOUN_TEXT = {"WATER": ("water", "nước"), "PHONE": ("phone", "điện thoại")}
 _ADJ_TEXT = {"HUNGRY": ("hungry", "đói"), "BAD": ("bad", "tệ")}
 _TRANS_TEXT = {"LIKE": ("like", "thích"), "WANT": ("want", "muốn")}
 _OBJ_PRON_TEXT = {"ME": ("me", "tôi"), "YOU": ("you", "bạn")}   # đại từ làm tân ngữ

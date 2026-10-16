@@ -125,7 +125,7 @@ _CANVAS_BASE: dict = {}
 _BANNER_CACHE: dict = {}
 
 
-def draw_top_banner(canvas: np.ndarray, w: int, h: int = 34) -> None:
+def draw_top_banner(canvas: np.ndarray, w: int, h: int = 38) -> None:
     """Vẽ banner thông tin môn học, thành viên nhóm và MSSV ở cạnh trên cùng khung camera."""
     if w <= 0 or h <= 0:
         return
@@ -135,50 +135,107 @@ def draw_top_banner(canvas: np.ndarray, w: int, h: int = 34) -> None:
         try:
             import os
             from PIL import Image, ImageDraw, ImageFont
-            font_path = "C:/Windows/Fonts/segoeui.ttf"
-            if not os.path.exists(font_path):
-                font_path = "C:/Windows/Fonts/arial.ttf"
 
-            pil_img = Image.new("RGB", (w, h), (18, 18, 18))
+            # Ưu tiên font Segoe UI Bold / Arial Bold để chữ nét đậm, rõ ràng
+            font_bold_path = "C:/Windows/Fonts/segoeuib.ttf"
+            if not os.path.exists(font_bold_path):
+                font_bold_path = "C:/Windows/Fonts/arialbd.ttf"
+            if not os.path.exists(font_bold_path):
+                font_bold_path = "C:/Windows/Fonts/segoeui.ttf"
+            if not os.path.exists(font_bold_path):
+                font_bold_path = "C:/Windows/Fonts/arial.ttf"
+
+            if w >= 960:
+                f_size = 16
+                f_title_size = 12
+                title_text = "ĐỒ ÁN DIP | NHẬN DIỆN VSL & ASL"
+            elif w >= 760:
+                f_size = 15
+                f_title_size = 11
+                title_text = "ĐỒ ÁN DIP | NHẬN DIỆN VSL & ASL"
+            elif w >= 600:
+                f_size = 15
+                f_title_size = 11
+                title_text = "DIP | VSL"
+            else:
+                f_size = 12
+                f_title_size = 10
+                title_text = "DIP"
+
+            f_members = ImageFont.truetype(font_bold_path, f_size)
+            f_title = ImageFont.truetype(font_bold_path, f_title_size)
+
+            pil_img = Image.new("RGB", (w, h), (13, 16, 22))
             draw = ImageDraw.Draw(pil_img)
 
-            # Cỡ chữ linh hoạt theo độ rộng
-            font_size = 14 if w >= 800 else 12
-            font_title_size = 13 if w >= 800 else 11
-            font = ImageFont.truetype(font_path, font_size)
-            font_title = ImageFont.truetype(font_path, font_title_size)
+            # 1. Thẻ thành viên nổi bật (Pill Badge)
+            members_text = "Tô Phương Đạt - 24110086   |   Trương Khắc Nhật Phi - 24110120"
+            m_bbox = draw.textbbox((0, 0), members_text, font=f_members)
+            m_tw = m_bbox[2] - m_bbox[0]
 
-            # Bên trái: Tiêu đề đồ án
-            title_text = "ĐỒ ÁN DIP | NHẬN DIỆN VSL & ASL" if w >= 800 else "DIP | VSL"
-            draw.text((14, int((h - font_title_size) / 2) - 1), title_text, font=font_title, fill=(0, 220, 180))
+            dot_gap = 22
+            pill_w = m_tw + dot_gap + 14
+            pill_h = min(h - 8, 30)
+            pill_y = int((h - pill_h) / 2)
+            pill_x = max(8, w - pill_w - 8)
 
-            # Bên phải: Tên thành viên và MSSV
-            text_members = "Tô Phương Đạt - 24110086   |   Trương Khắc Nhật Phi - 24110120"
-            bbox = draw.textbbox((0, 0), text_members, font=font)
-            mw = bbox[2] - bbox[0]
-            tx = max(180, w - mw - 14)
-            draw.text((tx, int((h - font_size) / 2) - 1), text_members, font=font, fill=(240, 240, 240))
+            # Khung thẻ nền tối cao cấp với viền Cyan nổi bật
+            draw.rounded_rectangle(
+                [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+                radius=7,
+                fill=(24, 32, 46),
+                outline=(0, 220, 185),
+                width=1,
+            )
+
+            # Đèn LED trạng thái phát sáng (Cyan Glow Dot)
+            dot_cy = pill_y + int(pill_h / 2)
+            dot_cx = pill_x + 11
+            draw.ellipse([dot_cx - 4, dot_cy - 4, dot_cx + 4, dot_cy + 4], fill=(0, 140, 120))
+            draw.ellipse([dot_cx - 2, dot_cy - 2, dot_cx + 2, dot_cy + 2], fill=(0, 255, 200))
+
+            # Chữ thành viên & MSSV màu trắng sáng nổi bật, căn giữa tuyệt đối
+            ty = pill_y + int((pill_h - (m_bbox[1] + m_bbox[3])) / 2)
+            draw.text((pill_x + dot_gap, ty), members_text, font=f_members, fill=(255, 255, 255))
+
+            # 2. Tiêu đề môn học / đồ án (bên trái)
+            t_bbox = draw.textbbox((0, 0), title_text, font=f_title)
+            t_tw = t_bbox[2] - t_bbox[0]
+            t_pill_w = t_tw + 16
+            t_pill_x = 8
+            if t_pill_x + t_pill_w < pill_x - 10:
+                draw.rounded_rectangle(
+                    [t_pill_x, pill_y, t_pill_x + t_pill_w, pill_y + pill_h],
+                    radius=6,
+                    fill=(18, 22, 30),
+                    outline=(45, 55, 70),
+                    width=1,
+                )
+                t_ty = pill_y + int((pill_h - (t_bbox[1] + t_bbox[3])) / 2)
+                draw.text((t_pill_x + 8, t_ty), title_text, font=f_title, fill=(0, 225, 185))
 
             # Chuyển đổi sang BGR cho OpenCV
             banner_bgr = np.array(pil_img)[:, :, ::-1].copy()
 
-            # Đường viền đáy tinh tế
-            banner_bgr[-1, :] = (48, 48, 48)
-            accent_len = min(w, 200)
-            banner_bgr[-1, 0:accent_len] = (0, 220, 180)  # Accent Cyan
+            # Đường viền đáy tinh tế kèm dải màu Cyan nhấn mạnh dưới thẻ thành viên
+            banner_bgr[-1, :] = (38, 44, 54)
+            banner_bgr[-1, pill_x:pill_x + pill_w] = (0, 220, 185)
 
             banner_img = banner_bgr
             _BANNER_CACHE[(w, h)] = banner_img
         except Exception:
             # Fallback thuần OpenCV nếu không có PIL hoặc font hệ thống
-            banner_bgr = np.full((h, w, 3), (18, 18, 18), dtype=np.uint8)
+            banner_bgr = np.full((h, w, 3), (13, 16, 22), dtype=np.uint8)
             title = "DIP PROJECT - VSL" if w >= 800 else "DIP"
             _put(banner_bgr, title, (14, int(h * 0.65)), FONT, 0.40, (0, 220, 180), 1)
             members = "To Phuong Dat - 24110086  |  Truong Khac Nhat Phi - 24110120"
-            (tw, _), _ = cv2.getTextSize(members, FONT, 0.40, 1)
-            _put(banner_bgr, members, (max(160, w - tw - 14), int(h * 0.65)), FONT, 0.40, (240, 240, 240), 1)
-            banner_bgr[-1, :] = (48, 48, 48)
-            banner_bgr[-1, 0:min(w, 200)] = (0, 220, 180)
+            (tw, _), _ = cv2.getTextSize(members, FONT, 0.45, 1)
+            mx = max(160, w - tw - 16)
+            cv2.rectangle(banner_bgr, (mx - 8, 4), (w - 6, h - 5), (24, 32, 46), -1)
+            cv2.rectangle(banner_bgr, (mx - 8, 4), (w - 6, h - 5), (0, 220, 185), 1)
+            _put(banner_bgr, members, (mx, int(h * 0.65)), FONT, 0.45, (255, 255, 255), 1)
+            banner_bgr[-1, :] = (38, 44, 54)
+            banner_bgr[-1, mx - 8:w - 6] = (0, 220, 185)
             banner_img = banner_bgr
             _BANNER_CACHE[(w, h)] = banner_img
 
