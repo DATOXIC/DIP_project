@@ -247,10 +247,10 @@ def decode_fourcc(val: float) -> str:
         return str(val)
 
 
-def open_camera(index: int, prefer_mjpg: bool = True) -> Optional[cv2.VideoCapture]:
+def open_camera(index: int, prefer_mjpg: bool = True, prefer_dshow: bool = False) -> Optional[cv2.VideoCapture]:
     """
     Mở camera với các thiết lập chuẩn hóa cho cả Collector và Predict:
-    - Thử theo thứ tự backend: MSMF -> DSHOW -> DEFAULT.
+    - Thử theo thứ tự backend: MSMF -> DSHOW -> DEFAULT (hoặc DSHOW -> MSMF nếu prefer_dshow=True).
     - Kích thước: 640x480.
     - Ép FourCC MJPG (nếu prefer_mjpg=True) để vượt qua giới hạn FPS của định dạng YUY2.
     - Đặt FPS = 30, Buffer Size = 1 để giảm độ trễ hàng đợi khung hình.
@@ -274,11 +274,18 @@ def open_camera(index: int, prefer_mjpg: bool = True) -> Optional[cv2.VideoCaptu
             return None
         return _cap
 
-    backend_order = [
-        (cv2.CAP_MSMF, "MSMF (Microsoft Media Foundation)"),
-        (cv2.CAP_DSHOW, "DirectShow"),
-        (cv2.CAP_ANY, "Default Backend"),
-    ]
+    if prefer_dshow:
+        backend_order = [
+            (cv2.CAP_DSHOW, "DirectShow"),
+            (cv2.CAP_MSMF, "MSMF (Microsoft Media Foundation)"),
+            (cv2.CAP_ANY, "Default Backend"),
+        ]
+    else:
+        backend_order = [
+            (cv2.CAP_MSMF, "MSMF (Microsoft Media Foundation)"),
+            (cv2.CAP_DSHOW, "DirectShow"),
+            (cv2.CAP_ANY, "Default Backend"),
+        ]
 
     print(f"[Camera] Đang khởi tạo Camera Index [{index}]...")
     cap: Optional[cv2.VideoCapture] = None
