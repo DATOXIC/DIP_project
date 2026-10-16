@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIP - Nhận diện từ video</title>
+<style>
+:root {
+  --bg: #F7F6F3;
+  --surface: #FFFFFF;
+  --surface-2: #F9F9F8;
+  --ink: #111111;
+  --ink-2: #2F3437;
+  --muted: #787774;
+  --line: #EAEAEA;
+  --red-bg: #FDEBEC;    --red-fg: #9F2F2D;
+  --blue-bg: #E1F3FE;   --blue-fg: #1F6C9F;
+  --green-bg: #EDF3EC;  --green-fg: #346538;
+  --yellow-bg: #FBF3DB; --yellow-fg: #956400;
+  --sans: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', 'Segoe UI', system-ui, sans-serif;
+  --serif: 'Newsreader', 'Instrument Serif', 'Lyon Text', Georgia, 'Times New Roman', serif;
+  --mono: 'Geist Mono', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+header.top {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 40px 24px 8px;
+}
+header.top h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+header.top p {
+  margin: 10px 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+}
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  align-items: start;
+}
+@media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); } }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+}
+.card + .card { margin-top: 24px; }
+.card h2 {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.seg button {
+  font: inherit; font-size: 14px; padding: 7px 16px; border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-selected="true"] { background: var(--ink); color: #fff; }
+.pane { margin-top: 16px; }
+.pane[hidden] { display: none; }
+.drop {
+  display: block; border: 1px dashed #CFCFCB; border-radius: 8px; padding: 28px 16px; text-align: center;
+  color: var(--muted); cursor: pointer; transition: background 200ms, border-color 200ms;
+}
+.drop:hover, .drop.over { background: var(--surface-2); border-color: var(--ink-2); }
+.drop strong { color: var(--ink); font-weight: 600; }
+.drop input { display: none; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1 1 240px; min-width: 0; }
+input[type="text"], select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 12px; width: 100%;
+}
+input[type="text"]:focus, select:focus, button:focus-visible, .drop:focus-within { outline: 2px solid var(--ink); outline-offset: 1px; }
+input[type="text"]:disabled { background: var(--surface-2); color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+button.primary, button.ghost {
+  font: inherit; font-size: 14px; font-weight: 500; border-radius: 6px; padding: 8px 18px; cursor: pointer;
+  transition: transform 120ms, background 200ms;
+}
+button.primary { background: var(--ink); color: #fff; border: 1px solid var(--ink); }
+button.primary:hover:not(:disabled) { background: #333; }
+button.ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+button.ghost:hover:not(:disabled) { background: var(--surface-2); }
+button:active:not(:disabled) { transform: scale(0.98); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.note.err { color: var(--red-fg); }
+.note.ok { color: var(--green-fg); }
+video {
+  display: block; width: 100%; max-height: 62vh; background: #0d0d0d; border-radius: 8px; border: 1px solid var(--line);
+}
+.stage-empty {
+  display: grid; place-items: center; min-height: 220px; border: 1px dashed #CFCFCB; border-radius: 8px;
+  color: var(--muted); text-align: center; padding: 24px;
+}
+.track {
+  position: relative; height: 46px; margin-top: 14px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 6px; cursor: pointer; overflow: hidden; user-select: none;
+}
+.track .range { position: absolute; top: 0; bottom: 0; background: rgba(17, 17, 17, 0.07); border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+.track .mk {
+  position: absolute; top: 9px; bottom: 9px; min-width: 7px; border-radius: 3px; border: 1px solid transparent;
+}
+.mk.acc-dtw { background: var(--blue-bg); border-color: var(--blue-fg); }
+.mk.acc-dl { background: var(--ink); border-color: var(--ink); }
+.mk.unc { background: var(--yellow-bg); border-color: var(--yellow-fg); }
+.mk.rej { background: var(--red-bg); border-color: var(--red-fg); }
+.mk.oor { background: #EFEFEC; border: 1px dashed #B5B5B0; }
+.mk.active { outline: 2px solid var(--ink); outline-offset: 1px; }
+.track .head { position: absolute; top: 0; bottom: 0; width: 2px; background: #C2410C; pointer-events: none; }
+.axis { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid transparent; display: inline-block; }
+.controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin-top: 20px; }
+@media (max-width: 560px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+.field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.field .row { flex-wrap: nowrap; gap: 8px; }
+.field .row input { flex: 1 1 auto; min-width: 0; }
+.field .row button { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.check input { accent-color: var(--ink); width: 16px; height: 16px; }
+kbd {
+  font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 6px;
+}
+.actions { display: flex; gap: 12px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
+.status { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.status b { color: var(--ink); font-weight: 600; }
+.progress { height: 4px; background: var(--line); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 300ms; }
+.sentence {
+  margin-top: 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  min-height: 74px;
+}
+.sentence .lbl { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sentence .en { font-family: var(--serif); font-size: 26px; line-height: 1.25; letter-spacing: -0.02em; color: var(--ink); margin-top: 2px; }
+.sentence .vi { color: var(--muted); font-size: 14px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.stat b { display: block; font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2; }
+.stat span { font-size: 12px; color: var(--muted); }
+ol.results { list-style: none; margin: 18px 0 0; padding: 0; }
+ol.results li {
+  border-top: 1px solid var(--line); padding: 14px 4px; cursor: pointer;
+  animation: rise 600ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 60ms);
+}
+ol.results li:last-child { border-bottom: 1px solid var(--line); }
+ol.results li.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--ink); padding-left: 12px; }
+ol.results li:hover { background: var(--surface-2); }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { ol.results li { animation: none; } .progress i { transition: none; } }
+.ev-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.ev-time { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.ev-word { font-family: var(--serif); font-size: 24px; letter-spacing: -0.02em; color: var(--ink); line-height: 1.2; margin-top: 4px; }
+.ev-word small { font-family: var(--sans); font-size: 14px; color: var(--muted); letter-spacing: 0; margin-left: 8px; }
+.ev-word.dim { color: var(--muted); }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.badge {
+  display: inline-block; border-radius: 9999px; padding: 1px 9px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
+}
+.b-acc { background: var(--green-bg); color: var(--green-fg); }
+.b-unc { background: var(--yellow-bg); color: var(--yellow-fg); }
+.b-rej { background: var(--red-bg); color: var(--red-fg); }
+.b-oor { background: #EFEFEC; color: var(--muted); }
+.b-dtw { background: var(--blue-bg); color: var(--blue-fg); }
+.b-dl { background: var(--ink); color: #fff; }
+.trace { margin-top: 6px; font-size: 13px; color: var(--muted); }
+.trace b { color: var(--ink-2); font-weight: 600; }
+.cands { margin-top: 10px; display: grid; gap: 6px; }
+.cand { display: grid; grid-template-columns: 96px minmax(0, 1fr) 84px; gap: 10px; align-items: center; font-size: 13px; }
+.cand .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.cand .bar i { display: block; height: 100%; background: var(--ink-2); }
+.cand .d { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; }
+.empty { color: var(--muted); margin: 18px 0 0; }
+details.log { margin-top: 18px; }
+details.log summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.log pre {
+  margin: 10px 0 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+.hint { margin-top: 14px; font-size: 13px; color: var(--muted); }
+.stagebox { position: relative; }
+.stagebox canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.framebar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.framebar button { padding: 6px 12px; font-size: 13px; }
+.framebar .mono { flex: 1 1 auto; text-align: center; color: var(--ink); }
+.hud { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); min-height: 38px; }
+.hud b { color: var(--ink); font-weight: 600; }
+.strip { display: block; width: 100%; height: 30px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); cursor: pointer; }
+.controls .wide { grid-column: 1 / -1; }
+details.tune summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.tune-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px); gap: 8px 14px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+@media (max-width: 560px) { .tune-grid { grid-template-columns: minmax(0, 1fr); } }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.cmp th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.cmp td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.cmp tr.pick { cursor: pointer; }
+table.cmp tr.pick:hover td, table.cmp tr.on td { background: var(--surface-2); }
+table.cmp td.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+table.cmp tr.on td:first-child { box-shadow: inset 3px 0 0 var(--ink); }
+.sample { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); cursor: default; }
+.sample h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sample .pick { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px 12px; align-items: center; font-size: 13px; }
+.sample .pick label { color: var(--muted); }
+.sample .verdict { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.sample .verdict p { margin: 0; font-size: 13px; color: var(--ink-2); flex: 1 1 240px; }
+.rep { margin-top: 10px; display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 4px 12px; font-size: 12.5px; }
+.rep dt { color: var(--muted); font-weight: 600; }
+.rep dd { margin: 0; font-family: var(--mono); color: var(--ink-2); }
+.sample .save { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.sample .save input { flex: 1 1 160px; min-width: 0; }
+.sample .save button { padding: 8px 14px; font-size: 13px; }
+footer { max-width: 1320px; margin: 0 auto; padding: 8px 24px 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Nhận diện từ video</h1>
+  <p>Chọn một video, kéo tới đúng khoảnh khắc người ký bắt đầu rồi chạy. Hệ thống dùng đúng bộ phân đoạn, DTW và tầng DL dự phòng của bản webcam; mỗi kết quả cho biết bên nào quyết định.</p>
+</header>
+
+<main>
+  <section>
+    <div class="card" aria-labelledby="h-src">
+      <h2 id="h-src">1. Chọn video</h2>
+      <div class="seg" role="tablist" aria-label="Nguồn video">
+        <button type="button" role="tab" id="tab-file" aria-selected="true" data-pane="pane-file">Tải file</button>
+        <button type="button" role="tab" id="tab-url" aria-selected="false" data-pane="pane-url">Liên kết</button>
+        <button type="button" role="tab" id="tab-sample" aria-selected="false" data-pane="pane-sample">Video mẫu</button>
+      </div>
+
+      <div class="pane" id="pane-file">
+        <label class="drop" id="drop">
+          <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.webm,.mkv,.avi,.m4v">
+          <strong>Chọn file video</strong> hoặc thả vào đây<br>
+          <span class="mono">mp4, mov, webm, mkv, avi, m4v - tối đa 500 MB, 10 phút</span>
+        </label>
+      </div>
+      <div class="pane" id="pane-url" hidden>
+        <div class="row">
+          <div class="grow"><input type="text" id="urlInput" placeholder="https://.../video.mp4" autocomplete="off" spellcheck="false" aria-label="Liên kết tới file video"></div>
+          <button type="button" class="primary" id="urlBtn">Tải về</button>
+        </div>
+        <p class="note">Chỉ nhận liên kết trỏ thẳng tới file video. Trang YouTube hoặc TikTok chưa được hỗ trợ: hãy tải video về rồi dùng mục Tải file.</p>
+      </div>
+      <div class="pane" id="pane-sample" hidden>
+        <div class="row">
+          <div class="grow"><select id="sampleSelect" aria-label="Video mẫu"></select></div>
+          <button type="button" class="primary" id="sampleBtn">Dùng video này</button>
+        </div>
+        <p class="note">Video ASL Citizen có sẵn trong dự án (người ký khác, camera khác bank của bạn).</p>
+      </div>
+      <p class="note" id="srcStatus" aria-live="polite"></p>
+    </div>
+
+    <div class="card" aria-labelledby="h-play">
+      <h2 id="h-play">2. Xem và chọn mốc</h2>
+      <div id="stageEmpty" class="stage-empty">Chưa có video. Chọn một video ở bước 1.</div>
+      <div class="stagebox" id="stageBox" hidden>
+        <video id="player" controls playsinline preload="metadata"></video>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+      </div>
+      <div id="timelineWrap" hidden>
+        <div class="framebar" role="group" aria-label="Duyệt từng khung hình">
+          <button type="button" class="ghost" data-step="-10" title="Lùi 10 khung (Shift + mũi tên trái)">-10</button>
+          <button type="button" class="ghost" data-step="-1" title="Lùi 1 khung (mũi tên trái)">Khung trước</button>
+          <span class="mono" id="frameInfo">Khung 0 - 0:00.00</span>
+          <button type="button" class="ghost" data-step="1" title="Tới 1 khung (mũi tên phải)">Khung sau</button>
+          <button type="button" class="ghost" data-step="10" title="Tới 10 khung (Shift + mũi tên phải)">+10</button>
+        </div>
+        <div class="hud mono" id="frameHud" aria-live="off">Chạy nhận diện một lần để thấy khung xương bàn tay và trạng thái bộ phân đoạn ở từng khung.</div>
+        <div class="track" id="track" aria-label="Dòng thời gian video (bấm để tua)">
+          <div class="range" id="rangeBand"></div>
+          <div id="markers"></div>
+          <div class="head" id="playhead"></div>
+        </div>
+        <canvas class="strip" id="traceStrip" aria-label="Vết từng khung: có tay, tốc độ, trạng thái ghi" hidden></canvas>
+        <div class="axis mono"><span>0:00.00</span><span id="axisEnd">0:00.00</span></div>
+        <div class="legend" aria-hidden="true">
+          <span><i style="background:var(--blue-bg);border-color:var(--blue-fg)"></i>Chấp nhận (DTW)</span>
+          <span><i style="background:var(--ink);border-color:var(--ink)"></i>Chấp nhận (DL)</span>
+          <span><i style="background:var(--yellow-bg);border-color:var(--yellow-fg)"></i>Chưa chắc</span>
+          <span><i style="background:var(--red-bg);border-color:var(--red-fg)"></i>Từ chối</span>
+          <span><i style="background:#EFEFEC;border:1px dashed #B5B5B0"></i>Sai thời lượng</span>
+        </div>
+
+        <div class="controls">
+          <div class="field">
+            <label for="startInput">Bắt đầu nhận diện từ</label>
+            <div class="row">
+              <input type="text" id="startInput" class="mono" value="0.00" inputmode="decimal" autocomplete="off">
+              <button type="button" class="ghost" id="setStart">Lấy vị trí hiện tại</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="endInput">Kết thúc tại</label>
+            <div class="row">
+              <input type="text" id="endInput" class="mono" value="" inputmode="decimal" autocomplete="off" disabled>
+              <button type="button" class="ghost" id="setEnd" disabled>Lấy vị trí hiện tại</button>
+            </div>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="toEnd" checked> Đến hết video</label>
+          </div>
+          <div class="field">
+            <label for="profileSelect">Bank của người ký</label>
+            <select id="profileSelect"></select>
+          </div>
+          <div class="field">
+            <label for="segMode">Cách cắt cử chỉ (khi thu)</label>
+            <select id="segMode">
+              <option value="fast" selected>Người ký nhanh: không đòi dừng tay trước khi ký</option>
+              <option value="standard">Chuẩn: tay phải đứng yên trước khi ký</option>
+              <option value="fast_hold">Ký nhanh + giữ tư thế khi tay biến mất</option>
+              <option value="force">Lấy mẫu: cả đoạn đã chọn là MỘT cử chỉ</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="predMode">Cách dự đoán</label>
+            <select id="predMode">
+              <option value="dtw_dl" selected>DTW + DL dự phòng, chuỗi nhanh</option>
+              <option value="dtw">Chỉ DTW, chuỗi nhanh</option>
+              <option value="dtw_dl_plain">DTW + DL dự phòng, bản cơ bản</option>
+              <option value="dtw_plain">Chỉ DTW, bản cơ bản</option>
+            </select>
+          </div>
+          <div class="field wide">
+            <p class="note" id="modeNote" style="margin:0"></p>
+          </div>
+          <div class="field wide">
+            <details class="tune" id="tuneBox">
+              <summary>Tinh chỉnh bộ phân đoạn (khi hệ thống cắt quá sớm hoặc quá muộn)</summary>
+              <div class="tune-grid">
+                <label for="tPause">Tay khựng bao lâu thì coi là hết cử chỉ (giây)</label>
+                <input type="text" id="tPause" class="mono" inputmode="decimal" placeholder="mặc định 0.12" autocomplete="off">
+                <label for="tGrace">Chờ thêm trước khi chốt hẳn (giây)</label>
+                <input type="text" id="tGrace" class="mono" inputmode="decimal" placeholder="mặc định 0.05" autocomplete="off">
+                <label for="tVStop">Ngưỡng tốc độ coi là đứng yên</label>
+                <input type="text" id="tVStop" class="mono" inputmode="decimal" placeholder="mặc định 0.04" autocomplete="off">
+                <label for="tVStart">Ngưỡng tốc độ bắt đầu ký</label>
+                <input type="text" id="tVStart" class="mono" inputmode="decimal" placeholder="mặc định 0.08" autocomplete="off">
+                <label for="tHand">Nguồn chuyển động</label>
+                <label class="check"><input type="checkbox" id="tHand"> Tính cả chuyển động ngón tay (cho cử chỉ nhẹ, cổ tay ít động)</label>
+                <label for="tEarly">Chốt sớm khi đã nhận ra từ</label>
+                <label class="check"><input type="checkbox" id="tEarly" checked> Bật (tắt nếu từ bị cắt trước khi hết động tác)</label>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <button type="button" class="ghost" id="tReset">Đặt lại mặc định</button>
+                <span class="note" id="tuneNote" style="margin:0"></span>
+              </div>
+              <p class="note">Để trống một ô là dùng giá trị mặc định. Cắt quá sớm: tăng thời gian khựng, giảm ngưỡng đứng yên (ví dụ 0.025), tắt chốt sớm. Cắt quá muộn hoặc gộp hai từ: làm ngược lại. Tốc độ tính bằng lòng bàn tay mỗi khung; thanh trạng thái bên trên cho biết tốc độ thật ở từng khung để bạn chọn ngưỡng.</p>
+            </details>
+          </div>
+          <div class="field wide">
+            <label for="expectWord">Từ thật của đoạn này (nếu bạn biết)</label>
+            <select id="expectWord"><option value="">Chưa biết</option></select>
+          </div>
+          <div class="field wide">
+            <label for="compareBy">So sánh các phương pháp trên cùng đoạn này</label>
+            <div class="row">
+              <select id="compareBy" style="flex:1 1 220px;width:auto">
+                <option value="seg">So sánh các cách cắt cử chỉ (giữ nguyên cách dự đoán)</option>
+                <option value="pred">So sánh các cách dự đoán (giữ nguyên cách cắt)</option>
+              </select>
+              <button type="button" class="ghost" id="compareBtn">Chạy so sánh</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" id="runBtn">Nhận diện từ mốc này</button>
+          <button type="button" class="ghost" id="cancelBtn" hidden>Hủy</button>
+          <span class="note" id="runNote" style="margin:0" aria-live="polite"></span>
+        </div>
+        <p class="hint">Phím tắt khi không gõ trong ô nhập: <kbd>I</kbd> đặt mốc bắt đầu, <kbd>O</kbd> đặt mốc kết thúc, <kbd>&larr;</kbd> <kbd>&rarr;</kbd> lùi/tới một khung (giữ <kbd>Shift</kbd> để nhảy 10 khung). Ở chế độ tự động, hệ thống đọc lùi 1 giây trước mốc bắt đầu để bộ phân đoạn kịp ổn định; cử chỉ kết thúc trước mốc bắt đầu bị bỏ qua.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card" aria-labelledby="h-res">
+      <h2 id="h-res">3. Kết quả</h2>
+      <div class="status">
+        <span id="statusText" aria-live="polite">Chưa chạy.</span>
+        <span class="mono" id="statusMeta"></span>
+      </div>
+      <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+
+      <div class="sentence" id="sentenceBox">
+        <div class="lbl">Câu đã nhận</div>
+        <div class="en" id="sentenceEn">-</div>
+        <div class="vi" id="sentenceVi"></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><b id="stAcc">0</b><span>Chấp nhận</span></div>
+        <div class="stat"><b id="stUnc">0</b><span>Chưa chắc</span></div>
+        <div class="stat"><b id="stRej">0</b><span>Từ chối</span></div>
+        <div class="stat"><b id="stDl">0</b><span>Do DL quyết định</span></div>
+      </div>
+
+      <div id="compareBox" hidden>
+        <h2 style="margin:22px 0 10px">So sánh phương pháp</h2>
+        <table class="cmp" id="cmpTable"></table>
+        <p class="note" id="cmpNote"></p>
+      </div>
+
+      <p class="empty" id="emptyMsg">Kết quả từng cử chỉ sẽ hiện ở đây, theo thứ tự thời gian. Bấm vào một dòng để tua tới đúng đoạn đó.</p>
+      <ol class="results" id="results"></ol>
+
+      <details class="log" id="logBox" hidden>
+        <summary>Nhật ký pipeline</summary>
+        <pre id="logPre"></pre>
+      </details>
+    </div>
+  </section>
+</main>
+
+<datalist id="peopleList"></datalist>
+<footer>Chạy cục bộ trên máy bạn (127.0.0.1). Video tải lên được lưu tạm trong thư mục web_uploads và tự xóa sau 24 giờ.</footer>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const player = $("player");
+const state = { media: null, job: null, poll: null, events: [], expanded: new Set(), activeKey: null,
+  trace: [], saved: {}, ui: {}, people: [] };
+const DL_THRESHOLD = 0.38;       // ngưỡng tin cậy DL mặc định của pipeline (dl_fusion.DEFAULT_CONF_THRESHOLD)
+const V_START_DEFAULT = 0.08, V_STOP_DEFAULT = 0.04;   // ngưỡng vận tốc mặc định của bộ phân đoạn (lòng bàn tay / khung)
+function numOrNull(id) { const v = parseTime($(id).value); return $(id).value.trim() !== "" && isFinite(v) ? v : null; }
+function vStart() { const v = numOrNull("tVStart"); return v === null ? V_START_DEFAULT : v; }
+function vStop() { const v = numOrNull("tVStop"); return v === null ? V_STOP_DEFAULT : v; }
+function collectTune() {
+  const t = {};
+  const map = { pause_sec: "tPause", grace_sec: "tGrace", v_stop: "tVStop", v_start: "tVStart" };
+  for (const [k, id] of Object.entries(map)) {
+    if ($(id).value.trim() === "") continue;
+    const v = numOrNull(id);
+    if (v === null) throw new Error("Ô tinh chỉnh phải là số (hoặc để trống).");
+    t[k] = v;
+  }
+  if (!$("tEarly").checked) t.early_commit = false;
+  if ($("tHand").checked) t.motion = "hand";
+  return t;
+}
+const FSM_LABEL = { IDL: "chờ", REA: "sẵn sàng", REC: "đang ghi", PEN: "chờ chốt" };
+const HAND_LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  let body = null;
+  try { body = await res.json(); } catch (e) { body = null; }
+  if (!res.ok) {
+    const detail = body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : `Lỗi ${res.status}`;
+    throw new Error(detail);
+  }
+  return body;
+}
+
+function fmt(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return `${m}:${s.toFixed(2).padStart(5, "0")}`;
+}
+
+function parseTime(text) {
+  const t = String(text).trim().replace(",", ".");
+  if (!t) return NaN;
+  const parts = t.split(":");
+  if (parts.length > 2) return NaN;
+  const nums = parts.map(Number);
+  if (nums.some((n) => !isFinite(n) || n < 0)) return NaN;
+  return parts.length === 2 ? nums[0] * 60 + nums[1] : nums[0];
+}
+
+function setNote(node, text, kind) {
+  node.textContent = text || "";
+  node.classList.toggle("err", kind === "err");
+  node.classList.toggle("ok", kind === "ok");
+}
+
+/* ---------- tab nguồn video ---------- */
+document.querySelectorAll(".seg button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
+    ["pane-file", "pane-url", "pane-sample"].forEach((id) => { $(id).hidden = id !== btn.dataset.pane; });
+  });
+});
+
+/* ---------- nạp video ---------- */
+function useMedia(media) {
+  stopPolling();
+  state.media = media;
+  state.job = null;
+  state.events = [];
+  state.expanded.clear();
+  state.trace = [];
+  state.saved = {};
+  state.ui = {};
+  state.compare = [];
+  renderCompare();
+  player.src = media.url;
+  $("stageBox").hidden = false;
+  $("traceStrip").hidden = true;
+  $("stageEmpty").hidden = true;
+  $("timelineWrap").hidden = false;
+  $("axisEnd").textContent = fmt(media.duration);
+  $("startInput").value = "0.00";
+  $("endInput").value = media.duration.toFixed(2);
+  $("toEnd").checked = true;
+  syncEndControls();
+  renderResults(null);
+  setNote($("runNote"), "");
+  updateRangeBand();
+  setNote($("srcStatus"),
+    `Đã nạp: ${media.name} - ${fmt(media.duration)}, ${media.width}x${media.height}, ${media.fps.toFixed(1)} khung/giây.`, "ok");
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  setNote($("srcStatus"), `Đang tải lên ${file.name} ...`);
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    useMedia(await api("/api/upload", { method: "POST", body: form }));
+  } catch (err) {
+    setNote($("srcStatus"), err.message, "err");
+  }
+}
+
+$("fileInput").addEventListener("change", (e) => uploadFile(e.target.files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => { if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]); });
+
+$("urlBtn").addEventListener("click", async () => {
+  const url = $("urlInput").value.trim();
+  if (!url) { setNote($("srcStatus"), "Hãy dán liên kết tới file video.", "err"); return; }
+  setNote($("srcStatus"), "Đang tải video từ liên kết ...");
+  $("urlBtn").disabled = true;
+  try {
+    useMedia(await api("/api/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) }));
+  } catch (err) {
+    setNote($("srcStatus"), err.message, "err");
+  } finally {
+    $("urlBtn").disabled = false;
+  }
+});
+
+$("sampleBtn").addEventListener("click", async () => {
+  const path = $("sampleSelect").value;
+  if (!path) return;
+  setNote($("srcStatus"), "Đang nạp video mẫu ...");
+  try {
+    useMedia(await api("/api/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }));
+  } catch (err) {
+    setNote($("srcStatus"), err.message, "err");
+  }
+});
+
+/* ---------- mốc bắt đầu / kết thúc ---------- */
+function syncEndControls() {
+  const toEnd = $("toEnd").checked;
+  $("endInput").disabled = toEnd;
+  $("setEnd").disabled = toEnd;
+  if (toEnd && state.media) $("endInput").value = state.media.duration.toFixed(2);
+  updateRangeBand();
+}
+$("toEnd").addEventListener("change", syncEndControls);
+$("startInput").addEventListener("input", updateRangeBand);
+$("endInput").addEventListener("input", updateRangeBand);
+
+$("setStart").addEventListener("click", () => { $("startInput").value = player.currentTime.toFixed(2); updateRangeBand(); });
+$("setEnd").addEventListener("click", () => { $("endInput").value = player.currentTime.toFixed(2); updateRangeBand(); });
+
+document.addEventListener("keydown", (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(tag) || e.ctrlKey || e.metaKey || e.altKey || !state.media) return;
+  if (e.key === "i" || e.key === "I") { $("startInput").value = player.currentTime.toFixed(2); updateRangeBand(); }
+  if ((e.key === "o" || e.key === "O") && !$("toEnd").checked) { $("endInput").value = player.currentTime.toFixed(2); updateRangeBand(); }
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    stepFrames((e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 10 : 1));
+  }
+});
+
+/* ---------- duyệt từng khung + khung xương + vết bộ phân đoạn ---------- */
+function frameDur() { return 1 / Math.max(state.media ? state.media.fps : 30, 1); }
+function frameIndex() { return Math.round(player.currentTime / frameDur() - 0.5); }
+
+function stepFrames(n) {
+  if (!state.media) return;
+  player.pause();
+  const dur = frameDur();
+  const idx = Math.min(Math.max(frameIndex() + n, 0), Math.max(Math.floor(state.media.duration / dur) - 1, 0));
+  player.currentTime = (idx + 0.5) * dur;   // giữa khung để trình duyệt không làm tròn sang khung bên cạnh
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => stepFrames(Number(b.dataset.step))));
+
+function traceAt(t) {
+  const tr = state.trace;
+  if (!tr.length) return null;
+  let lo = 0, hi = tr.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (tr[mid].t < t) lo = mid + 1; else hi = mid; }
+  let best = tr[lo];
+  if (lo > 0 && Math.abs(tr[lo - 1].t - t) < Math.abs(best.t - t)) best = tr[lo - 1];
+  return Math.abs(best.t - t) <= 1.6 * frameDur() ? best : null;   // video 60 fps được pipeline lấy thưa còn ~30 khung/giây
+}
+
+function drawOverlay(row) {
+  const cv = $("overlay");
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!row || !row.lm || !player.videoWidth) return;
+  // video được vẽ vừa khung (object-fit: contain): tính vùng ảnh thật bên trong phần tử
+  const ar = player.videoWidth / player.videoHeight;
+  let vw = w, vh = w / ar;
+  if (vh > h) { vh = h; vw = h * ar; }
+  const ox = (w - vw) / 2, oy = (h - vh) / 2;
+  const P = (p) => [ox + p[0] * vw, oy + p[1] * vh];
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.beginPath();
+  HAND_LINKS.forEach(([a, b]) => { const A = P(row.lm[a]), B = P(row.lm[b]); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); });
+  ctx.stroke();
+  ctx.fillStyle = "#C2410C";
+  row.lm.forEach((p) => { const q = P(p); ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, Math.PI * 2); ctx.fill(); });
+}
+
+function updateFrameInfo() {
+  if (!state.media) return;
+  const t = player.currentTime;
+  $("frameInfo").textContent = `Khung ${frameIndex()} - ${fmt(t)}`;
+  const hud = $("frameHud");
+  hud.replaceChildren();
+  if (!state.trace.length) {
+    hud.textContent = "Chạy nhận diện một lần để thấy khung xương bàn tay và trạng thái bộ phân đoạn ở từng khung.";
+    drawOverlay(null);
+    return;
+  }
+  const row = traceAt(t);
+  drawOverlay(row);
+  if (!row) { hud.textContent = "Khung này nằm ngoài đoạn đã xử lý (hoặc bị bỏ qua khi lấy thưa khung)."; return; }
+  const add = (txt, bold) => { if (bold) hud.appendChild(el("b", null, txt)); else hud.appendChild(document.createTextNode(txt)); };
+  if (!row.h) {
+    add("Tay: "); add("không phát hiện", true);
+    add(`   Bộ phân đoạn: `); add(FSM_LABEL[row.s] || row.s, true);
+    add("   (mất tay từ 4 khung liên tiếp thì cử chỉ đang ghi bị xóa)");
+  } else {
+    const moving = row.v >= vStart();
+    add("Tay: "); add("có", true);
+    add(`   Tốc độ: `); add(row.v.toFixed(3), true);
+    add(moving ? ` >= ${vStart()} (đủ nhanh để bắt đầu ghi)` : row.v <= vStop() ? ` <= ${vStop()} (coi là đứng yên)` : ` (giữa ${vStop()} và ${vStart()})`);
+    add(`   Bộ phân đoạn: `); add(FSM_LABEL[row.s] || row.s, true);
+  }
+}
+
+function drawStrip() {
+  const cv = $("traceStrip");
+  cv.hidden = !state.trace.length || !state.media;
+  if (cv.hidden) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const dur = state.media.duration;
+  const colW = Math.max(1, (w / dur) * frameDur() * 1.05);
+  state.trace.forEach((r) => {
+    const x = (r.t / dur) * w;
+    if (!r.h) { ctx.fillStyle = "#FDEBEC"; ctx.fillRect(x, h - 6, colW, 6); return; }   // mất tay: vạch đỏ nhạt ở đáy
+    const speed = Math.min(r.v / 0.3, 1);
+    ctx.fillStyle = r.s === "REC" || r.s === "PEN" ? "#111111" : "#9AA3A8";
+    const bh = 4 + speed * (h - 10);
+    ctx.fillRect(x, h - 6 - bh, colW, bh);
+  });
+  ctx.fillStyle = "#9F2F2D";
+  state.trace.forEach((r) => { if (!r.h) ctx.fillRect((r.t / dur) * w, h - 3, colW, 3); });
+}
+$("traceStrip").addEventListener("click", (e) => {
+  if (!state.media) return;
+  const rect = $("traceStrip").getBoundingClientRect();
+  player.pause();
+  player.currentTime = Math.min(Math.max(((e.clientX - rect.left) / rect.width) * state.media.duration, 0), state.media.duration);
+});
+window.addEventListener("resize", () => { drawStrip(); updateFrameInfo(); });
+
+async function loadTrace(jobId) {
+  try {
+    const res = await api(`/api/jobs/${jobId}/trace`);
+    state.trace = res.frames || [];
+  } catch (err) { state.trace = []; }
+  drawStrip();
+  updateFrameInfo();
+}
+
+const SEG_LABEL = { fast: "Ký nhanh", standard: "Chuẩn", fast_hold: "Ký nhanh + giữ tư thế", force: "Lấy mẫu (ép đoạn)" };
+const PRED_LABEL = { dtw_dl: "DTW + DL, chuỗi nhanh", dtw: "Chỉ DTW, chuỗi nhanh", dtw_dl_plain: "DTW + DL, cơ bản", dtw_plain: "Chỉ DTW, cơ bản" };
+const MODE_NOTE = {
+  fast: "Bỏ điều kiện đứng yên trước khi ký. Đo trên 48 video ASL Citizen: nhận đúng tăng từ 3 lên 18, đổi lại 6 video nhận sai.",
+  standard: "Hành vi gốc của bản webcam: tay phải đứng yên rồi mới tính chuyển động là bắt đầu ký.",
+  fast_hold: "Khi tay biến mất giữa lúc ghi thì giữ tư thế cuối. Đo trước đó cho thấy thêm nhiều nhận sai (22/48 video), chỉ nên dùng để so sánh.",
+  force: "Bỏ qua bộ phân đoạn: cả đoạn từ Bắt đầu đến Kết thúc là một cử chỉ, không áp cổng thời lượng. Dùng để lấy mẫu người lạ.",
+};
+function syncMode() {
+  const seg = $("segMode").value;
+  if (seg === "force" && state.media && $("toEnd").checked) {
+    $("toEnd").checked = false; syncEndControls();
+    $("endInput").value = Math.min(state.media.duration, (parseTime($("startInput").value) || 0) + 2).toFixed(2);
+    updateRangeBand();
+  }
+  $("runBtn").textContent = seg === "force" ? "Lấy mẫu từ đoạn đã chọn" : "Nhận diện từ mốc này";
+  $("modeNote").textContent = MODE_NOTE[seg] || "";
+}
+$("segMode").addEventListener("change", syncMode);
+["tPause", "tGrace", "tVStop", "tVStart"].forEach((id) => $(id).addEventListener("input", () => { updateFrameInfo(); updateTuneNote(); }));
+$("tEarly").addEventListener("change", updateTuneNote);
+$("tHand").addEventListener("change", updateTuneNote);
+function updateTuneNote() {
+  let n = 0;
+  ["tPause", "tGrace", "tVStop", "tVStart"].forEach((id) => { if ($(id).value.trim() !== "") n += 1; });
+  if (!$("tEarly").checked) n += 1;
+  if ($("tHand").checked) n += 1;
+  $("tuneNote").textContent = n ? `Đang ghi đè ${n} tham số.` : "Đang dùng mặc định.";
+}
+$("tReset").addEventListener("click", () => {
+  ["tPause", "tGrace", "tVStop", "tVStart"].forEach((id) => { $(id).value = ""; });
+  $("tEarly").checked = true;
+  $("tHand").checked = false;
+  updateTuneNote(); updateFrameInfo();
+});
+updateTuneNote();
+syncMode();
+
+function updateRangeBand() {
+  const band = $("rangeBand");
+  if (!state.media) { band.style.display = "none"; return; }
+  const dur = state.media.duration;
+  const s = parseTime($("startInput").value);
+  const eRaw = $("toEnd").checked ? dur : parseTime($("endInput").value);
+  if (!isFinite(s) || !isFinite(eRaw)) { band.style.display = "none"; return; }
+  const a = Math.min(Math.max(s, 0), dur);
+  const b = Math.min(Math.max(eRaw, a), dur);
+  band.style.display = "block";
+  band.style.left = `${(a / dur) * 100}%`;
+  band.style.width = `${((b - a) / dur) * 100}%`;
+}
+
+/* ---------- dòng thời gian ---------- */
+$("track").addEventListener("click", (e) => {
+  if (!state.media) return;
+  const rect = $("track").getBoundingClientRect();
+  player.currentTime = Math.min(Math.max(((e.clientX - rect.left) / rect.width) * state.media.duration, 0), state.media.duration);
+});
+
+function updatePlayhead() {
+  if (!state.media) return;
+  $("playhead").style.left = `${Math.min(player.currentTime / state.media.duration, 1) * 100}%`;
+}
+
+function markerClass(ev) {
+  if (ev.event === "ACCEPTED") return ev.source === "DL" ? "acc-dl" : "acc-dtw";
+  if (ev.event === "UNCERTAIN") return "unc";
+  if (ev.event === "REJECTED") return "rej";
+  return "oor";
+}
+
+function evKey(ev) { return `${ev.t_start}|${ev.t_end}`; }
+
+function renderMarkers() {
+  const box = $("markers");
+  box.replaceChildren();
+  if (!state.media) return;
+  const dur = state.media.duration;
+  state.events.forEach((ev) => {
+    const m = el("div", `mk ${markerClass(ev)}`);
+    m.dataset.key = evKey(ev);
+    m.style.left = `${(ev.t_start / dur) * 100}%`;
+    m.style.width = `${Math.max(((ev.t_end - ev.t_start) / dur) * 100, 0.4)}%`;
+    m.title = `${fmt(ev.t_start)} - ${fmt(ev.t_end)}`;
+    box.appendChild(m);
+  });
+  markActive();
+}
+
+/* ---------- kết quả ---------- */
+const STATUS = {
+  ACCEPTED: { label: "Chấp nhận", cls: "b-acc" },
+  UNCERTAIN: { label: "Chưa chắc", cls: "b-unc" },
+  REJECTED: { label: "Từ chối", cls: "b-rej" },
+  OUT_OF_DURATION: { label: "Sai thời lượng", cls: "b-oor" },
+};
+
+function nameText(name) {
+  if (!name) return "";
+  return name.vi ? `${name.en} (${name.vi})` : name.en;
+}
+
+function buildEventItem(ev, index) {
+  const li = el("li");
+  li.style.setProperty("--i", String(Math.min(index, 12)));
+  li.dataset.key = evKey(ev);
+  li.tabIndex = 0;
+
+  const top = el("div", "ev-top");
+  top.appendChild(el("span", "ev-time", `${fmt(ev.t_start)} - ${fmt(ev.t_end)}  (${ev.duration.toFixed(2)} s)`));
+  const badges = el("div", "badges");
+  const st = STATUS[ev.event] || STATUS.OUT_OF_DURATION;
+  badges.appendChild(el("span", `badge ${st.cls}`, st.label));
+  if (ev.event === "ACCEPTED") badges.appendChild(el("span", `badge ${ev.source === "DL" ? "b-dl" : "b-dtw"}`, ev.source === "DL" ? "DL" : "DTW"));
+  top.appendChild(badges);
+  li.appendChild(top);
+
+  const word = el("div", "ev-word");
+  if (ev.event === "ACCEPTED") {
+    word.textContent = ev.name.en;
+    if (ev.name.vi) word.appendChild(el("small", null, ev.name.vi));
+  } else if (ev.event === "UNCERTAIN" && ev.candidates.length >= 2) {
+    word.classList.add("dim");
+    word.textContent = `${ev.candidates[0].name.en} hay ${ev.candidates[1].name.en}?`;
+  } else if (ev.event === "REJECTED") {
+    word.classList.add("dim");
+    word.textContent = "Không nhận ra";
+  } else {
+    word.classList.add("dim");
+    word.textContent = "Cử chỉ bị loại";
+  }
+  li.appendChild(word);
+
+  const trace = el("div", "trace");
+  if (ev.event === "OUT_OF_DURATION") {
+    trace.textContent = "Thời lượng ngoài khoảng 0.4 - 2.5 giây nên không đưa vào so khớp.";
+  } else if (ev.dl_word) {
+    const dtwPart = `${ev.dtw_word_name ? ev.dtw_word_name.en : "-"} (${ev.dtw_status || "-"})`;
+    const dlPart = `${ev.dl_word_name ? ev.dl_word_name.en : ev.dl_word} ${ev.dl_confidence !== null ? ev.dl_confidence.toFixed(2) : ""}`;
+    trace.appendChild(document.createTextNode("DTW: "));
+    trace.appendChild(el("b", null, dtwPart));
+    trace.appendChild(document.createTextNode("   DL: "));
+    trace.appendChild(el("b", null, dlPart.trim()));
+    trace.appendChild(document.createTextNode(ev.source === "DL" ? "   -> DL quyết định" : "   -> DTW giữ kết quả"));
+  } else if (ev.event === "ACCEPTED") {
+    trace.textContent = "DTW đủ chắc, không cần hỏi DL.";
+  } else {
+    trace.textContent = state.job && state.job.use_dl ? "DTW chưa chắc; DL được hỏi nhưng không đủ tin cậy để thay thế." : "DTW chưa chắc; tầng DL đang tắt.";
+  }
+  li.appendChild(trace);
+
+  if (ev.event !== "OUT_OF_DURATION" && ev.distance !== null) {
+    li.appendChild(el("div", "trace", `Độ khớp ${Math.round(ev.quality)}% - khoảng cách ${ev.distance.toFixed(3)}`));
+  }
+
+  if (ev.candidates && ev.candidates.length) {
+    const cands = el("div", "cands");
+    ev.candidates.forEach((c) => {
+      const row = el("div", "cand");
+      row.appendChild(el("span", null, c.name.en));
+      const bar = el("div", "bar");
+      const fill = el("i");
+      fill.style.width = `${Math.max(2, Math.min(100, c.quality))}%`;
+      bar.appendChild(fill);
+      row.appendChild(bar);
+      row.appendChild(el("span", "d", `d=${c.distance.toFixed(3)}`));
+      cands.appendChild(row);
+    });
+    li.appendChild(cands);
+  }
+
+  if (ev.has_sample) li.appendChild(buildSamplePanel(ev));
+
+  const seek = () => {
+    player.currentTime = Math.max(0, ev.t_start - 0.3);
+    player.play().catch(() => {});
+  };
+  li.addEventListener("click", seek);
+  li.addEventListener("keydown", (e) => {
+    if (e.target !== li) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seek(); }
+  });
+  return li;
+}
+
+/* ---------- so với bank + lưu mẫu ---------- */
+function driftReport(ev, word) {
+  const byDist = (ev.candidates || []).slice().sort((a, b) => a.distance - b.distance);   // thứ hạng THEO KHOẢNG CÁCH (DL có thể đã đổi thứ tự candidates)
+  const rank = byDist.findIndex((c) => c.word === word) + 1;
+  if (!rank) return null;
+  const c = byDist[rank - 1], best = byDist[0];
+  const dtwStatus = ev.dtw_status || ev.status;
+  let verdict, cls, text;
+  if (rank === 1 && dtwStatus === "ACCEPTED") {
+    verdict = "Khớp bank"; cls = "b-acc";
+    text = "DTW tự nhận đúng từ này: cử chỉ nằm trong phạm vi các mẫu đã có.";
+  } else if (rank === 1) {
+    verdict = "Lệch nhẹ"; cls = "b-unc";
+    text = "Đúng từ nhưng xa mẫu bank hơn ngưỡng chấp nhận (DTW chỉ ở mức " + (dtwStatus === "UNCERTAIN" ? "chưa chắc" : "từ chối") + ").";
+  } else if (rank <= 3) {
+    verdict = "Lệch"; cls = "b-unc";
+    text = `Gần mẫu của "${best.name.en}" hơn mẫu của từ này (hạng ${rank}/${byDist.length}): cách ký khác bank.`;
+  } else {
+    verdict = "Lệch xa"; cls = "b-rej";
+    text = `Hạng ${rank}/${byDist.length}: rất khác mọi mẫu của từ này trong bank.`;
+  }
+  const probs = ev.dl_probs || null;
+  let dl = null;
+  if (probs) {
+    const p = probs[word];
+    dl = { p: p === undefined ? null : p, top: ev.dl_top, topP: ev.dl_top ? probs[ev.dl_top] : null, ok: p !== undefined && p >= DL_THRESHOLD };
+  }
+  let advice = "";
+  if (dl) {
+    if (verdict === "Khớp bank" && dl.ok) advice = "Cả DTW và DL đều nhận đúng: mẫu này ít thông tin mới, lưu chỉ để tăng độ phủ.";
+    else if (verdict !== "Khớp bank" && !dl.ok) advice = "Cả DTW và DL đều không nhận đúng: mẫu này mang thông tin mới, đáng lưu.";
+    else if (verdict === "Khớp bank") advice = "DTW nhận đúng nhưng DL thì không: mẫu giúp DL nhiều hơn DTW.";
+    else advice = "DL nhận đúng nhưng DTW thì không: mẫu giúp DTW (bank) nhiều hơn DL.";
+  }
+  return { rank, total: byDist.length, c, best, verdict, cls, text, dl, advice };
+}
+
+function buildSamplePanel(ev) {
+  const key = evKey(ev);
+  const ui = (state.ui[key] = state.ui[key] || {});
+  const cands = (ev.candidates || []).slice().sort((a, b) => a.distance - b.distance);
+  if (!ui.word) ui.word = ev.event === "ACCEPTED" && ev.word ? ev.word : (cands[0] ? cands[0].word : "");
+  if (ui.person === undefined) { try { ui.person = localStorage.getItem("dip_person") || ""; } catch (e) { ui.person = ""; } }
+
+  const panel = el("div", "sample");
+  ["click", "keydown", "keyup"].forEach((t) => panel.addEventListener(t, (e) => e.stopPropagation()));
+  panel.appendChild(el("h3", null, "Lấy mẫu từ cử chỉ này"));
+
+  const pick = el("div", "pick");
+  pick.appendChild(el("label", null, "Từ thật"));
+  const sel = el("select");
+  cands.forEach((c) => {
+    const o = el("option", null, `${nameText(c.name)}`);
+    o.value = c.word;
+    sel.appendChild(o);
+  });
+  sel.value = ui.word;
+  pick.appendChild(sel);
+  panel.appendChild(pick);
+
+  const reportBox = el("div");
+  panel.appendChild(reportBox);
+  const renderReport = () => {
+    reportBox.replaceChildren();
+    const r = driftReport(ev, sel.value);
+    if (!r) return;
+    const v = el("div", "verdict");
+    v.appendChild(el("span", `badge ${r.cls}`, r.verdict));
+    v.appendChild(el("p", null, r.text));
+    reportBox.appendChild(v);
+    const dl = el("dl", "rep");
+    const row = (k, val) => { dl.appendChild(el("dt", null, k)); dl.appendChild(el("dd", null, val)); };
+    const w = r.c.width;
+    row("DTW", `d = ${r.c.distance.toFixed(3)} tới từ này` + (w ? `, độ rộng bank của từ ${w.toFixed(3)} (gấp ${(r.c.distance / w).toFixed(1)} lần)` : "") + `, hạng ${r.rank}/${r.total}`);
+    if (r.rank !== 1) row("", `gần nhất: ${r.best.name.en}, d = ${r.best.distance.toFixed(3)}`);
+    if (r.dl) {
+      row("DL", `xác suất của từ này ${r.dl.p === null ? "< 0.01" : r.dl.p.toFixed(2)} (ngưỡng nhận ${DL_THRESHOLD})` + (r.dl.top && r.dl.top !== sel.value ? `, DL chọn ${r.dl.top} ${r.dl.topP.toFixed(2)}` : ""));
+    } else {
+      row("DL", "không có kết quả (đã tắt hoặc không có mô hình)");
+    }
+    reportBox.appendChild(dl);
+    if (r.advice) reportBox.appendChild(el("p", "note", r.advice));
+  };
+  sel.addEventListener("change", () => { ui.word = sel.value; renderReport(); });
+  renderReport();
+
+  const save = el("div", "save");
+  const person = el("input");
+  person.type = "text"; person.className = "mono"; person.placeholder = "Tên người ký (người lạ), ví dụ NguoiLa1"; person.value = ui.person;
+  person.setAttribute("list", "peopleList"); person.autocomplete = "off"; person.setAttribute("aria-label", "Tên người ký");
+  person.addEventListener("input", () => { ui.person = person.value; });
+  const btn = el("button", "primary", "Lưu mẫu cho DTW và DL");
+  btn.type = "button";
+  const running = !state.job || state.job.status === "queued" || state.job.status === "running";
+  btn.disabled = running;
+  save.appendChild(person);
+  save.appendChild(btn);
+  panel.appendChild(save);
+
+  const note = el("p", "note");
+  const done = state.saved[key];
+  if (done) { note.textContent = done; note.classList.add("ok"); }
+  panel.appendChild(note);
+
+  btn.addEventListener("click", async () => {
+    if (!person.value.trim()) { setNote(note, "Hãy nhập tên người ký.", "err"); return; }
+    btn.disabled = true;
+    try {
+      const res = await api(`/api/jobs/${state.job.id}/sample`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idx: ev.idx, word: sel.value, person: person.value.trim() }),
+      });
+      try { localStorage.setItem("dip_person", person.value.trim()); } catch (e) { /* bỏ qua */ }
+      state.saved[key] = `Đã lưu vào ${res.file}: ${res.word_samples} mẫu của từ này, ${res.total_samples} mẫu tất cả.`;
+      setNote(note, state.saved[key], "ok");
+      refreshProfiles();
+    } catch (err) {
+      setNote(note, err.message, "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return panel;
+}
+
+function renderResults(job) {
+  const events = job ? job.events : [];
+  state.events = events;
+  const list = $("results");
+  list.replaceChildren();
+  events.forEach((ev, i) => list.appendChild(buildEventItem(ev, i)));
+  $("emptyMsg").hidden = events.length > 0;
+  if (job && job.status === "done" && events.length === 0) {
+    $("emptyMsg").hidden = false;
+    $("emptyMsg").textContent = "Không phát hiện cử chỉ nào trong đoạn này. Thử lùi mốc bắt đầu về trước lúc người ký đưa tay lên, hoặc kéo dài mốc kết thúc.";
+  } else if (!job || events.length === 0) {
+    $("emptyMsg").textContent = "Kết quả từng cử chỉ sẽ hiện ở đây, theo thứ tự thời gian. Bấm vào một dòng để tua tới đúng đoạn đó.";
+  }
+
+  const sum = job ? job.summary : { accepted: 0, uncertain: 0, rejected: 0, dl_decided: 0, sentence: [] };
+  $("stAcc").textContent = sum.accepted;
+  $("stUnc").textContent = sum.uncertain;
+  $("stRej").textContent = sum.rejected;
+  $("stDl").textContent = sum.dl_decided;
+  $("sentenceEn").textContent = sum.sentence.length ? sum.sentence.join(" ") : "-";
+  const vi = events.filter((e) => e.event === "ACCEPTED").map((e) => e.name.vi).filter(Boolean).join(" ");
+  $("sentenceVi").textContent = vi;
+
+  const logLines = job && job.log ? job.log : [];
+  $("logBox").hidden = logLines.length === 0;
+  $("logPre").textContent = logLines.join("\n");
+  renderMarkers();
+}
+
+function markActive() {
+  if (!state.media) return;
+  const t = player.currentTime;
+  let found = null;
+  for (const ev of state.events) {
+    if (t >= ev.t_start - 0.1 && t <= ev.t_end + 0.5) { found = ev; break; }
+  }
+  const key = found ? evKey(found) : null;
+  if (key === state.activeKey) return;
+  state.activeKey = key;
+  document.querySelectorAll("#results li").forEach((li) => li.classList.toggle("active", li.dataset.key === key));
+  document.querySelectorAll("#markers .mk").forEach((m) => m.classList.toggle("active", m.dataset.key === key));
+  if (key && !player.paused) {
+    const active = document.querySelector("#results li.active");
+    if (active) active.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+player.addEventListener("timeupdate", () => { updatePlayhead(); markActive(); updateFrameInfo(); });
+player.addEventListener("seeked", () => { updatePlayhead(); markActive(); updateFrameInfo(); });
+player.addEventListener("loadedmetadata", () => { updatePlayhead(); updateFrameInfo(); });
+
+/* ---------- chạy nhận diện ---------- */
+function stopPolling() { if (state.poll) { clearTimeout(state.poll); state.poll = null; } }
+
+function setRunning(running) {
+  $("runBtn").disabled = running;
+  $("cancelBtn").hidden = !running;
+  $("cancelBtn").disabled = false;
+}
+
+function statusLabel(job) {
+  switch (job.status) {
+    case "queued": return "Đang chờ chạy ...";
+    case "running": return `Đang nhận diện ... ${Math.round(job.progress * 100)}%`;
+    case "done": return `Xong: ${job.summary.accepted} từ được chấp nhận.`;
+    case "cancelled": return "Đã hủy.";
+    case "error": return "Lỗi.";
+    default: return job.status;
+  }
+}
+
+async function pollJob(id) {
+  try {
+    const job = await api(`/api/jobs/${id}`);
+    state.job = job;
+    $("statusText").textContent = statusLabel(job);
+    $("statusMeta").textContent = `${job.elapsed.toFixed(1)} s`;
+    $("progressBar").style.width = `${Math.round(job.progress * 100)}%`;
+    renderResults(job);
+    if (job.status === "error") setNote($("runNote"), job.error || "Pipeline gặp lỗi.", "err");
+    if (job.status === "queued" || job.status === "running") {
+      state.poll = setTimeout(() => pollJob(id), 600);
+    } else {
+      setRunning(false);
+      if (job.status === "done") setNote($("runNote"), `Đã đọc từ ${fmt(job.seek)} đến ${job.end === null ? "hết video" : fmt(job.end)}.`, "ok");
+      if (job.status !== "error") await loadTrace(job.id);
+      renderResults(job);   // vẽ lại để nút lưu mẫu bật lên khi tác vụ đã xong
+    }
+  } catch (err) {
+    setRunning(false);
+    setNote($("runNote"), err.message, "err");
+  }
+}
+
+$("runBtn").addEventListener("click", async () => {
+  if (!state.media) { setNote($("runNote"), "Hãy chọn video trước.", "err"); return; }
+  const dur = state.media.duration;
+  const start = parseTime($("startInput").value);
+  if (!isFinite(start) || start < 0 || start >= dur) { setNote($("runNote"), `Mốc bắt đầu phải trong khoảng 0 đến ${dur.toFixed(2)} giây.`, "err"); return; }
+  let end = null;
+  const force = $("segMode").value === "force";
+  let tune;
+  try { tune = collectTune(); } catch (err) { setNote($("runNote"), err.message, "err"); return; }
+  if (force && $("toEnd").checked) { setNote($("runNote"), "Chế độ lấy mẫu cần mốc kết thúc: bỏ chọn \"Đến hết video\" và đặt điểm cuối cử chỉ.", "err"); return; }
+  if (!$("toEnd").checked) {
+    end = parseTime($("endInput").value);
+    if (!isFinite(end) || end <= start + 0.3) { setNote($("runNote"), "Mốc kết thúc phải lớn hơn mốc bắt đầu ít nhất 0.3 giây.", "err"); return; }
+  }
+  setNote($("runNote"), "");
+  setRunning(true);
+  stopPolling();
+  state.trace = [];
+  state.saved = {};
+  state.ui = {};
+  state.compare = [];
+  renderCompare();
+  drawStrip();
+  updateFrameInfo();
+  renderResults(null);
+  $("statusText").textContent = "Đang khởi động ...";
+  $("statusMeta").textContent = "";
+  $("progressBar").style.width = "0%";
+  try {
+    const res = await api("/api/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ media_id: state.media.id, start, end, profile: $("profileSelect").value, preroll: 1.0, segmenter: $("segMode").value, predictor: $("predMode").value, tune }),
+    });
+    pollJob(res.job_id);
+  } catch (err) {
+    setRunning(false);
+    $("statusText").textContent = "Chưa chạy.";
+    setNote($("runNote"), err.message, "err");
+  }
+});
+
+$("cancelBtn").addEventListener("click", async () => {
+  if (!state.job) return;
+  $("cancelBtn").disabled = true;
+  try { await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" }); } catch (err) { setNote($("runNote"), err.message, "err"); }
+});
+
+/* ---------- so sánh phương pháp ---------- */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function collectRange(needEnd) {
+  const dur = state.media.duration;
+  const start = parseTime($("startInput").value);
+  if (!isFinite(start) || start < 0 || start >= dur) throw new Error(`Mốc bắt đầu phải trong khoảng 0 đến ${dur.toFixed(2)} giây.`);
+  let end = null;
+  if (!$("toEnd").checked) {
+    end = parseTime($("endInput").value);
+    if (!isFinite(end) || end <= start + 0.3) throw new Error("Mốc kết thúc phải lớn hơn mốc bắt đầu ít nhất 0.3 giây.");
+  }
+  return { start, end, hasEnd: end !== null };
+}
+
+async function runVariant(range, segmenter, predictor) {
+  const res = await api("/api/analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_id: state.media.id, start: range.start, end: range.end, profile: $("profileSelect").value, preroll: 1.0, segmenter, predictor, tune: collectTune() }),
+  });
+  for (;;) {
+    const job = await api(`/api/jobs/${res.job_id}`);
+    if (job.status !== "queued" && job.status !== "running") return job;
+    await sleep(700);
+  }
+}
+
+function scoreJob(job, expected) {
+  const acc = job.events.filter((e) => e.event === "ACCEPTED");
+  const r = { events: job.events.filter((e) => e.event !== "OUT_OF_DURATION").length, accepted: acc.length, dl: acc.filter((e) => e.source === "DL").length,
+    sentence: acc.map((e) => e.name.en).join(" ") || "-" };
+  if (expected) { r.right = acc.filter((e) => e.word === expected).length; r.wrong = acc.length - r.right; }
+  return r;
+}
+
+function renderCompare() {
+  const rows = state.compare || [];
+  $("compareBox").hidden = rows.length === 0;
+  const tbl = $("cmpTable");
+  tbl.replaceChildren();
+  if (!rows.length) return;
+  const expected = $("expectWord").value;
+  const head = el("tr");
+  ["Phương pháp", "Cử chỉ", "Chấp nhận", "Do DL", expected ? "Đúng / sai" : "Câu nhận được"].forEach((h) => head.appendChild(el("th", null, h)));
+  tbl.appendChild(head);
+  rows.forEach((row, i) => {
+    const sc = scoreJob(row.job, expected);
+    const tr = el("tr", "pick" + (state.job && state.job.id === row.job.id ? " on" : ""));
+    tr.tabIndex = 0;
+    tr.appendChild(el("td", null, row.label));
+    tr.appendChild(el("td", "num", String(sc.events)));
+    tr.appendChild(el("td", "num", String(sc.accepted)));
+    tr.appendChild(el("td", "num", String(sc.dl)));
+    tr.appendChild(el("td", expected ? "num" : null, expected ? `${sc.right} / ${sc.wrong}` : sc.sentence));
+    const show = async () => { state.job = row.job; renderResults(row.job); await loadTrace(row.job.id); renderCompare(); };
+    tr.addEventListener("click", show);
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter") show(); });
+    tbl.appendChild(tr);
+  });
+  $("cmpNote").textContent = expected
+    ? "Đúng = số từ được chấp nhận trùng từ thật; sai = từ được chấp nhận nhưng khác từ thật. Bấm một dòng để xem chi tiết từng cử chỉ."
+    : "Chọn \"Từ thật\" ở trên để bảng tự đếm đúng/sai. Bấm một dòng để xem chi tiết từng cử chỉ.";
+}
+$("expectWord").addEventListener("change", renderCompare);
+
+$("compareBtn").addEventListener("click", async () => {
+  if (!state.media) { setNote($("runNote"), "Hãy chọn video trước.", "err"); return; }
+  let range;
+  try { range = collectRange(); } catch (err) { setNote($("runNote"), err.message, "err"); return; }
+  const by = $("compareBy").value;
+  let variants;
+  if (by === "seg") {
+    variants = Object.keys(SEG_LABEL).filter((k) => k !== "force" || range.hasEnd).map((k) => ({ seg: k, pred: $("predMode").value, label: SEG_LABEL[k] }));
+  } else {
+    variants = Object.keys(PRED_LABEL).map((k) => ({ seg: $("segMode").value, pred: k, label: PRED_LABEL[k] }));
+    if ($("segMode").value === "force" && !range.hasEnd) { setNote($("runNote"), "Chế độ lấy mẫu cần mốc kết thúc.", "err"); return; }
+  }
+  setNote($("runNote"), "");
+  stopPolling();
+  setRunning(true);
+  $("compareBtn").disabled = true;
+  state.compare = [];
+  state.trace = []; state.saved = {}; state.ui = {};
+  drawStrip(); updateFrameInfo(); renderResults(null); renderCompare();
+  try {
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i];
+      $("statusText").textContent = `So sánh ${i + 1}/${variants.length}: ${v.label} ...`;
+      $("progressBar").style.width = `${Math.round((i / variants.length) * 100)}%`;
+      const job = await runVariant(range, v.seg, v.pred);
+      if (job.status === "error") throw new Error(`${v.label}: ${job.error || "pipeline gặp lỗi"}`);
+      state.compare.push({ label: v.label, job });
+      renderCompare();
+    }
+    $("progressBar").style.width = "100%";
+    $("statusText").textContent = `Đã so sánh ${variants.length} phương pháp.`;
+    const first = state.compare[0];
+    state.job = first.job; renderResults(first.job); await loadTrace(first.job.id); renderCompare();
+    if (by === "seg" && !range.hasEnd) setNote($("runNote"), "Bỏ qua chế độ lấy mẫu vì chưa đặt mốc kết thúc.", "ok");
+  } catch (err) {
+    $("statusText").textContent = "Chưa hoàn tất.";
+    setNote($("runNote"), err.message, "err");
+  } finally {
+    setRunning(false);
+    $("compareBtn").disabled = false;
+  }
+});
+
+/* ---------- khởi tạo ---------- */
+async function refreshProfiles() {
+  try {
+    const profiles = await api("/api/profiles");
+    const sel = $("profileSelect");
+    const keep = sel.value;
+    sel.replaceChildren();
+    profiles.forEach((p) => {
+      const opt = el("option", null, `${p.name} - ${p.samples} mẫu`);
+      opt.value = p.id;
+      sel.appendChild(opt);
+    });
+    if (keep && profiles.some((p) => p.id === keep)) sel.value = keep;
+    const list = $("peopleList");
+    list.replaceChildren();
+    profiles.filter((p) => !p.name.includes("bank sản xuất")).forEach((p) => { const o = el("option"); o.value = p.id; list.appendChild(o); });
+  } catch (err) {
+    setNote($("srcStatus"), `Không đọc được danh sách hồ sơ: ${err.message}`, "err");
+  }
+}
+
+async function init() {
+  await refreshProfiles();
+  try {
+    (await api("/api/vocab")).forEach((v) => { const o = el("option", null, v.vi ? `${v.en} (${v.vi})` : v.en); o.value = v.word; $("expectWord").appendChild(o); });
+  } catch (err) { /* không bắt buộc */ }
+  try {
+    const samples = await api("/api/samples");
+    const sel = $("sampleSelect");
+    const groups = new Map();
+    samples.forEach((s) => {
+      if (!groups.has(s.word)) { const g = document.createElement("optgroup"); g.label = s.word; groups.set(s.word, g); sel.appendChild(g); }
+      const opt = el("option", null, s.file);
+      opt.value = s.path;
+      groups.get(s.word).appendChild(opt);
+    });
+    if (!samples.length) { sel.appendChild(el("option", null, "Không có video mẫu")); $("sampleBtn").disabled = true; }
+  } catch (err) {
+    $("sampleBtn").disabled = true;
+  }
+  renderResults(null);
+}
+init();
+</script>
+</body>
+</html>

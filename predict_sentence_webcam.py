@@ -61,6 +61,7 @@ from improved_dip_pipeline import (
     extract_smart_hand_crop,
     process_lean_dip_tensor
 )
+import ui_dip_inspector
 import json
 # SPEC 03: các hàm trích xuất 4 nhóm đặc trưng mới (z_norm, mốc cơ thể, độ xòe ngón) dùng CHUNG với
 # collect_dynamic_templates.py / tools/inspect_and_trim_asl_citizen.py / rebuild_templates_from_raw.py.
@@ -1123,6 +1124,7 @@ def run_sentence_builder(
     composer: Optional[bool] = None,
     prefer_dshow: bool = False,
     dip_enhance: bool = False,
+    dip_inspector: bool = False,
 ):
     """
     Vòng lặp chính xử lý nhận diện cử chỉ động & ghép câu thời gian thực (ASL/VSL).
@@ -1663,6 +1665,12 @@ def run_sentence_builder(
     dip_enhance_on: bool = bool(dip_enhance)
     if dip_enhance_on:
         print("[DIP] Tăng cường ảnh chống chói sáng (Gamma 1.35 + CLAHE) đang BẬT.")
+    dip_inspector_on: bool = bool(dip_inspector)
+    DIP_INSPECTOR_EVERY = 3
+    insp_canvas = None
+    dip_crop_frame = None
+    if dip_inspector_on:
+        print("[DIP] Cửa sổ trực quan 5 bước DIP Inspector đang BẬT. Phím [d] để đóng/mở.")
     if not headless and video_path is None:
         cap = open_camera(camera_index, prefer_mjpg=True, prefer_dshow=prefer_dshow)
 
@@ -2043,8 +2051,19 @@ def run_sentence_builder(
                     hand_shape = "Unknown"
                     cached_hand_shape = "Unknown"
 
+                # Lưu crop cho DIP Inspector nếu đang bật
+                dip_crop_frame = None
+                if dip_inspector_on and frame_counter % DIP_INSPECTOR_EVERY == 0:
+                    try:
+                        dip_crop_frame, _, _, _ = extract_smart_hand_crop(
+                            frame, landmarks, handedness_label=handedness_label, auto_flip_left=False
+                        )
+                    except Exception:
+                        dip_crop_frame = None
+
             else:
                 # Khi MediaPipe không thấy tay: Thử kích hoạt LK Inertial Fallback cho 1-2 frames
+                dip_crop_frame = None
                 hand_lost_frames += 1
                 if 1 <= hand_lost_frames <= 2:
                     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -2646,7 +2665,7 @@ def run_sentence_builder(
                 palm_len=palm_len,
                 palm_normal=current_normal,
                 event_log=event_log,
-                help_line="[p]:Driver [g]:Chong choi DIP [s]:Danh van [d]:Dac trung [c]:Xoa cau [u]:Doi giao dien [q]:Thoat",
+                help_line="[d]:DIP 5 Buoc [u]:Giao dien [s]:Danh van [c]:Xoa cau [g]:Chong choi [q]:Thoat",
                 ui_mode=ui_mode,
                 ui_lang=ui_lang,
                 profile_lines=profile_lines,
@@ -2668,6 +2687,13 @@ def run_sentence_builder(
 
             if not headless:
                 cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
+                if dip_inspector_on:
+                    # Cửa sổ phụ chỉ cập nhật mỗi DIP_INSPECTOR_EVERY khung (≈10 Hz): 5 bước DIP + vẽ ~10 ms/lần
+                    if frame_counter % DIP_INSPECTOR_EVERY == 0 or insp_canvas is None:
+                        insp_canvas = ui_dip_inspector.render_dip_inspector(
+                            dip_crop_frame if hand_found else None, fps=fps
+                        )
+                        cv2.imshow("DIP 5-Step Pipeline Inspector", insp_canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if neg_rec is not None and key in [ord('n'), ord('N')]:
                     # [n] = cử chỉ vu vơ: ghi ~3 s landmark gần nhất làm mẫu âm; nếu một từ vừa được chốt trong 3 s qua thì xóa nó.
@@ -2702,10 +2728,22 @@ def run_sentence_builder(
                         banner_color = (0, 165, 255)
                         banner_expire = curr_time + 1.5
                 if key == ord('q'):
+                    try:
+                        cv2.destroyWindow("DIP 5-Step Pipeline Inspector")
+                    except Exception:
+                        pass
                     break
                 elif key in [ord('d'), ord('D')]:
-                    show_features = not show_features
-                    print(f"[HUD] {'BẬT' if show_features else 'TẮT'} bảng hiển thị đặc trưng 3D.")
+                    dip_inspector_on = not dip_inspector_on
+                    insp_canvas = None
+                    if not dip_inspector_on:
+                        try:
+                            cv2.destroyWindow("DIP 5-Step Pipeline Inspector")
+                        except Exception:
+                            pass
+                    print(f"[DIP] {'BẬT' if dip_inspector_on else 'TẮT'} cửa sổ trực quan 5 bước DIP Inspector.")
+                    event_log.push(f"DIP 5 Buoc: {'BAT' if dip_inspector_on else 'TAT'}",
+                                   ui_side_panel.COL_OK if dip_inspector_on else ui_side_panel.COL_MUTED)
                 elif key in [ord('s'), ord('S')]:
                     if not spell_mode:
                         # Phím [s] kích hoạt THỦ CÔNG: nạp model + bật, giữ spell_auto=False
@@ -2987,7 +3025,7 @@ if __name__ == "__main__":
                              "Mặc định None = TỰ ĐỘNG bật nếu tìm thấy 'best_gesture_model_none.pth' (hoặc file chỉ "
                              "định qua --dl-model), tắt lặng lẽ nếu không có file. Dùng --no-dl để tắt hẳn dù có file. "
                              "Đã đo: gate an toàn (Hybrid không tệ hơn max(DTW,DL) ở đa số từ, xem results_hybrid_*.json), "
-                             "và nested CV cho 96.6% trung bình 4 người lạ thật, không rò rỉ ngưỡng.")
+                             "và nested CV cho 96.6%% trung bình 4 người lạ thật, không rò rỉ ngưỡng.")
     parser.add_argument("--dl-model", type=str, default=None,
                         help="Đường dẫn checkpoint .pth tùy chỉnh cho tầng DL (mặc định 'best_gesture_model_none.pth').")
     parser.add_argument("--dl-conf-threshold", type=float, default=None,
@@ -3027,6 +3065,8 @@ if __name__ == "__main__":
                         help="Ưu tiên backend DirectShow để có thể bấm phím [p] chỉnh cài đặt driver camera.")
     parser.add_argument("--dip-enhance", action="store_true", default=False,
                         help="Bật chế độ tăng cường ảnh DIP (Gamma 1.35 + CLAHE) chống chói sáng tường trắng. Phím [g] để đổi lúc chạy.")
+    parser.add_argument("--dip-inspector", action="store_true", default=False,
+                        help="Bật cửa sổ trực quan 5 bước DIP Inspector (Bilateral, Lab+YCrCb, Moments 0°, Canny, Sobel). Phím [d] đổi lúc chạy.")
     args, _ = parser.parse_known_args()
 
     eff_dl_model_path = None
@@ -3094,6 +3134,7 @@ if __name__ == "__main__":
         composer=args.composer,
         prefer_dshow=args.dshow,
         dip_enhance=args.dip_enhance,
+        dip_inspector=args.dip_inspector,
         seg_tune={k: v for k, v in {"pause_sec": args.pause_sec, "grace_sec": args.grace_sec, "v_stop": args.v_stop,
                                     "v_start": args.v_start, "early_commit": args.early_commit}.items() if v is not None} or None,
     )

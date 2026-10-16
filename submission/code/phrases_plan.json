@@ -1,0 +1,1134 @@
+{
+ "schema_version": "phrases_plan_v1",
+ "seed": 20260920,
+ "created_at": "2026-09-20 10:06:14",
+ "vocabulary": [
+  "BAD",
+  "BYE",
+  "DRINK",
+  "EAT",
+  "HELLO",
+  "HUNGRY",
+  "ME",
+  "PLEASE",
+  "SORRY",
+  "THANK_YOU",
+  "WATER",
+  "YES",
+  "YOU"
+ ],
+ "vi_gloss": {
+  "BAD": "Tệ / Xấu",
+  "BYE": "Tạm biệt",
+  "DRINK": "Uống",
+  "EAT": "Ăn",
+  "HELLO": "Xin chào",
+  "HUNGRY": "Đói",
+  "ME": "Tôi",
+  "PLEASE": "Làm ơn",
+  "SORRY": "Xin lỗi",
+  "THANK_YOU": "Cảm ơn",
+  "WATER": "Nước",
+  "YES": "Vâng / Có",
+  "YOU": "Bạn"
+ },
+ "params": {
+  "S1": {
+   "n_phrases": 40,
+   "n_idle": 5,
+   "min_per_word": 8
+  },
+  "S2": {
+   "n_phrases": 30,
+   "n_idle": 5,
+   "min_per_word": 4
+  },
+  "no_repeat_adjacent_word": true,
+  "idle_duration_sec": 20.0
+ },
+ "sessions": {
+  "S1": {
+   "clips": [
+    {
+     "phrase_id": "S1_p01",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "DRINK",
+      "WATER",
+      "PLEASE"
+     ],
+     "text": "DRINK → WATER → PLEASE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p02",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "BYE"
+     ],
+     "text": "HELLO → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p03",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "BYE"
+     ],
+     "text": "SORRY → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p04",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "BAD",
+      "SORRY"
+     ],
+     "text": "BAD → SORRY",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p05",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "EAT",
+      "YES",
+      "THANK_YOU"
+     ],
+     "text": "EAT → YES → THANK_YOU",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p06",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "HUNGRY"
+     ],
+     "text": "HELLO → HUNGRY",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_i01",
+     "set": "S1",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Vuốt tóc",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S1_p07",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HUNGRY",
+      "ME",
+      "EAT"
+     ],
+     "text": "HUNGRY → ME → EAT",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p08",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "BYE",
+      "YES"
+     ],
+     "text": "BYE → YES",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p09",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YOU",
+      "BAD",
+      "BYE"
+     ],
+     "text": "YOU → BAD → BYE",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p10",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "BAD",
+      "BYE"
+     ],
+     "text": "SORRY → BAD → BYE",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p11",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "THANK_YOU",
+      "BYE"
+     ],
+     "text": "YES → THANK_YOU → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p12",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YOU",
+      "DRINK",
+      "WATER"
+     ],
+     "text": "YOU → DRINK → WATER",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p13",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "DRINK",
+      "WATER",
+      "THANK_YOU"
+     ],
+     "text": "DRINK → WATER → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_i02",
+     "set": "S1",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Để tay nghỉ (buông thõng / đặt lên bàn)",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S1_p14",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "YOU",
+      "SORRY"
+     ],
+     "text": "HELLO → YOU → SORRY",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p15",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "EAT"
+     ],
+     "text": "PLEASE → EAT",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p16",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "ME",
+      "DRINK"
+     ],
+     "text": "ME → DRINK",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p17",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "YOU",
+      "HUNGRY"
+     ],
+     "text": "YES → YOU → HUNGRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p18",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "YOU",
+      "BYE"
+     ],
+     "text": "SORRY → YOU → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p19",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "PLEASE",
+      "YOU"
+     ],
+     "text": "HELLO → PLEASE → YOU",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p20",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "DRINK",
+      "THANK_YOU"
+     ],
+     "text": "PLEASE → DRINK → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_i03",
+     "set": "S1",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Cầm ly nước, uống nước",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S1_p21",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "ME",
+      "HUNGRY"
+     ],
+     "text": "YES → ME → HUNGRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p22",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "DRINK",
+      "PLEASE"
+     ],
+     "text": "DRINK → PLEASE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p23",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "BAD",
+      "WATER"
+     ],
+     "text": "BAD → WATER",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p24",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "ME",
+      "SORRY"
+     ],
+     "text": "HELLO → ME → SORRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p25",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "YOU",
+      "EAT"
+     ],
+     "text": "PLEASE → YOU → EAT",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p26",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "BAD",
+      "WATER",
+      "SORRY"
+     ],
+     "text": "BAD → WATER → SORRY",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_i04",
+     "set": "S1",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Gãi mặt",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S1_p27",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "WATER",
+      "YES",
+      "THANK_YOU"
+     ],
+     "text": "WATER → YES → THANK_YOU",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p28",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "EAT",
+      "ME"
+     ],
+     "text": "EAT → ME",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p29",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "ME",
+      "THANK_YOU"
+     ],
+     "text": "HELLO → ME → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p30",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "EAT",
+      "WATER"
+     ],
+     "text": "YES → EAT → WATER",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p31",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "EAT",
+      "THANK_YOU"
+     ],
+     "text": "PLEASE → EAT → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p32",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "HELLO"
+     ],
+     "text": "YES → HELLO",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p33",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "BAD",
+      "HUNGRY"
+     ],
+     "text": "BAD → HUNGRY",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_i05",
+     "set": "S1",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Đưa tay lên xuống",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S1_p34",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "THANK_YOU",
+      "BYE"
+     ],
+     "text": "THANK_YOU → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p35",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HUNGRY",
+      "BAD"
+     ],
+     "text": "HUNGRY → BAD",
+     "natural": false
+    },
+    {
+     "phrase_id": "S1_p36",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "DRINK",
+      "WATER"
+     ],
+     "text": "DRINK → WATER",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p37",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "EAT",
+      "PLEASE"
+     ],
+     "text": "EAT → PLEASE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p38",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HUNGRY",
+      "ME",
+      "DRINK"
+     ],
+     "text": "HUNGRY → ME → DRINK",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p39",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "ME",
+      "BAD"
+     ],
+     "text": "SORRY → ME → BAD",
+     "natural": true
+    },
+    {
+     "phrase_id": "S1_p40",
+     "set": "S1",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "YOU",
+      "HUNGRY"
+     ],
+     "text": "HELLO → YOU → HUNGRY",
+     "natural": true
+    }
+   ]
+  },
+  "S2": {
+   "clips": [
+    {
+     "phrase_id": "S2_p01",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "BYE",
+      "ME"
+     ],
+     "text": "BYE → ME",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p02",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "ME",
+      "BAD",
+      "SORRY"
+     ],
+     "text": "ME → BAD → SORRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p03",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "YOU",
+      "THANK_YOU"
+     ],
+     "text": "HELLO → YOU → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p04",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "THANK_YOU",
+      "YOU",
+      "BYE"
+     ],
+     "text": "THANK_YOU → YOU → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p05",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "WATER",
+      "PLEASE"
+     ],
+     "text": "WATER → PLEASE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_i01",
+     "set": "S2",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Cầm ly nước, uống nước",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S2_p06",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "ME",
+      "HUNGRY"
+     ],
+     "text": "SORRY → ME → HUNGRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p07",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "THANK_YOU"
+     ],
+     "text": "YES → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p08",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "DRINK",
+      "WATER",
+      "YES"
+     ],
+     "text": "DRINK → WATER → YES",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p09",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "ME",
+      "EAT"
+     ],
+     "text": "ME → EAT",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p10",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "YOU",
+      "DRINK"
+     ],
+     "text": "YOU → DRINK",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_i02",
+     "set": "S2",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Gãi mặt",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S2_p11",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "YES",
+      "EAT"
+     ],
+     "text": "YES → EAT",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p12",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "EAT",
+      "PLEASE",
+      "YES"
+     ],
+     "text": "EAT → PLEASE → YES",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p13",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "WATER"
+     ],
+     "text": "PLEASE → WATER",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p14",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "HUNGRY",
+      "YES"
+     ],
+     "text": "HUNGRY → YES",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p15",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "HUNGRY",
+      "YOU"
+     ],
+     "text": "HELLO → HUNGRY → YOU",
+     "natural": false
+    },
+    {
+     "phrase_id": "S2_i03",
+     "set": "S2",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Vuốt tóc",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S2_p16",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "YOU",
+      "HUNGRY"
+     ],
+     "text": "YOU → HUNGRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p17",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "DRINK"
+     ],
+     "text": "PLEASE → DRINK",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p18",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "ME",
+      "SORRY",
+      "BYE"
+     ],
+     "text": "ME → SORRY → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p19",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "THANK_YOU"
+     ],
+     "text": "PLEASE → THANK_YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p20",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "BAD",
+      "EAT"
+     ],
+     "text": "BAD → EAT",
+     "natural": false
+    },
+    {
+     "phrase_id": "S2_i04",
+     "set": "S2",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Đưa tay lên xuống",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S2_p21",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "BYE",
+      "THANK_YOU"
+     ],
+     "text": "BYE → THANK_YOU",
+     "natural": false
+    },
+    {
+     "phrase_id": "S2_p22",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "THANK_YOU",
+      "ME",
+      "BYE"
+     ],
+     "text": "THANK_YOU → ME → BYE",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p23",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "YOU"
+     ],
+     "text": "HELLO → YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p24",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "YOU",
+      "BAD"
+     ],
+     "text": "YOU → BAD",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p25",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "SORRY",
+      "YOU"
+     ],
+     "text": "SORRY → YOU",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_i05",
+     "set": "S2",
+     "kind": "idle",
+     "truth": [],
+     "text": "(KHÔNG ký từ nào)",
+     "activity": "Vẫy tay lơ đãng",
+     "duration_sec": 20.0
+    },
+    {
+     "phrase_id": "S2_p26",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "EAT",
+      "YES"
+     ],
+     "text": "EAT → YES",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p27",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "HELLO",
+      "ME",
+      "HUNGRY"
+     ],
+     "text": "HELLO → ME → HUNGRY",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p28",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "WATER",
+      "BAD"
+     ],
+     "text": "WATER → BAD",
+     "natural": false
+    },
+    {
+     "phrase_id": "S2_p29",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "ME",
+      "DRINK",
+      "WATER"
+     ],
+     "text": "ME → DRINK → WATER",
+     "natural": true
+    },
+    {
+     "phrase_id": "S2_p30",
+     "set": "S2",
+     "kind": "phrase",
+     "truth": [
+      "PLEASE",
+      "DRINK",
+      "WATER"
+     ],
+     "text": "PLEASE → DRINK → WATER",
+     "natural": true
+    }
+   ]
+  }
+ },
+ "coverage": {
+  "S1": {
+   "per_word": {
+    "BAD": {
+     "total": 8,
+     "first": 4,
+     "middle": 2,
+     "last": 2
+    },
+    "BYE": {
+     "total": 8,
+     "first": 1,
+     "middle": 0,
+     "last": 7
+    },
+    "DRINK": {
+     "total": 8,
+     "first": 4,
+     "middle": 2,
+     "last": 2
+    },
+    "EAT": {
+     "total": 8,
+     "first": 3,
+     "middle": 2,
+     "last": 3
+    },
+    "HELLO": {
+     "total": 8,
+     "first": 7,
+     "middle": 0,
+     "last": 1
+    },
+    "HUNGRY": {
+     "total": 8,
+     "first": 3,
+     "middle": 0,
+     "last": 5
+    },
+    "ME": {
+     "total": 8,
+     "first": 1,
+     "middle": 6,
+     "last": 1
+    },
+    "PLEASE": {
+     "total": 8,
+     "first": 4,
+     "middle": 1,
+     "last": 3
+    },
+    "SORRY": {
+     "total": 8,
+     "first": 4,
+     "middle": 0,
+     "last": 4
+    },
+    "THANK_YOU": {
+     "total": 8,
+     "first": 1,
+     "middle": 1,
+     "last": 6
+    },
+    "WATER": {
+     "total": 8,
+     "first": 1,
+     "middle": 3,
+     "last": 4
+    },
+    "YES": {
+     "total": 8,
+     "first": 5,
+     "middle": 2,
+     "last": 1
+    },
+    "YOU": {
+     "total": 8,
+     "first": 2,
+     "middle": 5,
+     "last": 1
+    }
+   },
+   "n_two_word": 16,
+   "n_three_word": 24,
+   "distinct_adjacent_pairs": 49,
+   "n_core_natural": 26,
+   "min_per_word_required": 8,
+   "min_met": true
+  },
+  "S2": {
+   "per_word": {
+    "BAD": {
+     "total": 4,
+     "first": 1,
+     "middle": 1,
+     "last": 2
+    },
+    "BYE": {
+     "total": 5,
+     "first": 2,
+     "middle": 0,
+     "last": 3
+    },
+    "DRINK": {
+     "total": 5,
+     "first": 1,
+     "middle": 2,
+     "last": 2
+    },
+    "EAT": {
+     "total": 5,
+     "first": 2,
+     "middle": 0,
+     "last": 3
+    },
+    "HELLO": {
+     "total": 4,
+     "first": 4,
+     "middle": 0,
+     "last": 0
+    },
+    "HUNGRY": {
+     "total": 5,
+     "first": 1,
+     "middle": 1,
+     "last": 3
+    },
+    "ME": {
+     "total": 8,
+     "first": 4,
+     "middle": 3,
+     "last": 1
+    },
+    "PLEASE": {
+     "total": 6,
+     "first": 4,
+     "middle": 1,
+     "last": 1
+    },
+    "SORRY": {
+     "total": 4,
+     "first": 2,
+     "middle": 1,
+     "last": 1
+    },
+    "THANK_YOU": {
+     "total": 6,
+     "first": 2,
+     "middle": 0,
+     "last": 4
+    },
+    "WATER": {
+     "total": 6,
+     "first": 2,
+     "middle": 1,
+     "last": 3
+    },
+    "YES": {
+     "total": 6,
+     "first": 2,
+     "middle": 0,
+     "last": 4
+    },
+    "YOU": {
+     "total": 8,
+     "first": 3,
+     "middle": 2,
+     "last": 3
+    }
+   },
+   "n_two_word": 18,
+   "n_three_word": 12,
+   "distinct_adjacent_pairs": 37,
+   "n_core_natural": 26,
+   "min_per_word_required": 4,
+   "min_met": true
+  }
+ },
+ "overlap_sentences_S1_S2": []
+}

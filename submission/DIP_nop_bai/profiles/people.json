@@ -51,5 +51,13 @@
   "John": {
     "ten": "John",
     "vai_tro": "tinh_nguyen_vien"
+  },
+  "SLEEP": {
+    "ten": "SLEEP",
+    "vai_tro": "tinh_nguyen_vien"
+  },
+  "DatMoi": {
+    "ten": "Dat_Moi",
+    "vai_tro": "tinh_nguyen_vien"
   }
 }

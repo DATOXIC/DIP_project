@@ -1,0 +1,123 @@
+{
+  "2HAND": null,
+  "BAD": {
+    "path": "ASL_Citizen_videos/BAD/3763434553768781-BAD.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\BAD\\3763434553768781-BAD.mp4",
+    "duration": 2.433,
+    "fps": 30.0
+  },
+  "BYE": {
+    "path": "ASL_Citizen_videos/BYE/36995928249155363-BYE.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\BYE\\36995928249155363-BYE.mp4",
+    "duration": 2.33,
+    "fps": 30.5
+  },
+  "COME": {
+    "path": "ASL_Citizen_videos/COME/7399984921358038-COME.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\COME\\7399984921358038-COME.mp4",
+    "duration": 2.367,
+    "fps": 30.0
+  },
+  "DRINK": {
+    "path": "ASL_Citizen_videos/DRINK/6863272868161578-DRINK.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\DRINK\\6863272868161578-DRINK.mp4",
+    "duration": 2.433,
+    "fps": 30.0
+  },
+  "EAT": {
+    "path": "ASL_Citizen_videos/EAT/8083635818179542-EAT.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\EAT\\8083635818179542-EAT.mp4",
+    "duration": 2.567,
+    "fps": 30.0
+  },
+  "FATHER": {
+    "path": "ASL_Citizen_videos/FATHER/30674313805858255-FATHER.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\FATHER\\30674313805858255-FATHER.mp4",
+    "duration": 2.533,
+    "fps": 30.0
+  },
+  "GOOD": {
+    "path": "ASL_Citizen_videos/GOOD/5586839450092025-GOOD.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\GOOD\\5586839450092025-GOOD.mp4",
+    "duration": 2.433,
+    "fps": 30.0
+  },
+  "HELLO": {
+    "path": "ASL_Citizen_videos/HELLO/7613696736100914-HELLO.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\HELLO\\7613696736100914-HELLO.mp4",
+    "duration": 2.533,
+    "fps": 30.0
+  },
+  "LIKE": {
+    "path": "ASL_Citizen_videos/LIKE/48852938778695965-LIKE.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\LIKE\\48852938778695965-LIKE.mp4",
+    "duration": 2.367,
+    "fps": 30.0
+  },
+  "ME": {
+    "path": "ASL_Citizen_videos/ME/5968816675394137-ME.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\ME\\5968816675394137-ME.mp4",
+    "duration": 2.52,
+    "fps": 25.0
+  },
+  "MOTHER": {
+    "path": "ASL_Citizen_videos/MOTHER/3594639642396176-MOTHER.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\MOTHER\\3594639642396176-MOTHER.mp4",
+    "duration": 2.536,
+    "fps": 30.0
+  },
+  "PLEASE": {
+    "path": "ASL_Citizen_videos/PLEASE/11854818371036102-PLEASE.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\PLEASE\\11854818371036102-PLEASE.mp4",
+    "duration": 2.6,
+    "fps": 25.0
+  },
+  "SEE": {
+    "path": "ASL_Citizen_videos/SEE/4342737241901915-SEE.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\SEE\\4342737241901915-SEE.mp4",
+    "duration": 2.568,
+    "fps": 30.4
+  },
+  "SORRY": {
+    "path": "ASL_Citizen_videos/SORRY/62778761952392-SORRY.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\SORRY\\62778761952392-SORRY.mp4",
+    "duration": 2.5,
+    "fps": 30.0
+  },
+  "THANK_YOU": {
+    "path": "ASL_Citizen_videos/THANK_YOU/6936836055005255-THANK_YOU.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\THANK_YOU\\6936836055005255-THANK_YOU.mp4",
+    "duration": 2.47,
+    "fps": 29.6
+  },
+  "TOMORROW": {
+    "path": "ASL_Citizen_videos/TOMORROW/22231383812312244-TOMORROW.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\TOMORROW\\22231383812312244-TOMORROW.mp4",
+    "duration": 2.741,
+    "fps": 29.9
+  },
+  "WATER": {
+    "path": "ASL_Citizen_videos/WATER/057571220614212715-WATER.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\WATER\\057571220614212715-WATER.mp4",
+    "duration": 2.233,
+    "fps": 30.0
+  },
+  "WHERE": {
+    "path": "ASL_Citizen_videos/WHERE/9957868929062672-WHERE.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\WHERE\\9957868929062672-WHERE.mp4",
+    "duration": 2.44,
+    "fps": 25.0
+  },
+  "YES": {
+    "path": "ASL_Citizen_videos/YES/029563612799205163-YES.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\YES\\029563612799205163-YES.mp4",
+    "duration": 2.462,
+    "fps": 30.5
+  },
+  "YOU": {
+    "path": "ASL_Citizen_videos/YOU/4091388061019394-YOU.mp4",
+    "abs_path": "C:\\DIP\\DIP_project\\ASL_Citizen_videos\\YOU\\4091388061019394-YOU.mp4",
+    "duration": 2.547,
+    "fps": 29.8
+  }
+}

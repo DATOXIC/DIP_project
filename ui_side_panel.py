@@ -499,7 +499,7 @@ def _draw_pipeline_log(canvas: np.ndarray, x: int, y: int, w: int, h: int,
             _fit_text(canvas, line, x + 12, curr_y + 10, w - 24, 0.30, fade, 1, min_scale=0.26)
             curr_y += 15
 
-    _fit_text(canvas, "[u]:Giao dien [s]:Danh van [c]:Xoa cau [n]:Vu vo [x]:Sai tu",
+    _fit_text(canvas, "[d]:DIP 5 Buoc [u]:Giao dien [s]:Danh van [c]:Xoa cau [x]:Sai tu",
               x + 12, foot_y, w - 24, 0.32, (120, 120, 120), 1, min_scale=0.28)
 
 
