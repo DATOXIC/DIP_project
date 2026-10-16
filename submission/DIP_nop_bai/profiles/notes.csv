@@ -1,0 +1,9 @@
+session_id,signer_id,condition,dominant_hand,height_cm_est,distance_cm_est,lighting,background,camera,luma,new_fps,imitated,variant_words,notes
+Mai_20260921,Mai,normal,,,,,,,,,yes,,
+Phi_20260929,Phi,normal,,,,,,,,,yes,,
+Mai_20260928,Mai,normal,Right,,50cm,sáng,,,,,yes,,
+Mai_20260929,Mai,normal,Right,,,sáng,,,,,yes,,
+Dang_20260929,Dang,normal,Right,,40,sáng,,Laptop,,,yes,,
+Vuong_20260929,Vuong,normal,Right,,,sáng,,,,,yes,,
+Viet_20260929,Viet,normal,Right,,,sáng,,,,,yes,,
+Phi_20261006,Phi,normal,Right,,,sáng,,,,,yes,,
