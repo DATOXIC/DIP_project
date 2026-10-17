@@ -130,8 +130,10 @@ def cmd_nhan_dien(pid: str, extra: Optional[List[str]] = None, templates: Option
                   xac_nhan: bool = True, dl_model: Optional[str] = None,
                   dl_nguong: Optional[float] = None, tat_dl: bool = False,
                   day_tu: Optional[List[str]] = None, so_mau: int = 3, spotter: bool = True, dang_tay: bool = True,
-                  giao_dien: Optional[str] = "debug") -> List[str]:
+                  giao_dien: Optional[str] = "debug", camera: Optional[int] = None) -> List[str]:
     args = ["predict_sentence_webcam.py"]
+    if camera is not None:
+        args += ["--cam", str(camera)]
     if spotter and os.path.exists(os.path.join(ROOT, SPOTTER_MODEL)):
         # Mặc định BẬT khóa một lần + spotter DL (giảm báo nhầm 31 -> 9, hết đọc lặp; xem eval_replay_log.py). Tắt: --khong-spotter.
         args += ["--one-shot", "--spotter", "dl"]
@@ -642,6 +644,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = p.add_subparsers(dest="lenh")
     a = sub.add_parser("nhan-dien", help="Chạy nhận diện thời gian thực")
     a.add_argument("--ho-so", default=None, help="Tên/mã hồ sơ (mặc định: Đạt)")
+    a.add_argument("--camera", "--cam", type=int, default=None, help="Chỉ số camera (0 = webcam tích hợp, 1, 2 = camera ngoài/iPhone)")
     a.add_argument("--khong-xac-nhan", action="store_true", help="TẮT hỏi xác nhận khi cử chỉ không chắc (mặc định đã BẬT — đòn bẩy chính giúp nhận đúng người lạ, xem eval_enroll.py). Bật lại bằng cách không truyền cờ này.")
     a.add_argument("--tat-dl", action="store_true", help="TẮT tầng DL dự phòng (xem dl_fusion.py). Mặc định đã BẬT tự động nếu "
                                                           "tìm thấy 'best_gesture_model_none.pth' (đã đo: nested CV 96.6%% trung bình "
@@ -718,7 +721,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     raise SystemExit(f"Hồ sơ '{x}' chưa có dữ liệu.")
             templates = build_merged_bank(pid, args.gop_dat, others)
         return chay(cmd_nhan_dien(pid, extra, templates, not args.khong_xac_nhan, args.dl_model, args.dl_nguong, args.tat_dl,
-                                  spotter=not args.khong_spotter, dang_tay=not args.khong_dang_tay, giao_dien=args.giao_dien))
+                                  spotter=not args.khong_spotter, dang_tay=not args.khong_dang_tay, giao_dien=args.giao_dien,
+                                  camera=args.camera))
     if args.lenh == "hieu-chinh":
         if args.moi:
             try:

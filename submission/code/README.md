@@ -7,12 +7,14 @@ Chạy hoàn toàn trên CPU.
 Nhấp đôi **`chay.bat`** (hoặc gõ `chay.bat` trong cmd). Lần đầu tự tạo môi trường `.venv`, cài thư viện, rồi mở nhận diện
 webcam; các lần sau chạy ngay.
 
+Không có webcam: `chay.bat demo` chạy luồng xử lý trên video mẫu `demo/demo_clip.mp4`.
+
 Phím: `q` thoát · `c` xóa câu · `s` đánh vần · `d` cửa sổ 5 bước DIP · `u` đổi giao diện · `n`/`x` mẫu âm.
 
 ## Các lệnh khác (thêm sau `chay.bat`)
 | Việc | Lệnh |
 |---|---|
-| Xem luồng xử lý chính trên video mẫu (không cần camera) | `.venv\Scripts\python pipeline.py --video demo/demo_clip.mp4` |
+| Xem luồng xử lý chính trên video mẫu (không cần camera) | `chay.bat demo` |
 | Giao diện cửa sổ chọn chế độ | `chay.bat` rồi đóng, hoặc `.venv\Scripts\python dip.py` |
 | Dạy từ mới | `chay.bat hieu-chinh --moi "Ten" --tu HUNGRY SORRY` |
 | Bản web | `chay.bat web` (http://127.0.0.1:8000) |
