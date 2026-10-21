@@ -1742,6 +1742,15 @@ def run_sentence_builder(
     ready_queue: deque = deque()
     cap_exhausted = False
 
+    win_main = "ASL Dynamic Gesture Recognition & Sentence Builder"
+    win_insp = "DIP 5-Step Pipeline Inspector"
+    if not headless:
+        cv2.namedWindow(win_main, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win_main, 1120, 620)
+        if dip_inspector_on:
+            cv2.namedWindow(win_insp, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(win_insp, 1080, 360)
+
     try:
         while True:
             if profile:
@@ -1778,6 +1787,9 @@ def run_sentence_builder(
                             ready_queue.extend(detector_pool.flush())
 
                 if ret and frame is not None:
+                    # Chuẩn hóa khung hình về chuẩn 640x480 nếu camera trả về kích thước lớn hơn (webcam 2K/1080p phớt lờ cap.set)
+                    if frame.shape[1] > 640 or frame.shape[0] > 480:
+                        frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_AREA)
                     capture_ts = vid_ts if video_path is not None else time.time()
                     if video_clock and video_path is not None:
                         _vclk_n += 1
@@ -2686,14 +2698,14 @@ def run_sentence_builder(
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 0) if _g_open else (150, 150, 150), 2, lineType=cv2.LINE_AA)
 
             if not headless:
-                cv2.imshow("ASL Dynamic Gesture Recognition & Sentence Builder", display_frame)
+                cv2.imshow(win_main, display_frame)
                 if dip_inspector_on:
                     # Cửa sổ phụ chỉ cập nhật mỗi DIP_INSPECTOR_EVERY khung (≈10 Hz): 5 bước DIP + vẽ ~10 ms/lần
                     if frame_counter % DIP_INSPECTOR_EVERY == 0 or insp_canvas is None:
                         insp_canvas = ui_dip_inspector.render_dip_inspector(
                             dip_crop_frame if hand_found else None, fps=fps
                         )
-                        cv2.imshow("DIP 5-Step Pipeline Inspector", insp_canvas)
+                        cv2.imshow(win_insp, insp_canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if neg_rec is not None and key in [ord('n'), ord('N')]:
                     # [n] = cử chỉ vu vơ: ghi ~3 s landmark gần nhất làm mẫu âm; nếu một từ vừa được chốt trong 3 s qua thì xóa nó.
@@ -2729,7 +2741,7 @@ def run_sentence_builder(
                         banner_expire = curr_time + 1.5
                 if key == ord('q'):
                     try:
-                        cv2.destroyWindow("DIP 5-Step Pipeline Inspector")
+                        cv2.destroyWindow(win_insp)
                     except Exception:
                         pass
                     break
@@ -2738,7 +2750,13 @@ def run_sentence_builder(
                     insp_canvas = None
                     if not dip_inspector_on:
                         try:
-                            cv2.destroyWindow("DIP 5-Step Pipeline Inspector")
+                            cv2.destroyWindow(win_insp)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            cv2.namedWindow(win_insp, cv2.WINDOW_NORMAL)
+                            cv2.resizeWindow(win_insp, 1080, 360)
                         except Exception:
                             pass
                     print(f"[DIP] {'BẬT' if dip_inspector_on else 'TẮT'} cửa sổ trực quan 5 bước DIP Inspector.")

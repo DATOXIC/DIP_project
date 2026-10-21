@@ -780,6 +780,11 @@ def run_dynamic_collector(
     ready_queue: deque = deque()
     cap_exhausted = False
 
+    win_collector = "Thu Thap Mau Cu Chi Dong (VSL Dynamic Collector)"
+    if not headless:
+        cv2.namedWindow(win_collector, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win_collector, 1120, 620)
+
     while True:
         if profile:
             _t_frame_start = time.perf_counter()
@@ -804,6 +809,9 @@ def run_dynamic_collector(
                     ready_queue.extend(detector_pool.flush())
 
             if ret and frame is not None:
+                # Chuẩn hóa khung hình về chuẩn 640x480 nếu camera trả về kích thước lớn hơn
+                if frame.shape[1] > 640 or frame.shape[0] > 480:
+                    frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_AREA)
                 capture_ts = time.time()
                 frame_counter += 1
                 if flip_cam:
@@ -1609,7 +1617,7 @@ def run_dynamic_collector(
             _t_draw = time.perf_counter() - _t0_draw
 
         if not headless:
-            cv2.imshow("Thu Thap Mau Cu Chi Dong (VSL Dynamic Collector)", canvas)
+            cv2.imshow(win_collector, canvas)
             key = cv2.waitKey(1) & 0xFF
         else:
             key = 255

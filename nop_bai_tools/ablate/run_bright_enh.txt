@@ -1,0 +1,133 @@
+### bright_enh
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1792201299.267966   13840 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.279112   25840 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.279453    8808 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.381631   14480 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.386286    8808 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.399872   12008 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1792201299.426449   21632 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+W0000 00:00:1792201299.898086   10000 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+===========================================================================
+  HỆ THỐNG NHẬN DIỆN CỬ CHỈ ĐỘNG & GHÉP CÂU ASL (REAL-TIME SENTENCE BUILDER)
+===========================================================================
+✓ Đang ghi log phiên cử chỉ vào: 'scratch/ablate/bright_enh.csv'
+✓ Đã nạp ParallelHandDetector (3 workers, max_in_flight=4).
+✓ Đã nạp Two-Stream CNN (vsl_dataset/models/best_model_v2.pth): ['A', 'B', 'C', 'L', 'V']
+ℹ️ [DTW] Chế độ trọng số: Toàn cục (Global Weights từ CONFIG).
+ℹ️ [DTW] Chế độ Global Weights: Dùng chung 1 công thức CONFIG cho tất cả ký hiệu (w_p=0.6, w_a=1.0, w_m=0.4, w_n=0.8).
+[Chirality] Đã chuẩn hóa 233 template: lật 0, bỏ qua 233 (đã chuẩn tắc), 0 dùng nhãn tay thuận (còn lại dùng heuristic max|nx|).
+✓ Đã nạp bộ dò mặt (mốc cơ thể) có cache.
+✓ Đã nạp 18 từ vựng cử chỉ mẫu từ webcam_templates.json (Golden Triad Engine).
+✓ Chế độ HỎI XÁC NHẬN: cử chỉ không chắc sẽ được hỏi lại. Phím [y]=đúng (gợi ý 1)  [2]=đúng (gợi ý 2)  [n]=bỏ  [z]=hoàn tác.
+⚡ [FastChain] BẬT: pause=0.12s, grace=0.05s, cửa sổ nối=0.0s, lockout=0.0s, lead_trim=BẬT, chốt sớm=True (chất lượng>=70, margin>=0.25), kéo đuôi=0.45s. Từ nhiều pha (không chốt sớm): ['EAT', 'WATER', 'YES', 'YOU']
+[OneShot] BẬT khóa một lần (spotter=dl, NGHIÊM: chặn stroke ngoài khoảng đang ký): mỗi khoảng ký chỉ chốt tối đa 1 từ.
+[HandshapeGate] BẬT (model=letter_landmark_model_image.pt, bảng=handshape_gate_table.json)
+[Video] KẾT NỐI THÀNH CÔNG video file: scratch/robust2/bright.mp4
+[Video] Dùng ĐỒNG HỒ VIDEO (30.0 fps) làm mốc thời gian khung (--video-clock). VIDEO_CLOCK_T0=1792201299.979
+[DIP] Tăng cường ảnh chống chói sáng (Gamma 1.35 + CLAHE) đang BẬT.
+[Video] fps=30.00 stride=1 bắt đầu=0.00s kết thúc=hết video (tổng 530.23s)
+
+[HƯỚNG DẪN SỬ DỤNG]
+  - Múa cử chỉ rõ ràng, nghỉ nhẹ ~0.2s giữa hai từ (chế độ KÝ NHANH mặc định). Nếu tắt bằng [j], phải dừng ~0.55s.
+  - Gạt nhanh tay sang trái (Swipe-Left) để XÓA TỪ gần nhất (Backspace).
+  - Hạ tay xuống khỏi màn hình > 1.8s để HOÀN THÀNH CÂU (Commit/Enter).
+  - Hệ thống tự động phát âm tiếng Anh (ASL) bằng giọng nói pyttsx3.
+  - ĐÁNH VẦN TÊN: Ký 'NAME' (hoặc 'MY NAME', 'HELLO', 'NICE MEET YOU') → tự động chuyển sang đánh vần chữ cái.
+    Giữ từng chữ ~0.7s để chốt; hạ tay > 1.8s để xong (hoặc > 2.0s để tự hủy nếu chưa ký). Kết quả: 'My name is ...'
+  [d]: Bật/Tắt bảng đặc trưng 3D (Feature HUD, chỉ ở giao diện debug) | [c]: Xóa câu | [f]: Lật gương | [q]: Thoát
+  [l]: Đổi ngôn ngữ Anh/Việt | [u]: Đổi giao diện demo/debug | [t]: Bật/tắt loa | [h]: Trợ giúp
+  [s]: Bật/tắt đánh vần chữ cái THỦ CÔNG (dùng khi muốn đánh vần bất kỳ lúc nào, không cần ký trigger word)
+  [j]: Bật/tắt chế độ KÝ NHANH (nối từ, nghỉ ngắn ~0.2s là đủ) | [k]: Bật/tắt CẮT DẪN ĐẦU (lead-trim)
+
+  Giao diện: demo | Ngôn ngữ: en
+
+[SentenceBuilder] Nhận từ: 'Hungry' (Do khop: 73) | Câu: Hungry
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Hungry .
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.12, Do khop: 0)
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Cry'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.87, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Me'? (y) / 'Sleep'? (2) / bỏ (n)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Hungry' | Còn lại: []
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 81) | Câu: Please
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Please .
+[SentenceBuilder] Nhận từ: 'Please' (Do khop: 80) | Câu: Please
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Please .
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.79, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Drink'? (y) / 'You'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.45, Do khop=2) vs Cry (d2=0.66) | Margin: 47.5%
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Cry'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.24, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Drink'? (y) / 'Sleep'? (2) / bỏ (n)
+[OneShot] Chặn 'You' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Thank You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Thank You .
+[Composer] (table) Thank you.
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.39, Do khop=24) vs Cry (d2=0.91) | Margin: 135.0%
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Cry'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.45, Do khop=2) vs Drink (d2=0.74) | Margin: 65.1%
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Drink'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.41, Do khop=16) vs Drink (d2=0.76) | Margin: 87.0%
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Drink'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): You (d1=0.38, Do khop=27) vs Drink (d2=0.79) | Margin: 109.1%
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Drink'? (2) / bỏ (n)
+[Fusion] shape_gate:BYE
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Yes (d1=0.39, Do khop=21) vs Water (d2=0.86) | Margin: 120.3%
+[XacNhan] Hỏi: có phải 'Yes'? (y) / 'Water'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 1.70, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Water'? (y) / 'Drink'? (2) / bỏ (n)
+[Fusion] handshape_veto:DRINK(3/3)<-THINK
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.00)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.46, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Water'? (y) / 'Drink'? (2) / bỏ (n)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Thank You' | Còn lại: []
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.88, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Eat'? (y) / 'Please'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.99, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Think'? (y) / 'You'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Me (d1=0.44, Do khop=4) vs Please (d2=0.44) | Margin: 0.6%
+[XacNhan] Hỏi: có phải 'Me'? (y) / 'Please'? (2) / bỏ (n)
+[Fusion] handshape_veto:DRINK(3/3)<-WATER
+[OneShot] Chặn 'Drink' (no_span): ngoài khoảng đang ký (spotter báo không ký). (p tối đa trong stroke = 0.03)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.53, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Hello'? (y) / 'Bye'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Think (d1=0.36, Do khop=33) vs Know (d2=0.41) | Margin: 14.0%
+[XacNhan] Hỏi: có phải 'Think'? (y) / 'Know'? (2) / bỏ (n)
+[SentenceBuilder] Nhận từ: 'Thank You' (Do khop: 100) | Câu: Thank You
+[SentenceBuilder] ✓ ĐÃ CHỐT CÂU HOÀN CHỈNH: Thank You .
+[Composer] (table) Thank you.
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Yes (d1=0.44, Do khop=4) vs Drink (d2=0.65) | Margin: 46.6%
+[XacNhan] Hỏi: có phải 'Yes'? (y) / 'Drink'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.56, Do khop: 0)
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Hungry'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.58, Do khop: 0)
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Hungry'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.57, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Drink'? (y) / 'Yes'? (2) / bỏ (n)
+[Fusion] shape_gate:PLEASE->WATER
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Water (d1=0.60, Do khop=0) vs You (d2=0.76) | Margin: 26.7%
+[XacNhan] Hỏi: có phải 'Water'? (y) / 'You'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.61, Do khop: 0)
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Hungry'? (2) / bỏ (n)
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.55, Do khop: 0)
+[XacNhan] Hỏi: có phải 'You'? (y) / 'Hungry'? (2) / bỏ (n)
+[Fusion] shape_gate:ME
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.48, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Eat'? (y) / 'Please'? (2) / bỏ (n)
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Hungry (d1=0.41, Do khop=17) vs Thank You (d2=0.50) | Margin: 23.8%
+[XacNhan] Hỏi: có phải 'Hungry'? (y) / 'Thank You'? (2) / bỏ (n)
+[Fusion] shape_gate:PLEASE
+[SentenceBuilder] ❓ Nghi vấn (Margin Guard (2 từ quá sát nhau)): Water (d1=0.38, Do khop=27) vs Eat (d2=0.70) | Margin: 85.7%
+[XacNhan] Hỏi: có phải 'Water'? (y) / 'Eat'? (2) / bỏ (n)
+[SentenceBuilder] Swipe-Left: Đã xóa 'Thank You' | Còn lại: []
+[SentenceBuilder] Từ chối cử chỉ không khớp (Dist: 0.90, Do khop: 0)
+[XacNhan] Hỏi: có phải 'Sorry'? (y) / 'Eat'? (2) / bỏ (n)
+[OneShot] Cả phiên: cho phép 5 lần commit, chặn 3 lần trùng trong cùng span (tổng 46 span gần nhất đang giữ).
+[Camera] Cả phiên: 15907 khung / 530.2s | vòng lặp 30.0 khung/s | khung mới thật 30.0/s | trùng y hệt 0.0% | gần-trùng 73.2%
+[Camera] Gợi ý: nếu 'trùng y hệt' ≈ 0% và 'khung mới thật' ≈ 30/s thì --dedupe-frames/--time-norm gần như không đổi gì.
+[SessionLogger] ✓ Đã lưu và đóng file log phiên: 'scratch/ablate/bright_enh.csv'
+
+[LeadTrim] Thống kê cắt dẫn đầu phiên (5 từ đã chốt):
+  - Trung vị tau: 0.000s | p90 tau: 0.000s | Tỉ lệ tau > 0: 0.0%
+-> Đã đóng chương trình nhận diện ghép câu an toàn.
